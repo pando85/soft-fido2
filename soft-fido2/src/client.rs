@@ -6,9 +6,9 @@ use crate::error::{Error, Result};
 use crate::request::{GetAssertionRequest, MakeCredentialRequest};
 use crate::transport::Transport;
 
-use std::collections::BTreeMap;
-
 use soft_fido2_ctap::cbor::{MapBuilder, Value};
+
+use std::collections::BTreeMap;
 
 /// Client for communicating with FIDO2 authenticators
 ///
