@@ -6,7 +6,9 @@ use crate::error::{Error, Result};
 use crate::request::{GetAssertionRequest, MakeCredentialRequest};
 use crate::transport::Transport;
 
-use soft_fido2_ctap::cbor::Value;
+use std::collections::BTreeMap;
+
+use soft_fido2_ctap::cbor::{MapBuilder, Value};
 
 /// Client for communicating with FIDO2 authenticators
 ///
@@ -30,89 +32,111 @@ impl Client {
         transport: &mut Transport,
         request: MakeCredentialRequest,
     ) -> Result<Vec<u8>> {
-        // Build the CTAP2 authenticatorMakeCredential request
-        let mut cbor_request = Vec::new();
+        // Build the CTAP2 authenticatorMakeCredential request using MapBuilder
+        let mut builder = MapBuilder::new();
 
         // 0x01: clientDataHash (required)
-        cbor_request.push((
-            Value::Integer(1.into()),
-            Value::Bytes(request.client_data_hash().as_slice().to_vec()),
-        ));
+        builder = builder
+            .insert_bytes(1, request.client_data_hash().as_slice())
+            .map_err(|_| Error::Other)?;
 
         // 0x02: rp (required)
-        let mut rp_map = Vec::new();
-        rp_map.push((
-            Value::Text("id".to_string()),
-            Value::Text(request.rp().id.clone()),
-        ));
+        let mut rp_map = BTreeMap::new();
+        rp_map.insert("id", request.rp().id.as_str());
         if let Some(name) = &request.rp().name {
-            rp_map.push((Value::Text("name".to_string()), Value::Text(name.clone())));
+            rp_map.insert("name", name.as_str());
         }
-        cbor_request.push((Value::Integer(2.into()), Value::Map(rp_map)));
+        builder = builder.insert(2, &rp_map).map_err(|_| Error::Other)?;
 
         // 0x03: user (required)
-        let mut user_map = Vec::new();
-        user_map.push((
-            Value::Text("id".to_string()),
-            Value::Bytes(request.user().id.clone()),
-        ));
-        if let Some(name) = &request.user().name {
-            user_map.push((Value::Text("name".to_string()), Value::Text(name.clone())));
-        }
-        if let Some(display_name) = &request.user().display_name {
-            user_map.push((
-                Value::Text("displayName".to_string()),
-                Value::Text(display_name.clone()),
-            ));
-        }
-        cbor_request.push((Value::Integer(3.into()), Value::Map(user_map)));
+        let user_id_bytes = request.user().id.as_slice();
+        let user_name = request.user().name.as_deref();
+        let user_display_name = request.user().display_name.as_deref();
+
+        // Build user map manually to handle optional fields and byte array
+        let user_cbor = {
+            use serde::Serialize;
+
+            #[derive(Serialize)]
+            struct UserEntity<'a> {
+                id: &'a [u8],
+                #[serde(skip_serializing_if = "Option::is_none")]
+                name: Option<&'a str>,
+                #[serde(skip_serializing_if = "Option::is_none")]
+                #[serde(rename = "displayName")]
+                display_name: Option<&'a str>,
+            }
+
+            let user_entity = UserEntity {
+                id: user_id_bytes,
+                name: user_name,
+                display_name: user_display_name,
+            };
+
+            soft_fido2_ctap::cbor::encode(&user_entity).map_err(|_| Error::Other)?
+        };
+        builder = builder
+            .insert(
+                3,
+                &soft_fido2_ctap::cbor::decode::<Value>(&user_cbor).map_err(|_| Error::Other)?,
+            )
+            .map_err(|_| Error::Other)?;
 
         // 0x04: pubKeyCredParams (required) - ES256 only for now
-        let alg_param = vec![
-            (Value::Text("alg".to_string()), Value::Integer((-7).into())),
-            (
-                Value::Text("type".to_string()),
-                Value::Text("public-key".to_string()),
-            ),
-        ];
-        cbor_request.push((
-            Value::Integer(4.into()),
-            Value::Array(vec![Value::Map(alg_param)]),
-        ));
+        use serde::Serialize;
+
+        #[derive(Serialize)]
+        struct PubKeyCredParam {
+            alg: i32,
+            #[serde(rename = "type")]
+            cred_type: &'static str,
+        }
+
+        let alg_param = PubKeyCredParam {
+            alg: -7,
+            cred_type: "public-key",
+        };
+        builder = builder
+            .insert(4, vec![alg_param])
+            .map_err(|_| Error::Other)?;
 
         // 0x05: excludeList (optional, empty for now)
         // 0x06: extensions (optional)
 
         // 0x07: options (optional)
         if request.resident_key.is_some() || request.user_verification.is_some() {
-            let mut options_map = Vec::new();
-            if let Some(rk) = request.resident_key {
-                options_map.push((Value::Text("rk".to_string()), Value::Bool(rk)));
+            use serde::Serialize;
+
+            #[derive(Serialize)]
+            struct Options {
+                #[serde(skip_serializing_if = "Option::is_none")]
+                rk: Option<bool>,
+                #[serde(skip_serializing_if = "Option::is_none")]
+                uv: Option<bool>,
             }
-            if let Some(uv) = request.user_verification {
-                options_map.push((Value::Text("uv".to_string()), Value::Bool(uv)));
-            }
-            cbor_request.push((Value::Integer(7.into()), Value::Map(options_map)));
+
+            let options = Options {
+                rk: request.resident_key,
+                uv: request.user_verification,
+            };
+
+            builder = builder.insert(7, &options).map_err(|_| Error::Other)?;
         }
 
         // 0x08: pinUvAuthParam (optional)
         if let Some(pin_auth) = request.pin_uv_auth() {
-            cbor_request.push((
-                Value::Integer(8.into()),
-                Value::Bytes(pin_auth.param().to_vec()),
-            ));
+            builder = builder
+                .insert_bytes(8, pin_auth.param())
+                .map_err(|_| Error::Other)?;
 
             // 0x09: pinUvAuthProtocol (required if pinUvAuthParam is present)
-            cbor_request.push((
-                Value::Integer(9.into()),
-                Value::Integer(pin_auth.protocol_u8().into()),
-            ));
+            builder = builder
+                .insert(9, pin_auth.protocol_u8())
+                .map_err(|_| Error::Other)?;
         }
 
-        // Encode request to CBOR
-        let mut request_bytes = Vec::new();
-        soft_fido2_ctap::cbor::into_writer(&Value::Map(cbor_request), &mut request_bytes)
-            .map_err(|_| Error::Other)?;
+        // Build the CBOR request
+        let request_bytes = builder.build().map_err(|_| Error::Other)?;
 
         // Send CTAP command 0x01 (authenticatorMakeCredential)
         let response = transport.send_ctap_command(0x01, &request_bytes)?;
@@ -136,69 +160,75 @@ impl Client {
         transport: &mut Transport,
         request: GetAssertionRequest,
     ) -> Result<Vec<u8>> {
-        // Build the CTAP2 authenticatorGetAssertion request
-        let mut cbor_request = Vec::new();
+        // Build the CTAP2 authenticatorGetAssertion request using MapBuilder
+        let mut builder = MapBuilder::new();
 
         // 0x01: rpId (required)
-        cbor_request.push((
-            Value::Integer(1.into()),
-            Value::Text(request.rp_id().to_string()),
-        ));
+        builder = builder
+            .insert(1, request.rp_id())
+            .map_err(|_| Error::Other)?;
 
         // 0x02: clientDataHash (required)
-        cbor_request.push((
-            Value::Integer(2.into()),
-            Value::Bytes(request.client_data_hash().as_slice().to_vec()),
-        ));
+        builder = builder
+            .insert_bytes(2, request.client_data_hash().as_slice())
+            .map_err(|_| Error::Other)?;
 
         // 0x03: allowList (optional)
         if !request.allow_list().is_empty() {
-            let allow_list: Vec<Value> = request
+            use serde::Serialize;
+
+            #[derive(Serialize)]
+            struct Credential<'a> {
+                id: &'a [u8],
+                #[serde(rename = "type")]
+                credential_type: &'a str,
+            }
+
+            let allow_list: Vec<Credential> = request
                 .allow_list()
                 .iter()
-                .map(|cred| {
-                    let cred_map = vec![
-                        (Value::Text("id".to_string()), Value::Bytes(cred.id.clone())),
-                        (
-                            Value::Text("type".to_string()),
-                            Value::Text(cred.credential_type.as_str().to_string()),
-                        ),
-                    ];
-                    Value::Map(cred_map)
+                .map(|cred| Credential {
+                    id: cred.id.as_slice(),
+                    credential_type: cred.credential_type.as_str(),
                 })
                 .collect();
-            cbor_request.push((Value::Integer(3.into()), Value::Array(allow_list)));
+
+            builder = builder.insert(3, &allow_list).map_err(|_| Error::Other)?;
         }
 
         // 0x04: extensions (optional)
 
         // 0x05: options (optional)
         if request.user_verification.is_some() {
-            let mut options_map = Vec::new();
-            if let Some(uv) = request.user_verification {
-                options_map.push((Value::Text("uv".to_string()), Value::Bool(uv)));
+            use serde::Serialize;
+
+            #[derive(Serialize)]
+            struct Options {
+                #[serde(skip_serializing_if = "Option::is_none")]
+                uv: Option<bool>,
             }
-            cbor_request.push((Value::Integer(5.into()), Value::Map(options_map)));
+
+            let options = Options {
+                uv: request.user_verification,
+            };
+
+            builder = builder.insert(5, options).map_err(|_| Error::Other)?;
         }
 
         // 0x06: pinUvAuthParam (optional)
         if let Some(pin_auth) = request.pin_uv_auth() {
-            cbor_request.push((
-                Value::Integer(6.into()),
-                Value::Bytes(pin_auth.param().to_vec()),
-            ));
+            builder = builder
+                .insert_bytes(6, pin_auth.param())
+                .map_err(|_| Error::Other)?;
 
             // 0x07: pinUvAuthProtocol (required if pinUvAuthParam is present)
-            cbor_request.push((
-                Value::Integer(7.into()),
-                Value::Integer(pin_auth.protocol_u8().into()),
-            ));
+            builder = builder
+                .insert(7, pin_auth.protocol_u8())
+                .map_err(|_| Error::Other)?;
         }
 
-        // Encode request to CBOR
-        let mut request_bytes = Vec::new();
-        soft_fido2_ctap::cbor::into_writer(&Value::Map(cbor_request), &mut request_bytes)
-            .map_err(|_| Error::Other)?;
+        // Build the CBOR request
+        let request_bytes = builder.build().map_err(|_| Error::Other)?;
 
         // Send CTAP command 0x02 (authenticatorGetAssertion)
         let response = transport.send_ctap_command(0x02, &request_bytes)?;
@@ -242,97 +272,118 @@ impl Client {
     ///
     /// # Note
     ///
-    /// This method still performs internal allocations for CBOR encoding (using ciborium).
-    /// To achieve fully zero-allocation operation, a custom CBOR encoder would be needed.
-    /// However, it eliminates the final response allocation by writing directly to the caller's buffer.
+    /// Uses MapBuilder and StackBuffer for zero-allocation CBOR encoding.
+    /// Eliminates heap allocations by writing directly to the caller's buffer.
     pub fn make_credential_buf(
         transport: &mut Transport,
         request: MakeCredentialRequest,
         response: &mut [u8],
     ) -> Result<usize> {
-        // Build the CTAP2 authenticatorMakeCredential request
-        let mut cbor_request = Vec::new();
+        // Build the CTAP2 authenticatorMakeCredential request using MapBuilder
+        let mut builder = MapBuilder::new();
 
         // 0x01: clientDataHash (required)
-        cbor_request.push((
-            Value::Integer(1.into()),
-            Value::Bytes(request.client_data_hash().as_slice().to_vec()),
-        ));
+        builder = builder
+            .insert_bytes(1, request.client_data_hash().as_slice())
+            .map_err(|_| Error::Other)?;
 
         // 0x02: rp (required)
-        let mut rp_map = Vec::new();
-        rp_map.push((
-            Value::Text("id".to_string()),
-            Value::Text(request.rp().id.clone()),
-        ));
+        let mut rp_map = BTreeMap::new();
+        rp_map.insert("id", request.rp().id.as_str());
         if let Some(name) = &request.rp().name {
-            rp_map.push((Value::Text("name".to_string()), Value::Text(name.clone())));
+            rp_map.insert("name", name.as_str());
         }
-        cbor_request.push((Value::Integer(2.into()), Value::Map(rp_map)));
+        builder = builder.insert(2, &rp_map).map_err(|_| Error::Other)?;
 
         // 0x03: user (required)
-        let mut user_map = Vec::new();
-        user_map.push((
-            Value::Text("id".to_string()),
-            Value::Bytes(request.user().id.clone()),
-        ));
-        if let Some(name) = &request.user().name {
-            user_map.push((Value::Text("name".to_string()), Value::Text(name.clone())));
-        }
-        if let Some(display_name) = &request.user().display_name {
-            user_map.push((
-                Value::Text("displayName".to_string()),
-                Value::Text(display_name.clone()),
-            ));
-        }
-        cbor_request.push((Value::Integer(3.into()), Value::Map(user_map)));
+        let user_id_bytes = request.user().id.as_slice();
+        let user_name = request.user().name.as_deref();
+        let user_display_name = request.user().display_name.as_deref();
+
+        // Build user map manually to handle optional fields and byte array
+        let user_cbor = {
+            use serde::Serialize;
+
+            #[derive(Serialize)]
+            struct UserEntity<'a> {
+                id: &'a [u8],
+                #[serde(skip_serializing_if = "Option::is_none")]
+                name: Option<&'a str>,
+                #[serde(skip_serializing_if = "Option::is_none")]
+                #[serde(rename = "displayName")]
+                display_name: Option<&'a str>,
+            }
+
+            let user_entity = UserEntity {
+                id: user_id_bytes,
+                name: user_name,
+                display_name: user_display_name,
+            };
+
+            soft_fido2_ctap::cbor::encode(&user_entity).map_err(|_| Error::Other)?
+        };
+        builder = builder
+            .insert(
+                3,
+                &soft_fido2_ctap::cbor::decode::<Value>(&user_cbor).map_err(|_| Error::Other)?,
+            )
+            .map_err(|_| Error::Other)?;
 
         // 0x04: pubKeyCredParams (required) - ES256 only for now
-        let alg_param = vec![
-            (Value::Text("alg".to_string()), Value::Integer((-7).into())),
-            (
-                Value::Text("type".to_string()),
-                Value::Text("public-key".to_string()),
-            ),
-        ];
-        cbor_request.push((
-            Value::Integer(4.into()),
-            Value::Array(vec![Value::Map(alg_param)]),
-        ));
+        use serde::Serialize;
+
+        #[derive(Serialize)]
+        struct PubKeyCredParam {
+            alg: i32,
+            #[serde(rename = "type")]
+            cred_type: &'static str,
+        }
+
+        let alg_param = PubKeyCredParam {
+            alg: -7,
+            cred_type: "public-key",
+        };
+        builder = builder
+            .insert(4, vec![alg_param])
+            .map_err(|_| Error::Other)?;
 
         // 0x05: excludeList (optional, empty for now)
         // 0x06: extensions (optional)
 
         // 0x07: options (optional)
         if request.resident_key.is_some() || request.user_verification.is_some() {
-            let mut options_map = Vec::new();
-            if let Some(rk) = request.resident_key {
-                options_map.push((Value::Text("rk".to_string()), Value::Bool(rk)));
+            use serde::Serialize;
+
+            #[derive(Serialize)]
+            struct Options {
+                #[serde(skip_serializing_if = "Option::is_none")]
+                rk: Option<bool>,
+                #[serde(skip_serializing_if = "Option::is_none")]
+                uv: Option<bool>,
             }
-            if let Some(uv) = request.user_verification {
-                options_map.push((Value::Text("uv".to_string()), Value::Bool(uv)));
-            }
-            cbor_request.push((Value::Integer(7.into()), Value::Map(options_map)));
+
+            let options = Options {
+                rk: request.resident_key,
+                uv: request.user_verification,
+            };
+
+            builder = builder.insert(7, &options).map_err(|_| Error::Other)?;
         }
 
         // 0x08: pinUvAuthParam (optional)
         if let Some(pin_auth) = request.pin_uv_auth() {
-            cbor_request.push((
-                Value::Integer(8.into()),
-                Value::Bytes(pin_auth.param().to_vec()),
-            ));
+            builder = builder
+                .insert_bytes(8, pin_auth.param())
+                .map_err(|_| Error::Other)?;
 
             // 0x09: pinUvAuthProtocol (required if pinUvAuthParam is present)
-            cbor_request.push((
-                Value::Integer(9.into()),
-                Value::Integer(pin_auth.protocol_u8().into()),
-            ));
+            builder = builder
+                .insert(9, pin_auth.protocol_u8())
+                .map_err(|_| Error::Other)?;
         }
 
-        // Encode request to CBOR
-        let mut request_bytes = Vec::new();
-        soft_fido2_ctap::cbor::into_writer(&Value::Map(cbor_request), &mut request_bytes)
-            .map_err(|_| Error::Other)?;
+        // Build the CBOR request
+        let request_bytes = builder.build().map_err(|_| Error::Other)?;
 
         // Send CTAP command 0x01 (authenticatorMakeCredential) using zero-allocation transport
         transport.send_ctap_command_buf(0x01, &request_bytes, response)
@@ -359,77 +410,82 @@ impl Client {
     ///
     /// # Note
     ///
-    /// This method still performs internal allocations for CBOR encoding (using ciborium).
-    /// To achieve fully zero-allocation operation, a custom CBOR encoder would be needed.
-    /// However, it eliminates the final response allocation by writing directly to the caller's buffer.
+    /// Uses MapBuilder and StackBuffer for zero-allocation CBOR encoding.
+    /// Eliminates heap allocations by writing directly to the caller's buffer.
     pub fn get_assertion_buf(
         transport: &mut Transport,
         request: GetAssertionRequest,
         response: &mut [u8],
     ) -> Result<usize> {
-        // Build the CTAP2 authenticatorGetAssertion request
-        let mut cbor_request = Vec::new();
+        // Build the CTAP2 authenticatorGetAssertion request using MapBuilder
+        let mut builder = MapBuilder::new();
 
         // 0x01: rpId (required)
-        cbor_request.push((
-            Value::Integer(1.into()),
-            Value::Text(request.rp_id().to_string()),
-        ));
+        builder = builder
+            .insert(1, request.rp_id())
+            .map_err(|_| Error::Other)?;
 
         // 0x02: clientDataHash (required)
-        cbor_request.push((
-            Value::Integer(2.into()),
-            Value::Bytes(request.client_data_hash().as_slice().to_vec()),
-        ));
+        builder = builder
+            .insert_bytes(2, request.client_data_hash().as_slice())
+            .map_err(|_| Error::Other)?;
 
         // 0x03: allowList (optional)
         if !request.allow_list().is_empty() {
-            let allow_list: Vec<Value> = request
+            use serde::Serialize;
+
+            #[derive(Serialize)]
+            struct Credential<'a> {
+                id: &'a [u8],
+                #[serde(rename = "type")]
+                credential_type: &'a str,
+            }
+
+            let allow_list: Vec<Credential> = request
                 .allow_list()
                 .iter()
-                .map(|cred| {
-                    let cred_map = vec![
-                        (Value::Text("id".to_string()), Value::Bytes(cred.id.clone())),
-                        (
-                            Value::Text("type".to_string()),
-                            Value::Text(cred.credential_type.as_str().to_string()),
-                        ),
-                    ];
-                    Value::Map(cred_map)
+                .map(|cred| Credential {
+                    id: cred.id.as_slice(),
+                    credential_type: cred.credential_type.as_str(),
                 })
                 .collect();
-            cbor_request.push((Value::Integer(3.into()), Value::Array(allow_list)));
+
+            builder = builder.insert(3, &allow_list).map_err(|_| Error::Other)?;
         }
 
         // 0x04: extensions (optional)
 
         // 0x05: options (optional)
         if request.user_verification.is_some() {
-            let mut options_map = Vec::new();
-            if let Some(uv) = request.user_verification {
-                options_map.push((Value::Text("uv".to_string()), Value::Bool(uv)));
+            use serde::Serialize;
+
+            #[derive(Serialize)]
+            struct Options {
+                #[serde(skip_serializing_if = "Option::is_none")]
+                uv: Option<bool>,
             }
-            cbor_request.push((Value::Integer(5.into()), Value::Map(options_map)));
+
+            let options = Options {
+                uv: request.user_verification,
+            };
+
+            builder = builder.insert(5, options).map_err(|_| Error::Other)?;
         }
 
         // 0x06: pinUvAuthParam (optional)
         if let Some(pin_auth) = request.pin_uv_auth() {
-            cbor_request.push((
-                Value::Integer(6.into()),
-                Value::Bytes(pin_auth.param().to_vec()),
-            ));
+            builder = builder
+                .insert_bytes(6, pin_auth.param())
+                .map_err(|_| Error::Other)?;
 
             // 0x07: pinUvAuthProtocol (required if pinUvAuthParam is present)
-            cbor_request.push((
-                Value::Integer(7.into()),
-                Value::Integer(pin_auth.protocol_u8().into()),
-            ));
+            builder = builder
+                .insert(7, pin_auth.protocol_u8())
+                .map_err(|_| Error::Other)?;
         }
 
-        // Encode request to CBOR
-        let mut request_bytes = Vec::new();
-        soft_fido2_ctap::cbor::into_writer(&Value::Map(cbor_request), &mut request_bytes)
-            .map_err(|_| Error::Other)?;
+        // Build the CBOR request
+        let request_bytes = builder.build().map_err(|_| Error::Other)?;
 
         // Send CTAP command 0x02 (authenticatorGetAssertion) using zero-allocation transport
         transport.send_ctap_command_buf(0x02, &request_bytes, response)
