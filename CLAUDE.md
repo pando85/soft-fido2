@@ -281,6 +281,76 @@ let config = AuthenticatorConfig::builder()
 - `Drop` implementation automatically performs cleanup
 - Users never manually manage resource lifecycle
 
+## Embedded Systems Usage
+
+For memory-constrained embedded systems (ARM Cortex-M, RISC-V, etc.):
+
+### Memory-Optimized API
+
+The library provides sized buffers optimized for embedded deployment:
+
+```rust
+use soft_fido2_ctap::cbor::{
+    GetInfoBuffer,                // 256 bytes
+    MakeCredRequestBuffer,        // 512 bytes
+    MakeCredResponseBuffer,       // 1024 bytes
+    GetAssertionRequestBuffer,    // 512 bytes
+    GetAssertionResponseBuffer,   // 768 bytes
+};
+
+// Example: Build makeCredential request with 512-byte buffer
+let mut buffer = MakeCredRequestBuffer::new();
+let bytes_written = MapBuilder::new()
+    .insert_bytes(0x01, &client_data_hash)
+    .unwrap()
+    .insert_text_map(0x02, &[("id", "example.com")])
+    .unwrap()
+    .build_into(&mut buffer)
+    .unwrap();
+
+// Result: Only 85 bytes used out of 512-byte buffer
+```
+
+### Memory Requirements
+
+**Minimum Configuration:**
+- **Stack**: 2-4KB for typical operations
+- **Heap**: Optional (can use `alloc` without `std`)
+- **Flash**: ~50KB for basic CTAP support
+- **RAM**: 32-128KB depending on features
+
+**Typical Request Sizes:**
+- getInfo: ~200 bytes
+- makeCredential: ~85-400 bytes
+- getAssertion: ~49-250 bytes
+
+### Features
+
+```bash
+# Standard build (with std library)
+cargo build
+
+# Embedded build (no_std with alloc)
+cargo build --no-default-features
+
+# Note: Full no_std support is partial - requires thiserror replacement
+```
+
+### Example
+
+See `soft-fido2/examples/embedded_minimal.rs` for a complete example:
+
+```bash
+cargo run --example embedded_minimal --no-default-features --features std
+```
+
+### Optimizations Applied
+
+1. **Const generic buffers**: Stack usage reduced from 7.6KB to 256-1024 bytes (87-93% reduction)
+2. **SmallVec integration**: Avoids heap allocations for small collections (< 4 items)
+3. **Direct CBOR encoding**: Eliminates BTreeMap allocations (~100 bytes saved)
+4. **Total savings**: ~300-500 bytes heap + 6.5KB stack per operation
+
 ## What NOT to Do
 
 - ❌ Use `println!`, `eprintln!`, or `dbg!` in production code (only in tests)
