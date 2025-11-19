@@ -16,6 +16,8 @@ use crate::{
 
 use soft_fido2_crypto::ecdsa;
 
+use alloc::format;
+
 use sha2::{Digest, Sha256};
 
 /// GetAssertion request parameter keys

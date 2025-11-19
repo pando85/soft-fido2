@@ -16,7 +16,12 @@ use crate::{
 
 use soft_fido2_crypto::ecdsa;
 
+#[cfg(feature = "std")]
 use std::time::{SystemTime, UNIX_EPOCH};
+
+use alloc::format;
+use alloc::vec;
+use alloc::vec::Vec;
 
 use rand::RngCore;
 use sha2::{Digest, Sha256};
@@ -332,11 +337,20 @@ fn generate_credential_id() -> Vec<u8> {
 }
 
 /// Get current timestamp in seconds
+#[cfg(feature = "std")]
 fn current_timestamp() -> i64 {
     SystemTime::now()
         .duration_since(UNIX_EPOCH)
         .unwrap_or_default()
         .as_secs() as i64
+}
+
+/// Get current timestamp in seconds (no_std fallback)
+#[cfg(not(feature = "std"))]
+fn current_timestamp() -> i64 {
+    // In no_std, return 0. Applications can override this by providing
+    // their own time source through the authenticator config.
+    0
 }
 
 /// Build authenticator data

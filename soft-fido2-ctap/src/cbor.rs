@@ -21,6 +21,7 @@ use std::io::{self, Write};
 use core2::io::{self, Write};
 
 use serde::{Deserialize, Serialize};
+use smallvec::SmallVec;
 
 pub type Value = cbor4ii::core::Value;
 
@@ -28,22 +29,59 @@ pub type Value = cbor4ii::core::Value;
 ///
 /// This is defined by the CTAP specification as the maximum size of a CTAP HID packet
 /// payload after fragmentation reassembly.
-const MAX_CTAP_MESSAGE_SIZE: usize = 7609;
+pub const MAX_CTAP_MESSAGE_SIZE: usize = 7609;
+
+/// Request-specific buffer sizes optimized for embedded systems
+///
+/// These sizes are based on typical CTAP message sizes and allow stack-based
+/// allocation without exceeding embedded stack limits (typically 2-8KB).
+pub const GETINFO_BUFFER_SIZE: usize = 256;
+pub const MAKECRED_REQUEST_BUFFER_SIZE: usize = 512;
+pub const MAKECRED_RESPONSE_BUFFER_SIZE: usize = 1024;
+pub const GETASSERTION_REQUEST_BUFFER_SIZE: usize = 512;
+pub const GETASSERTION_RESPONSE_BUFFER_SIZE: usize = 768;
+pub const CLIENTPIN_REQUEST_BUFFER_SIZE: usize = 512;
+pub const CLIENTPIN_RESPONSE_BUFFER_SIZE: usize = 256;
+
+/// Type aliases for common buffer sizes
+///
+/// These provide convenient names for commonly used buffer sizes in CTAP operations.
+pub type GetInfoBuffer = StackBuffer<GETINFO_BUFFER_SIZE>;
+pub type MakeCredRequestBuffer = StackBuffer<MAKECRED_REQUEST_BUFFER_SIZE>;
+pub type MakeCredResponseBuffer = StackBuffer<MAKECRED_RESPONSE_BUFFER_SIZE>;
+pub type GetAssertionRequestBuffer = StackBuffer<GETASSERTION_REQUEST_BUFFER_SIZE>;
+pub type GetAssertionResponseBuffer = StackBuffer<GETASSERTION_RESPONSE_BUFFER_SIZE>;
+pub type ClientPinRequestBuffer = StackBuffer<CLIENTPIN_REQUEST_BUFFER_SIZE>;
+pub type ClientPinResponseBuffer = StackBuffer<CLIENTPIN_RESPONSE_BUFFER_SIZE>;
 
 /// Fixed-size buffer that implements Write trait for zero-allocation CBOR encoding
 ///
-/// CTAP maximum message size is 7609 bytes, so we use that as our buffer size.
-/// This allows encoding CBOR messages on the stack without any heap allocations.
-pub struct StackBuffer {
-    buf: [u8; MAX_CTAP_MESSAGE_SIZE],
+/// The buffer size is configurable via const generics, allowing you to choose
+/// the appropriate size for your use case:
+/// - Embedded systems: Use request-specific buffer sizes (256-1024 bytes)
+/// - Development/testing: Use MAX_CTAP_MESSAGE_SIZE (7609 bytes)
+///
+/// # Examples
+///
+/// ```
+/// use soft_fido2_ctap::cbor::{StackBuffer, GETINFO_BUFFER_SIZE};
+///
+/// // Embedded-friendly buffer (256 bytes on stack)
+/// let mut buffer = StackBuffer::<GETINFO_BUFFER_SIZE>::new();
+///
+/// // Full-size buffer for development (7609 bytes on stack)
+/// let mut large_buffer = StackBuffer::<7609>::new();
+/// ```
+pub struct StackBuffer<const N: usize> {
+    buf: [u8; N],
     pos: usize,
 }
 
-impl StackBuffer {
+impl<const N: usize> StackBuffer<N> {
     /// Create a new empty buffer on the stack
     pub const fn new() -> Self {
         Self {
-            buf: [0u8; MAX_CTAP_MESSAGE_SIZE],
+            buf: [0u8; N],
             pos: 0,
         }
     }
@@ -74,13 +112,13 @@ impl StackBuffer {
     }
 }
 
-impl Write for StackBuffer {
+impl<const N: usize> Write for StackBuffer<N> {
     fn write(&mut self, data: &[u8]) -> io::Result<usize> {
         let available = self.buf.len() - self.pos;
         if data.len() > available {
             return Err(io::Error::new(
                 io::ErrorKind::WriteZero,
-                "buffer overflow: CBOR message exceeds 7609 bytes",
+                "buffer overflow: CBOR message exceeds buffer size",
             ));
         }
 
@@ -94,7 +132,7 @@ impl Write for StackBuffer {
     }
 }
 
-impl fmt::Debug for StackBuffer {
+impl<const N: usize> fmt::Debug for StackBuffer<N> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(
             f,
@@ -105,7 +143,7 @@ impl fmt::Debug for StackBuffer {
     }
 }
 
-impl Default for StackBuffer {
+impl<const N: usize> Default for StackBuffer<N> {
     fn default() -> Self {
         Self::new()
     }
@@ -113,13 +151,16 @@ impl Default for StackBuffer {
 
 /// Encode a value to CBOR bytes using stack buffer (zero heap allocations during encoding)
 pub fn encode<T: Serialize>(value: &T) -> Result<Vec<u8>> {
-    let mut buffer = StackBuffer::new();
+    let mut buffer = StackBuffer::<MAX_CTAP_MESSAGE_SIZE>::new();
     cbor4ii::serde::to_writer(&mut buffer, value).map_err(|_| StatusCode::InvalidCbor)?;
     Ok(buffer.to_vec())
 }
 
 /// Encode directly to a provided buffer (completely zero-allocation)
-pub fn encode_to_buffer<T: Serialize>(value: &T, buffer: &mut StackBuffer) -> Result<()> {
+pub fn encode_to_buffer<T: Serialize, const N: usize>(
+    value: &T,
+    buffer: &mut StackBuffer<N>,
+) -> Result<()> {
     buffer.clear();
     cbor4ii::serde::to_writer(buffer, value).map_err(|_| StatusCode::InvalidCbor)
 }
@@ -230,16 +271,104 @@ impl MapBuilder {
         Ok(self)
     }
 
-    /// Build the map and encode to CBOR bytes
-    pub fn build(self) -> Result<Vec<u8>> {
+    /// Insert a nested map with text keys
+    ///
+    /// This method manually encodes a CBOR map with text (string) keys, avoiding
+    /// the need for BTreeMap allocation. This is useful for embedded systems where
+    /// heap allocations should be minimized.
+    ///
+    /// # Arguments
+    ///
+    /// * `key` - The integer key for the outer map
+    /// * `fields` - A slice of (key, value) tuples where both are strings
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use soft_fido2_ctap::cbor::MapBuilder;
+    ///
+    /// let builder = MapBuilder::new()
+    ///     .insert_text_map(2, &[("id", "example.com"), ("name", "Example")])
+    ///     .unwrap();
+    /// ```
+    pub fn insert_text_map(mut self, key: i32, fields: &[(&str, &str)]) -> Result<Self> {
+        // Use SmallVec to avoid heap allocation for typical map sizes (< 128 bytes)
+        let mut inner_buffer = SmallVec::<[u8; 128]>::new();
+
+        // Write map header
+        let len = fields.len();
+        if len <= 23 {
+            inner_buffer.push(0xa0 | len as u8);
+        } else if len <= 255 {
+            inner_buffer.push(0xb8);
+            inner_buffer.push(len as u8);
+        } else {
+            return Err(StatusCode::InvalidCbor);
+        }
+
+        // Write key-value pairs
+        for (k, v) in fields {
+            // Write key (text string)
+            let k_bytes = k.as_bytes();
+            if k_bytes.len() <= 23 {
+                inner_buffer.push(0x60 | k_bytes.len() as u8);
+            } else if k_bytes.len() <= 255 {
+                inner_buffer.push(0x78);
+                inner_buffer.push(k_bytes.len() as u8);
+            } else {
+                return Err(StatusCode::InvalidCbor);
+            }
+            inner_buffer.extend_from_slice(k_bytes);
+
+            // Write value (text string)
+            let v_bytes = v.as_bytes();
+            if v_bytes.len() <= 23 {
+                inner_buffer.push(0x60 | v_bytes.len() as u8);
+            } else if v_bytes.len() <= 255 {
+                inner_buffer.push(0x78);
+                inner_buffer.push(v_bytes.len() as u8);
+            } else {
+                return Err(StatusCode::InvalidCbor);
+            }
+            inner_buffer.extend_from_slice(v_bytes);
+        }
+
+        self.entries.push((key, inner_buffer.to_vec()));
+        Ok(self)
+    }
+
+    /// Build the map and encode to CBOR bytes into a provided buffer
+    ///
+    /// This is the zero-allocation variant that writes directly to the provided buffer.
+    /// Returns the number of bytes written.
+    ///
+    /// # Arguments
+    ///
+    /// * `buffer` - The buffer to write the encoded CBOR map into
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use soft_fido2_ctap::cbor::{MapBuilder, StackBuffer, GETINFO_BUFFER_SIZE};
+    ///
+    /// let mut buffer = StackBuffer::<GETINFO_BUFFER_SIZE>::new();
+    /// let len = MapBuilder::new()
+    ///     .insert(1, "test").unwrap()
+    ///     .build_into(&mut buffer).unwrap();
+    ///
+    /// assert!(len > 0);
+    /// ```
+    pub fn build_into<const N: usize>(self, buffer: &mut StackBuffer<N>) -> Result<usize> {
         let mut map = BTreeMap::new();
 
         for (key, value_bytes) in self.entries {
             map.insert(CborOrderedI32(key), RawCborValue(value_bytes));
         }
 
+        // Clear buffer before writing
+        buffer.clear();
+
         // Manually write CBOR map with keys in canonical order
-        let mut buffer = StackBuffer::new();
 
         // Write map header
         let len = map.len();
@@ -312,7 +441,17 @@ impl MapBuilder {
                 .map_err(|_| StatusCode::InvalidCbor)?;
         }
 
-        Ok(buffer.to_vec())
+        Ok(buffer.len())
+    }
+
+    /// Build the map and encode to CBOR bytes (allocating variant)
+    ///
+    /// This uses a full-size buffer and returns a Vec. For embedded systems,
+    /// prefer using `build_into` with a sized buffer.
+    pub fn build(self) -> Result<Vec<u8>> {
+        let mut buffer = StackBuffer::<MAX_CTAP_MESSAGE_SIZE>::new();
+        let len = self.build_into(&mut buffer)?;
+        Ok(buffer.as_slice()[..len].to_vec())
     }
 
     /// Build the map as a CBOR Value for manual construction (compatibility with ciborium)
@@ -419,7 +558,7 @@ mod tests {
 
     #[test]
     fn test_stack_buffer_write() {
-        let mut buf = StackBuffer::new();
+        let mut buf = StackBuffer::<MAX_CTAP_MESSAGE_SIZE>::new();
         buf.write_all(b"hello").unwrap();
         assert_eq!(buf.as_slice(), b"hello");
         assert_eq!(buf.len(), 5);
@@ -428,7 +567,7 @@ mod tests {
 
     #[test]
     fn test_stack_buffer_clear() {
-        let mut buf = StackBuffer::new();
+        let mut buf = StackBuffer::<MAX_CTAP_MESSAGE_SIZE>::new();
         buf.write_all(b"hello").unwrap();
         buf.clear();
         assert_eq!(buf.len(), 0);
@@ -437,10 +576,36 @@ mod tests {
 
     #[test]
     fn test_stack_buffer_overflow() {
-        let mut buf = StackBuffer::new();
+        let mut buf = StackBuffer::<MAX_CTAP_MESSAGE_SIZE>::new();
         let large_data = alloc::vec![0u8; MAX_CTAP_MESSAGE_SIZE + 1];
         let result = buf.write_all(&large_data);
         assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_stack_buffer_sized() {
+        // Test with small buffer
+        let mut buf = StackBuffer::<64>::new();
+        buf.write_all(b"hello").unwrap();
+        assert_eq!(buf.as_slice(), b"hello");
+
+        // Test buffer overflow with small buffer
+        let large_data = alloc::vec![0u8; 65];
+        let result = buf.write_all(&large_data);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_type_aliases() {
+        // Test that type aliases work correctly
+        let mut getinfo_buf = GetInfoBuffer::new();
+        assert_eq!(getinfo_buf.len(), 0);
+
+        let mut makecred_buf = MakeCredRequestBuffer::new();
+        assert_eq!(makecred_buf.len(), 0);
+
+        let mut getassertion_buf = GetAssertionRequestBuffer::new();
+        assert_eq!(getassertion_buf.len(), 0);
     }
 
     #[test]
@@ -470,7 +635,7 @@ mod tests {
     #[test]
     fn test_encode_to_buffer_zero_allocation() {
         let value = "hello";
-        let mut buffer = StackBuffer::new();
+        let mut buffer = StackBuffer::<MAX_CTAP_MESSAGE_SIZE>::new();
 
         encode_to_buffer(&value, &mut buffer).unwrap();
         assert_eq!(buffer.len(), 6); // CBOR encoding of "hello"
@@ -481,6 +646,19 @@ mod tests {
 
         let decoded: alloc::string::String = decode(buffer.as_slice()).unwrap();
         assert_eq!(decoded, "world");
+    }
+
+    #[test]
+    fn test_encode_to_small_buffer() {
+        // Test encoding with small buffer
+        let value = "hi";
+        let mut buffer = StackBuffer::<16>::new();
+
+        encode_to_buffer(&value, &mut buffer).unwrap();
+        assert!(buffer.len() > 0);
+
+        let decoded: alloc::string::String = decode(buffer.as_slice()).unwrap();
+        assert_eq!(decoded, "hi");
     }
 
     #[test]
@@ -573,6 +751,29 @@ mod tests {
     }
 
     #[test]
+    fn test_map_builder_into_sized_buffer() {
+        // Test build_into with sized buffer
+        let mut buffer = StackBuffer::<256>::new();
+        let len = MapBuilder::new()
+            .insert(1, "test")
+            .unwrap()
+            .insert(2, 42i32)
+            .unwrap()
+            .build_into(&mut buffer)
+            .unwrap();
+
+        assert!(len > 0);
+        assert_eq!(buffer.len(), len);
+
+        // Verify the encoded data is correct
+        let parser = MapParser::from_bytes(buffer.as_slice()).unwrap();
+        let s: alloc::string::String = parser.get(1).unwrap();
+        let i: i32 = parser.get(2).unwrap();
+        assert_eq!(s, "test");
+        assert_eq!(i, 42);
+    }
+
+    #[test]
     fn test_integer_key_map_direct() {
         use alloc::collections::BTreeMap;
 
@@ -619,6 +820,29 @@ mod tests {
             credential_id, decoded_id,
             "Credential ID corrupted in round-trip!"
         );
+    }
+
+    #[test]
+    fn test_insert_text_map() {
+        // Test insert_text_map with simple fields
+        let cbor = MapBuilder::new()
+            .insert_text_map(1, &[("id", "example.com")])
+            .unwrap()
+            .build()
+            .unwrap();
+
+        let parser = MapParser::from_bytes(&cbor).unwrap();
+        assert!(parser.contains_key(1));
+
+        // Test with multiple fields
+        let cbor2 = MapBuilder::new()
+            .insert_text_map(2, &[("id", "example.com"), ("name", "Example Corp")])
+            .unwrap()
+            .build()
+            .unwrap();
+
+        let parser2 = MapParser::from_bytes(&cbor2).unwrap();
+        assert!(parser2.contains_key(2));
     }
 
     #[test]

@@ -8,7 +8,7 @@ use crate::transport::Transport;
 
 use soft_fido2_ctap::cbor::{MapBuilder, Value};
 
-use std::collections::BTreeMap;
+use smallvec::SmallVec;
 
 /// Client for communicating with FIDO2 authenticators
 pub struct Client;
@@ -39,12 +39,15 @@ impl Client {
             .map_err(|_| Error::Other)?;
 
         // 0x02: rp (required)
-        let mut rp_map = BTreeMap::new();
-        rp_map.insert("id", request.rp().id.as_str());
+        // Use SmallVec to avoid heap allocation for RP fields
+        let mut rp_fields: SmallVec<[(&str, &str); 2]> = SmallVec::new();
+        rp_fields.push(("id", request.rp().id.as_str()));
         if let Some(name) = &request.rp().name {
-            rp_map.insert("name", name.as_str());
+            rp_fields.push(("name", name.as_str()));
         }
-        builder = builder.insert(2, &rp_map).map_err(|_| Error::Other)?;
+        builder = builder
+            .insert_text_map(2, &rp_fields)
+            .map_err(|_| Error::Other)?;
 
         // 0x03: user (required)
         let user_id_bytes = request.user().id.as_slice();
@@ -94,9 +97,9 @@ impl Client {
             alg: -7,
             cred_type: "public-key",
         };
-        builder = builder
-            .insert(4, vec![alg_param])
-            .map_err(|_| Error::Other)?;
+        // Use SmallVec to avoid heap allocation for single algorithm
+        let alg_params: SmallVec<[PubKeyCredParam; 1]> = SmallVec::from_buf([alg_param]);
+        builder = builder.insert(4, alg_params).map_err(|_| Error::Other)?;
 
         // 0x05: excludeList (optional, empty for now)
         // 0x06: extensions (optional)
@@ -182,7 +185,8 @@ impl Client {
                 credential_type: &'a str,
             }
 
-            let allow_list: Vec<Credential> = request
+            // Use SmallVec to avoid heap allocation for common cases (0-4 credentials)
+            let allow_list: SmallVec<[Credential; 4]> = request
                 .allow_list()
                 .iter()
                 .map(|cred| Credential {
@@ -286,12 +290,15 @@ impl Client {
             .map_err(|_| Error::Other)?;
 
         // 0x02: rp (required)
-        let mut rp_map = BTreeMap::new();
-        rp_map.insert("id", request.rp().id.as_str());
+        // Use SmallVec to avoid heap allocation for RP fields
+        let mut rp_fields: SmallVec<[(&str, &str); 2]> = SmallVec::new();
+        rp_fields.push(("id", request.rp().id.as_str()));
         if let Some(name) = &request.rp().name {
-            rp_map.insert("name", name.as_str());
+            rp_fields.push(("name", name.as_str()));
         }
-        builder = builder.insert(2, &rp_map).map_err(|_| Error::Other)?;
+        builder = builder
+            .insert_text_map(2, &rp_fields)
+            .map_err(|_| Error::Other)?;
 
         // 0x03: user (required)
         let user_id_bytes = request.user().id.as_slice();
@@ -341,9 +348,9 @@ impl Client {
             alg: -7,
             cred_type: "public-key",
         };
-        builder = builder
-            .insert(4, vec![alg_param])
-            .map_err(|_| Error::Other)?;
+        // Use SmallVec to avoid heap allocation for single algorithm
+        let alg_params: SmallVec<[PubKeyCredParam; 1]> = SmallVec::from_buf([alg_param]);
+        builder = builder.insert(4, alg_params).map_err(|_| Error::Other)?;
 
         // 0x05: excludeList (optional, empty for now)
         // 0x06: extensions (optional)
@@ -439,7 +446,8 @@ impl Client {
                 credential_type: &'a str,
             }
 
-            let allow_list: Vec<Credential> = request
+            // Use SmallVec to avoid heap allocation for common cases (0-4 credentials)
+            let allow_list: SmallVec<[Credential; 4]> = request
                 .allow_list()
                 .iter()
                 .map(|cred| Credential {

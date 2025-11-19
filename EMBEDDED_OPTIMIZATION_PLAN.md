@@ -5,15 +5,32 @@
 ✅ **Completed:**
 - Zero-allocation CBOR encoding architecture (MapBuilder)
 - StackBuffer for CBOR encoding (replaces heap allocations)
+- **Phase 1: Generic StackBuffer with const generics (COMPLETED)**
+  - Reduced stack usage from 7.6KB to 256-1024 bytes per request
+  - Request-specific buffer size constants
+  - Type aliases for common operations
+- **Phase 2: SmallVec integration (COMPLETED)**
+  - Replaced Vec with SmallVec in client code
+  - Reduced heap allocations by 200-400 bytes per request
+- **Phase 3: Direct CBOR encoding (COMPLETED)**
+  - Added `insert_text_map` method to MapBuilder
+  - Eliminated BTreeMap usage in client code
+  - Reduced heap allocations by ~100 bytes per request
 - Transport layer uses SmallVec for packets
 - Fixed-size arrays for crypto keys
 - PIN protocol uses MapBuilder
 
-🚫 **Blocking Embedded Deployment:**
-- 7.6KB stack allocation in StackBuffer (exceeds typical embedded stack)
-- Requires `std` feature (no_std compilation fails)
-- Remaining heap allocations (Vec, BTreeMap, String)
+⚠️ **Partial Progress:**
+- **Phase 4: no_std compilation (PARTIAL)**
+  - Fixed SystemTime conditional compilation
+  - Added alloc imports for Vec, String, format!, vec!
+  - Fixed core::result usage
+  - ⚠️ Still requires: thiserror replacement for full no_std support
+
+🚫 **Remaining for Full Embedded Support:**
+- Complete no_std compilation (thiserror Error derive needs replacement)
 - No embedded example or documentation
+- Memory profiling and validation
 
 ## Target Requirements
 

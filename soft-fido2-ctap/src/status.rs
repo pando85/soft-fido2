@@ -298,7 +298,7 @@ impl From<soft_fido2_crypto::CryptoError> for StatusCode {
 }
 
 /// Result type for CTAP operations
-pub type Result<T> = std::result::Result<T, StatusCode>;
+pub type Result<T> = core::result::Result<T, StatusCode>;
 
 #[cfg(test)]
 mod tests {
