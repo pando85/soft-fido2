@@ -101,6 +101,11 @@ impl<const N: usize> StackBuffer<N> {
         self.pos
     }
 
+    /// Get buffer capacity
+    pub fn capacity(&self) -> usize {
+        N
+    }
+
     /// Check if buffer is empty
     pub fn is_empty(&self) -> bool {
         self.pos == 0

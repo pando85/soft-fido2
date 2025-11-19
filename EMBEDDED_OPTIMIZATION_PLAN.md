@@ -27,10 +27,15 @@
   - Fixed core::result usage
   - ⚠️ Still requires: thiserror replacement for full no_std support
 
+✅ **Phase 5: Embedded example and documentation (COMPLETED)**
+  - Created `examples/embedded_minimal.rs` demonstrating memory-optimized API
+  - Added `capacity()` method to StackBuffer
+  - Documented embedded usage in CLAUDE.md
+  - Shows actual memory usage: 85 bytes for makeCredential, 49 bytes for getAssertion
+
 🚫 **Remaining for Full Embedded Support:**
 - Complete no_std compilation (thiserror Error derive needs replacement)
-- No embedded example or documentation
-- Memory profiling and validation
+- Memory profiling and validation on real embedded hardware
 
 ## Target Requirements
 
