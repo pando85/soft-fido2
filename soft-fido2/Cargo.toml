@@ -1,0 +1,69 @@
+[package]
+name = "soft-fido2"
+description = "Keylib bindings"
+authors.workspace = true
+edition.workspace = true
+license-file.workspace = true
+readme.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+version.workspace = true
+
+[features]
+default = ["std", "usb"]
+# Enable standard library (required for transport layers)
+std = ["soft-fido2-crypto/std", "soft-fido2-ctap/std", "soft-fido2-transport"]
+# Enable USB HID transport (requires std and libudev on Linux)
+usb = ["std", "soft-fido2-transport/usb"]
+# Integration tests
+integration-tests = []
+
+[dependencies]
+# Pure Rust implementation
+soft-fido2-crypto = { path = "../soft-fido2-crypto", default-features = false }
+soft-fido2-ctap = { path = "../soft-fido2-ctap", default-features = false }
+soft-fido2-transport = { path = "../soft-fido2-transport", optional = true }
+
+# CBOR and cryptography
+cbor4ii.workspace = true
+serde_bytes.workspace = true
+p256.workspace = true
+rand.workspace = true
+serde.workspace = true
+sha2.workspace = true
+aes.workspace = true
+cbc.workspace = true
+hmac.workspace = true
+hkdf.workspace = true
+hex.workspace = true
+smallvec.workspace = true
+
+# no_std synchronization primitives
+spin.workspace = true
+
+[dev-dependencies]
+lazy_static.workspace = true
+base64.workspace = true
+serial_test.workspace = true
+hex.workspace = true
+serde_cbor.workspace = true
+webauthn-rs = "0.5.3"
+url = "2.5"
+uuid = { version = "1.11", features = ["v4"] }
+
+# Examples
+[[example]]
+name = "client"
+
+[[example]]
+name = "webauthn_flow"
+
+[[example]]
+name = "authenticator"
+
+[[example]]
+name = "pin_protocol"
+
+[[example]]
+name = "credential_management"
+

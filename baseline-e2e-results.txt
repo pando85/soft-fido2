@@ -1,0 +1,15 @@
+cargo test --test e2e_webauthn_test -- --ignored
+warning: keylib-sys@0.2.3: Building keylib from source
+warning: keylib-sys@0.2.3: Keylib dir: /home/agil/passless-project/rust-keylib/keylib-sys/keylib
+warning: keylib-sys@0.2.3: Prefix dir: /home/agil/passless-project/rust-keylib/target/debug/build/keylib-sys-190241abaf58181d/out/zig-install
+warning: keylib-sys@0.2.3: Cache dir: /home/agil/passless-project/rust-keylib/target/debug/build/keylib-sys-190241abaf58181d/out/zig-cache
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.07s
+     Running tests/e2e_webauthn_test.rs (target/debug/deps/e2e_webauthn_test-cf6ff908b95626dc)
+
+running 4 tests
+test test_pin_change_flow ... ok
+test test_complete_webauthn_flow ... ok
+test test_registration_without_pin ... ok
+test test_uv_only_authenticator ... ok
+
+test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 9.17s

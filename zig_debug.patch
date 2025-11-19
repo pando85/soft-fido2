@@ -1,0 +1,36 @@
+diff --git a/keylib-sys/keylib/lib/ctap/transports/ctaphid/authenticator.zig b/keylib-sys/keylib/lib/ctap/transports/ctaphid/authenticator.zig
+--- a/keylib-sys/keylib/lib/ctap/transports/ctaphid/authenticator.zig
++++ b/keylib-sys/keylib/lib/ctap/transports/ctaphid/authenticator.zig
+@@ -334,6 +334,11 @@
+                             true,
+                             false,
+                         );
++                        // DEBUG: Show INIT response details
++                        std.debug.print("DEBUG INIT response: wink={} cbor={} nmsg={}\n", .{
++                            false, true, false,
++                        });
++                        std.debug.print("DEBUG INIT capabilities byte: 0x{x:0>2}\n", .{@as(u8, 4)});
+                         ir.serialize(self.data[0..InitResponse.SIZE]);
+                         return CtapHidMsg.new(self.cmd.?, self.busy.?, self.data[0..InitResponse.SIZE]);
+                     } else {
+diff --git a/keylib-sys/keylib/lib/ctap/commands/authenticator/get_info.zig b/keylib-sys/keylib/lib/ctap/commands/authenticator/get_info.zig
+--- a/keylib-sys/keylib/lib/ctap/commands/authenticator/get_info.zig
++++ b/keylib-sys/keylib/lib/ctap/commands/authenticator/get_info.zig
+@@ -17,7 +17,16 @@
+     auth.settings.forcePINChange = settings.force_pin_change;
+     auth.settings.options.alwaysUv = settings.always_uv;
+ 
++    // DEBUG: Show what we're about to serialize
++    std.debug.print("DEBUG getInfo: versions.len={} extensions={any}\n", .{
++        auth.settings.versions.len,
++        auth.settings.extensions,
++    });
++    std.debug.print("DEBUG getInfo: clientPin={any} pinUvAuthToken={}\n", .{
++        auth.settings.options.clientPin,
++        auth.settings.options.pinUvAuthToken,
++    });
+     cbor.stringify(auth.settings, .{}, out) catch {
++        std.debug.print("DEBUG getInfo: serialization failed\n", .{});
+         return fido.ctap.StatusCodes.ctap1_err_other;
+     };
+     return fido.ctap.StatusCodes.ctap1_err_success;

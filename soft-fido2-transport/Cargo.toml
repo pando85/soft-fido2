@@ -1,0 +1,23 @@
+[package]
+name = "soft-fido2-transport"
+version.workspace = true
+authors.workspace = true
+rust-version.workspace = true
+edition.workspace = true
+license-file.workspace = true
+repository.workspace = true
+readme.workspace = true
+
+[dependencies]
+# USB HID transport (optional)
+hidapi = { workspace = true, optional = true }
+hex = { workspace = true }
+smallvec = { workspace = true }
+
+# Linux UHID support (Linux only)
+[target.'cfg(target_os = "linux")'.dependencies]
+nix = { workspace = true, features = ["fs"] }
+
+[features]
+default = []
+usb = ["dep:hidapi"]

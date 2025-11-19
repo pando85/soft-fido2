@@ -1,0 +1,157 @@
+name: Rust
+
+on:
+  push:
+    branches: [master]
+    tags:
+      - v[0-9]*
+  pull_request:
+    branches: [master]
+
+jobs:
+  fmt:
+    name: Rustfmt
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout sources
+        uses: actions/checkout@v5
+
+      - name: Install stable toolchain
+        id: toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      - run: rustup override set ${{steps.toolchain.outputs.name}}
+      - run: rustup component add rustfmt
+
+      - name: Run cargo fmt
+        run: cargo fmt --all -- --check
+
+  clippy:
+    name: Clippy
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout sources
+        uses: actions/checkout@v5
+        with:
+          submodules: true
+
+      - name: Install udev dependency
+        run: sudo apt update && sudo apt -y install libudev-dev
+
+      - name: Install stable toolchain
+        id: toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Install Zig
+        uses: mlugg/setup-zig@v2
+
+      - run: rustup override set ${{steps.toolchain.outputs.name}}
+      - run: rustup component add clippy
+
+      - uses: clechasseur/rs-clippy-check@v5
+        with:
+          args: -- --deny warnings
+
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        job:
+          # use ubuntu 22.04 to keep older glibc version dependency
+          - {target: x86_64-unknown-linux-gnu, os: ubuntu-22.04}
+    name: ${{ matrix.job.target }} (${{ matrix.job.os }})
+    runs-on: ${{ matrix.job.os }}
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          submodules: true
+
+      - uses: Swatinem/rust-cache@v2
+
+      - name: Install udev dependency
+        run: sudo apt update && sudo apt -y install libudev-dev
+
+      - name: Install Rust toolchain
+        uses: actions-rs/toolchain@v1
+        with:
+          toolchain: stable
+          target: ${{ matrix.job.target }}
+          override: true
+
+      - name: Install Zig
+        uses: mlugg/setup-zig@v2
+
+      - name: Build
+        shell: bash
+        run: cargo build --verbose
+
+      - name: Run tests
+        shell: bash
+        run: cargo test --verbose
+
+      # The following steps are disabled because GH runners do not have UHID available.
+      # - name: Run integration tests
+      #   shell: bash
+      #   run: make test-integration
+
+      # - name: Load and verify UHID kernel module
+      #   shell: bash
+      #   run: |
+      #     echo "Checking for UHID kernel module..."
+
+      #     # Try to load UHID module if not already loaded
+      #     if ! lsmod | grep -q uhid; then
+      #       echo "Loading UHID kernel module..."
+      #       sudo modprobe uhid
+      #     else
+      #       echo "UHID module already loaded"
+      #     fi
+
+      #     # Verify /dev/uhid exists
+      #     if [ ! -e /dev/uhid ]; then
+      #       echo "ERROR: /dev/uhid not found after loading module"
+      #       exit 1
+      #     fi
+
+      #     # Set permissions
+      #     sudo chmod 666 /dev/uhid
+      #     echo "UHID is available and permissions set"
+
+      # - name: Run E2E WebAuthn tests
+      #   shell: bash
+      #   run: make test-e2e
+
+      - name: Extract crate information
+        shell: bash
+        run: |
+          echo "PROJECT_NAME=timer" >> $GITHUB_ENV
+          echo "PROJECT_VERSION=$(sed -n 's/^version = "\(.*\)"/\1/p' ./Cargo.toml | head -n1)" >> $GITHUB_ENV
+
+      - name: Publish crates
+        if: startsWith(github.ref, 'refs/tags/') && matrix.job.target == 'x86_64-unknown-linux-gnu'
+        env:
+          CRATES_IO_TOKEN: ${{ secrets.CRATES_IO_TOKEN }}
+        shell: bash
+        run: |
+          echo "${CRATES_IO_TOKEN}" | cargo login
+          make publish
+
+      - name: Get Changelog Entry
+        if: startsWith(github.ref, 'refs/tags/')
+        id: changelog_reader
+        uses: mindsers/changelog-reader-action@v2.2.3
+        with:
+          version: v${{ env.PROJECT_VERSION }}
+          path: ./CHANGELOG.md
+
+      - name: Publish
+        uses: softprops/action-gh-release@v2
+        if: startsWith(github.ref, 'refs/tags/')
+        with:
+          body: ${{ steps.changelog_reader.outputs.changes }}
+          prerelease: ${{ steps.changelog_reader.outputs.status == 'prereleased' }}
+          draft: ${{ steps.changelog_reader.outputs.status == 'unreleased' }}
+        env:
+          # Use PAT to trigger prebuilt.yml workflow
+          # See: https://docs.github.com/en/actions/using-workflows/triggering-a-workflow#triggering-a-workflow-from-a-workflow
+          GITHUB_TOKEN: ${{ secrets.PAT_RELEASE || secrets.GITHUB_TOKEN }}

@@ -1,0 +1,132 @@
+   Compiling keylib-ctap v0.2.3 (/home/agil/passless-project/rust-keylib/keylib-ctap)
+   Compiling keylib-crypto v0.2.3 (/home/agil/passless-project/rust-keylib/keylib-crypto)
+   Compiling keylib-transport v0.2.3 (/home/agil/passless-project/rust-keylib/keylib-transport)
+warning: keylib-sys@0.2.3: Building keylib from source
+warning: keylib-sys@0.2.3: Keylib dir: /home/agil/passless-project/rust-keylib/keylib-sys/keylib
+warning: keylib-sys@0.2.3: Prefix dir: /home/agil/passless-project/rust-keylib/target/debug/build/keylib-sys-190241abaf58181d/out/zig-install
+warning: keylib-sys@0.2.3: Cache dir: /home/agil/passless-project/rust-keylib/target/debug/build/keylib-sys-190241abaf58181d/out/zig-cache
+   Compiling keylib-sys v0.2.3 (/home/agil/passless-project/rust-keylib/keylib-sys)
+   Compiling keylib v0.2.3 (/home/agil/passless-project/rust-keylib/keylib)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.56s
+     Running unittests src/lib.rs (target/debug/deps/keylib-2620f2d634d3d026)
+
+running 3 tests
+test ctap_command::tests::test_command_codes ... ok
+test ctap_command::tests::test_default_commands ... ok
+test ctap_command::tests::test_from_u8 ... ok
+
+test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests/credential_storage_test.rs (target/debug/deps/credential_storage_test-cd3f538bd30ed03f)
+
+running 2 tests
+test tests::test_credential_storage_and_retrieval ... ok
+test tests::test_multiple_credentials ... ok
+
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests/e2e_webauthn_test.rs (target/debug/deps/e2e_webauthn_test-cf6ff908b95626dc)
+
+running 4 tests
+test test_complete_webauthn_flow ... ignored
+test test_pin_change_flow ... ignored
+test test_registration_without_pin ... ignored
+test test_uv_only_authenticator ... ignored
+
+test result: ok. 0 passed; 0 failed; 4 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests/integration.rs (target/debug/deps/integration-05e6af7ed7b8d00f)
+
+running 3 tests
+test integration_tests::test_authenticator_get_info ... ok
+test integration_tests::test_transport_enumeration ... ok
+test unit_tests::test_pin_encapsulation_creation ... ok
+
+test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s
+
+     Running unittests src/lib.rs (target/debug/deps/keylib_crypto-469fd31fd1e9c985)
+
+running 1 test
+test tests::it_works ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running unittests src/lib.rs (target/debug/deps/keylib_ctap-33f99eeb659b7f3e)
+
+running 1 test
+test tests::it_works ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running unittests src/lib.rs (target/debug/deps/keylib_sys-83c4caa0b6d10600)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running unittests src/lib.rs (target/debug/deps/keylib_transport-10997ff11ab6db08)
+
+running 1 test
+test tests::it_works ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+   Doc-tests keylib
+
+running 30 tests
+test keylib/src/authenticator.rs - authenticator::Authenticator::handle (line 972) - compile ... ok
+test keylib/src/authenticator.rs - authenticator::Authenticator::new (line 757) - compile ... ok
+test keylib/src/authenticator.rs - authenticator::Authenticator::set_pin_hash (line 720) - compile ... ok
+test keylib/src/authenticator.rs - authenticator::Authenticator::with_config (line 792) - compile ... ok
+test keylib/src/authenticator_config.rs - authenticator_config::AuthenticatorConfig (line 18) - compile ... ok
+test keylib/src/client/mod.rs - client::Client::get_assertion (line 470) - compile ... ok
+test keylib/src/client/mod.rs - client::Client::make_credential (line 312) - compile ... ok
+test keylib/src/client/requests.rs - client::requests::GetAssertionRequest (line 199) - compile ... ok
+test keylib/src/client/requests.rs - client::requests::MakeCredentialRequest (line 14) - compile ... ok
+test keylib/src/authenticator_options.rs - authenticator_options::AuthenticatorOptions (line 20) ... ok
+test keylib/src/client_pin.rs - client_pin::PinUvAuthEncapsulation::authenticate (line 274) - compile ... ok
+test keylib/src/custom_command.rs - custom_command::CustomCommand (line 36) - compile ... ok
+test keylib/src/credential_management.rs - credential_management (line 16) - compile ... ok
+test keylib/src/custom_command.rs - custom_command::CustomCommand::new (line 65) - compile ... ok
+test keylib/src/client/requests.rs - client::requests::GetAssertionRequest::with_timeout (line 305) ... ok
+test keylib/src/client/requests.rs - client::requests::GetAssertionRequest::with_credential (line 250) ... ok
+test keylib/src/client/requests.rs - client::requests::GetAssertionRequest::new (line 230) ... ok
+test keylib/src/client/requests.rs - client::requests::GetAssertionRequest::with_credentials (line 268) ... ok
+test keylib/src/client/requests.rs - client::requests::GetAssertionRequest::with_pin_uv_auth (line 287) ... ok
+test keylib/src/client/requests.rs - client::requests::GetAssertionRequest::with_user_verification (line 324) ... ok
+test keylib/src/client/requests.rs - client::requests::MakeCredentialRequest::with_pin_uv_auth (line 89) ... ok
+test keylib/src/client/requests.rs - client::requests::MakeCredentialRequest::with_resident_key (line 131) ... ok
+test keylib/src/client/requests.rs - client::requests::MakeCredentialRequest::with_timeout (line 110) ... ok
+test keylib/src/client/requests.rs - client::requests::MakeCredentialRequest::with_user_verification (line 153) ... ok
+test keylib/src/client/requests.rs - client::requests::MakeCredentialRequest::new (line 57) ... ok
+test keylib/src/client/types.rs - client::types::ClientDataHash::from_slice (line 34) ... ok
+test keylib/src/client/types.rs - client::types::ClientDataHash::new (line 17) ... ok
+test keylib/src/client/types.rs - client::types::CredentialDescriptor::new (line 107) ... ok
+test keylib/src/client/types.rs - client::types::CredentialDescriptor::public_key (line 125) ... ok
+test keylib/src/client/types.rs - client::types::PinUvAuth::new (line 179) ... ok
+
+test result: ok. 30 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+   Doc-tests keylib_crypto
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+   Doc-tests keylib_ctap
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+   Doc-tests keylib_sys
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+   Doc-tests keylib_transport
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s

@@ -1,0 +1,50 @@
+[workspace]
+members = ["soft-fido2", "soft-fido2-crypto", "soft-fido2-ctap", "soft-fido2-transport"]
+resolver = "2"
+
+
+[workspace.package]
+version = "0.2.3"
+authors = ["Pando85 <pando855@gmail.com>"]
+rust-version = "1.91"
+edition = "2024"
+license-file = "LICENSE"
+repository = "https://github.com/pando85/soft-fido2"
+readme = "README.md"
+
+[workspace.dependencies]
+# Cryptography (well-audited crates)
+p256 = { version = "0.13", features = ["ecdsa", "ecdh"] }
+sha2 = "0.10"
+hmac = "0.12"
+hkdf = "0.12"
+aes = "0.8"
+cbc = { version = "0.1", features = ["alloc"] }
+rand = "0.8"
+subtle = "2.6"
+
+# CBOR serialization
+cbor4ii = { version = "1.2", features = ["serde1", "use_std"] }
+serde = { version = "1.0", features = ["derive"] }
+serde_bytes = "0.11"
+
+# Error handling
+thiserror = "1.0"
+
+# Utilities
+hex = "0.4"
+smallvec = "1.13"
+spin = "0.9"
+
+# Transport
+hidapi = "2.6"
+
+# Platform-specific (Linux UHID)
+nix = { version = "0.29", features = ["fs", "ioctl"] }
+
+# Dev dependencies
+base64 = "0.22"
+lazy_static = "1.4"
+serial_test = "3.0"
+serde_cbor = "0.11"
+hex-literal = "0.4"
