@@ -89,11 +89,6 @@ jobs:
         shell: bash
         run: cargo test --verbose
 
-      # The following steps are disabled because GH runners do not have UHID available.
-      # - name: Run integration tests
-      #   shell: bash
-      #   run: make test-integration
-
       # - name: Load and verify UHID kernel module
       #   shell: bash
       #   run: |
@@ -151,7 +146,3 @@ jobs:
           body: ${{ steps.changelog_reader.outputs.changes }}
           prerelease: ${{ steps.changelog_reader.outputs.status == 'prereleased' }}
           draft: ${{ steps.changelog_reader.outputs.status == 'unreleased' }}
-        env:
-          # Use PAT to trigger prebuilt.yml workflow
-          # See: https://docs.github.com/en/actions/using-workflows/triggering-a-workflow#triggering-a-workflow-from-a-workflow
-          GITHUB_TOKEN: ${{ secrets.PAT_RELEASE || secrets.GITHUB_TOKEN }}
