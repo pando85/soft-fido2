@@ -146,7 +146,8 @@ fn main() -> Result<()> {
         0x88,
     ];
     let options = AuthenticatorOptions::new()
-        .with_user_verification(Some(true))
+        .with_user_verification(Some(false))
+        .with_client_pin(Some(true))
         .with_credential_management(Some(true));
     let extensions = vec!["credProtect".to_string(), "federationId".to_string()];
     let max_creds = 100;
