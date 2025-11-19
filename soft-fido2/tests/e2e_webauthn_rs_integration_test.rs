@@ -114,6 +114,30 @@ impl AuthenticatorCallbacks for TestCallbacks {
             .collect();
         Ok(filtered)
     }
+
+    fn enumerate_rps(&self) -> SoftFido2Result<Vec<(String, Option<String>, usize)>> {
+        let store = self.credentials.lock().unwrap();
+        let mut rp_map: HashMap<String, (Option<String>, usize)> = HashMap::new();
+
+        for cred in store.values() {
+            let entry = rp_map
+                .entry(cred.rp.id.clone())
+                .or_insert((cred.rp.name.clone(), 0));
+            entry.1 += 1;
+        }
+
+        let result: Vec<(String, Option<String>, usize)> = rp_map
+            .into_iter()
+            .map(|(rp_id, (rp_name, count))| (rp_id, rp_name, count))
+            .collect();
+
+        Ok(result)
+    }
+
+    fn credential_count(&self) -> SoftFido2Result<usize> {
+        let store = self.credentials.lock().unwrap();
+        Ok(store.len())
+    }
 }
 
 /// Helper to create test authenticator

@@ -133,6 +133,16 @@ impl From<CtapUvResult> for UvResult {
 ///         // List credentials for RP
 ///         Ok(vec![])
 ///     }
+///
+///     fn enumerate_rps(&self) -> soft_fido2::Result<Vec<(String, Option<String>, usize)>> {
+///         // Return list of (rp_id, rp_name, credential_count)
+///         Ok(vec![])
+///     }
+///
+///     fn credential_count(&self) -> soft_fido2::Result<usize> {
+///         // Return total credential count
+///         Ok(0)
+///     }
 /// }
 /// ```
 pub trait AuthenticatorCallbacks: Send + Sync {
@@ -214,6 +224,22 @@ pub trait AuthenticatorCallbacks: Send + Sync {
     fn select_credential(&self, _rp_id: &str, _credentials: &[Credential]) -> Result<usize> {
         Ok(0) // Default: select first credential
     }
+
+    /// Enumerate all relying parties with stored credentials
+    ///
+    /// Used for credential management operations.
+    ///
+    /// # Returns
+    ///
+    /// Vector of tuples: (rp_id, rp_name, credential_count)
+    fn enumerate_rps(&self) -> Result<Vec<(String, Option<String>, usize)>>;
+
+    /// Get total number of discoverable credentials
+    ///
+    /// # Returns
+    ///
+    /// Total count of all discoverable credentials across all RPs
+    fn credential_count(&self) -> Result<usize>;
 }
 
 /// Callback adapter that implements soft-fido2-ctap traits
@@ -334,13 +360,15 @@ impl<C: AuthenticatorCallbacks> CredentialStorageCallbacks for CallbackAdapter<C
     }
 
     fn enumerate_rps(&self) -> soft_fido2_ctap::Result<Vec<(String, Option<String>, usize)>> {
-        // Not directly supported in callback model
-        Ok(vec![])
+        self.callbacks
+            .enumerate_rps()
+            .map_err(|_| StatusCode::Other)
     }
 
     fn credential_count(&self) -> soft_fido2_ctap::Result<usize> {
-        // Not directly supported in callback model
-        Ok(0)
+        self.callbacks
+            .credential_count()
+            .map_err(|_| StatusCode::Other)
     }
 }
 
@@ -642,6 +670,14 @@ mod tests {
 
         fn list_credentials(&self, _: &str, _: Option<&[u8]>) -> Result<Vec<Credential>> {
             Ok(vec![])
+        }
+
+        fn enumerate_rps(&self) -> Result<Vec<(String, Option<String>, usize)>> {
+            Ok(vec![])
+        }
+
+        fn credential_count(&self) -> Result<usize> {
+            Ok(0)
         }
     }
 
