@@ -20,7 +20,6 @@ use crate::{
 /// Credential Management subcommand codes
 #[repr(u8)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-#[allow(dead_code)]
 enum SubCommand {
     GetCredsMetadata = 0x01,
     EnumerateRPsBegin = 0x02,
@@ -29,6 +28,23 @@ enum SubCommand {
     EnumerateCredentialsGetNextCredential = 0x05,
     DeleteCredential = 0x06,
     UpdateUserInformation = 0x07,
+}
+
+impl TryFrom<u8> for SubCommand {
+    type Error = StatusCode;
+
+    fn try_from(value: u8) -> std::result::Result<Self, Self::Error> {
+        match value {
+            0x01 => Ok(SubCommand::GetCredsMetadata),
+            0x02 => Ok(SubCommand::EnumerateRPsBegin),
+            0x03 => Ok(SubCommand::EnumerateRPsGetNextRP),
+            0x04 => Ok(SubCommand::EnumerateCredentialsBegin),
+            0x05 => Ok(SubCommand::EnumerateCredentialsGetNextCredential),
+            0x06 => Ok(SubCommand::DeleteCredential),
+            0x07 => Ok(SubCommand::UpdateUserInformation),
+            _ => Err(StatusCode::InvalidSubcommand),
+        }
+    }
 }
 
 /// Request parameter keys
@@ -72,7 +88,8 @@ pub fn handle<C: AuthenticatorCallbacks>(
     let parser = MapParser::from_bytes(data)?;
 
     // Parse subcommand
-    let subcommand: u8 = parser.get(req_keys::SUBCOMMAND)?;
+    let subcommand_byte: u8 = parser.get(req_keys::SUBCOMMAND)?;
+    let subcommand = SubCommand::try_from(subcommand_byte)?;
 
     // All subcommands require PIN/UV auth
     let _pin_protocol: Option<u8> = parser.get_opt(req_keys::PIN_UV_AUTH_PROTOCOL)?;
@@ -85,14 +102,15 @@ pub fn handle<C: AuthenticatorCallbacks>(
     }
 
     match subcommand {
-        0x01 => handle_get_creds_metadata(auth),
-        0x02 => handle_enumerate_rps_begin(auth),
-        0x03 => handle_enumerate_rps_get_next(auth),
-        0x04 => handle_enumerate_credentials_begin(auth, &parser),
-        0x05 => handle_enumerate_credentials_get_next(auth),
-        0x06 => handle_delete_credential(auth, &parser),
-        0x07 => handle_update_user_information(auth, &parser),
-        _ => Err(StatusCode::InvalidSubcommand),
+        SubCommand::GetCredsMetadata => handle_get_creds_metadata(auth),
+        SubCommand::EnumerateRPsBegin => handle_enumerate_rps_begin(auth),
+        SubCommand::EnumerateRPsGetNextRP => handle_enumerate_rps_get_next(auth),
+        SubCommand::EnumerateCredentialsBegin => handle_enumerate_credentials_begin(auth, &parser),
+        SubCommand::EnumerateCredentialsGetNextCredential => {
+            handle_enumerate_credentials_get_next(auth)
+        }
+        SubCommand::DeleteCredential => handle_delete_credential(auth, &parser),
+        SubCommand::UpdateUserInformation => handle_update_user_information(auth, &parser),
     }
 }
 

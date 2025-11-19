@@ -638,6 +638,46 @@ impl<C: AuthenticatorCallbacks> Authenticator<C> {
             }
         }
     }
+
+    /// Register a custom CTAP command handler
+    ///
+    /// This allows registering vendor-specific commands in the 0x40-0xFF range.
+    ///
+    /// # Example
+    ///
+    /// ```no_run
+    /// # use soft_fido2::{Authenticator, AuthenticatorCallbacks, UpResult, UvResult, Credential, CredentialRef};
+    /// # struct MyCallbacks;
+    /// # impl AuthenticatorCallbacks for MyCallbacks {
+    /// #     fn request_up(&self, _: &str, _: Option<&str>, _: &str) -> soft_fido2::Result<UpResult> { Ok(UpResult::Accepted) }
+    /// #     fn request_uv(&self, _: &str, _: Option<&str>, _: &str) -> soft_fido2::Result<UvResult> { Ok(UvResult::Accepted) }
+    /// #     fn write_credential(&self, _: &[u8], _: &str, _: &CredentialRef) -> soft_fido2::Result<()> { Ok(()) }
+    /// #     fn read_credential(&self, _: &[u8], _: &str) -> soft_fido2::Result<Option<Credential>> { Ok(None) }
+    /// #     fn delete_credential(&self, _: &[u8]) -> soft_fido2::Result<()> { Ok(()) }
+    /// #     fn list_credentials(&self, _: &str, _: Option<&[u8]>) -> soft_fido2::Result<Vec<Credential>> { Ok(vec![]) }
+    /// # }
+    /// let callbacks = MyCallbacks;
+    /// let mut auth = Authenticator::new(callbacks).unwrap();
+    ///
+    /// // Register custom command 0x41
+    /// auth.register_custom_command(0x41, |request| {
+    ///     // Process custom command
+    ///     Ok(vec![0x01, 0x02, 0x03])
+    /// });
+    /// ```
+    pub fn register_custom_command<F>(&mut self, command: u8, handler: F)
+    where
+        F: Fn(&[u8]) -> core::result::Result<Vec<u8>, StatusCode> + Send + Sync + 'static,
+    {
+        let mut dispatcher = self
+            .dispatcher
+            .lock()
+            .expect("Failed to lock dispatcher for custom command registration");
+
+        dispatcher
+            .authenticator_mut()
+            .register_custom_command(command, handler);
+    }
 }
 
 #[cfg(test)]
