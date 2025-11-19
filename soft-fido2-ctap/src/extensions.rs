@@ -8,6 +8,9 @@
 
 use crate::status::Result;
 
+use alloc::string::ToString;
+use alloc::{vec, vec::Vec};
+
 use rand::RngCore;
 use serde::{Deserialize, Serialize};
 

@@ -11,6 +11,8 @@ use crate::{
     status::{Result, StatusCode},
 };
 
+use alloc::vec::Vec;
+
 /// Handle authenticatorGetNextAssertion command
 ///
 /// Returns the next assertion from the batch created by authenticatorGetAssertion.

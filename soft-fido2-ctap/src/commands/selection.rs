@@ -13,6 +13,8 @@ use crate::{
     status::{Result, StatusCode},
 };
 
+use alloc::{format, string::String, vec::Vec};
+
 /// Handle authenticatorSelection command
 ///
 /// This command requests user presence (typically by blinking an LED or

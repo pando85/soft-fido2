@@ -14,6 +14,8 @@ use crate::{
     status::Result,
 };
 
+use alloc::{string::{String, ToString}, vec, vec::Vec};
+
 use serde::Serialize;
 
 /// GetInfo response keys

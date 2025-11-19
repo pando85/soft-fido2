@@ -16,6 +16,8 @@ use crate::{
     status::{Result, StatusCode},
 };
 
+use alloc::{format, string::String, vec::Vec};
+
 use rand::RngCore;
 use subtle::ConstantTimeEq;
 
@@ -187,7 +189,7 @@ fn handle_set_pin<C: AuthenticatorCallbacks>(
         .iter()
         .position(|&b| b == 0)
         .unwrap_or(decrypted_pin.len());
-    let pin_str = std::str::from_utf8(&decrypted_pin[..pin_len])
+    let pin_str = core::str::from_utf8(&decrypted_pin[..pin_len])
         .map_err(|_| StatusCode::PinPolicyViolation)?;
 
     // Set the PIN (this validates length)
@@ -282,7 +284,7 @@ fn handle_change_pin<C: AuthenticatorCallbacks>(
         .iter()
         .position(|&b| b == 0)
         .unwrap_or(decrypted_new_pin.len());
-    let new_pin_str = std::str::from_utf8(&decrypted_new_pin[..pin_len])
+    let new_pin_str = core::str::from_utf8(&decrypted_new_pin[..pin_len])
         .map_err(|_| StatusCode::PinPolicyViolation)?;
 
     // Set new PIN directly (we've already verified the old PIN via pin_hash_enc)

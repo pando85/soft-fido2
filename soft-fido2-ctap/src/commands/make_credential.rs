@@ -20,6 +20,7 @@ use soft_fido2_crypto::ecdsa;
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use alloc::format;
+use alloc::string::{String, ToString};
 use alloc::vec;
 use alloc::vec::Vec;
 
