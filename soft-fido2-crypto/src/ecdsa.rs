@@ -9,11 +9,13 @@
 //! - Signature format: DER-encoded or raw (r || s)
 
 extern crate alloc;
-use alloc::vec::Vec;
 
 use crate::error::{CryptoError, Result};
 
-use p256::ecdsa::{Signature, SigningKey, VerifyingKey, signature::Signer, signature::Verifier};
+use alloc::vec::Vec;
+
+use p256::ecdsa::signature::{Signer, Verifier};
+use p256::ecdsa::{Signature, SigningKey, VerifyingKey};
 use rand::rngs::OsRng;
 
 /// Generate new random ES256 key pair

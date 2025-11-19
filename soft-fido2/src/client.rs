@@ -11,8 +11,6 @@ use soft_fido2_ctap::cbor::{MapBuilder, Value};
 use std::collections::BTreeMap;
 
 /// Client for communicating with FIDO2 authenticators
-///
-/// Matches the API of the zig-ffi Client type.
 pub struct Client;
 
 impl Client {

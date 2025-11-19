@@ -5,15 +5,15 @@
 use crate::error::{Error, Result};
 use crate::types::{Credential, CredentialRef};
 
-use soft_fido2_ctap::{
-    CommandDispatcher, StatusCode,
-    authenticator::{Authenticator as CtapAuthenticator, AuthenticatorConfig as CtapConfig},
-    callbacks::{
-        CredentialStorageCallbacks, UpResult as CtapUpResult, UserInteractionCallbacks,
-        UvResult as CtapUvResult,
-    },
-    types::Credential as CtapCredential,
+use soft_fido2_ctap::authenticator::{
+    Authenticator as CtapAuthenticator, AuthenticatorConfig as CtapConfig,
 };
+use soft_fido2_ctap::callbacks::{
+    CredentialStorageCallbacks, UpResult as CtapUpResult, UserInteractionCallbacks,
+    UvResult as CtapUvResult,
+};
+use soft_fido2_ctap::types::Credential as CtapCredential;
+use soft_fido2_ctap::{CommandDispatcher, StatusCode};
 
 use alloc::sync::Arc;
 use alloc::vec::Vec;

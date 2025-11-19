@@ -4,18 +4,21 @@
 //!
 //! Spec: <https://fidoalliance.org/specs/fido-v2.2-rd-20230321/fido-client-to-authenticator-protocol-v2.2-rd-20230321.html#authenticatorMakeCredential>
 
-use crate::authenticator::Authenticator;
-use crate::callbacks::AuthenticatorCallbacks;
-use crate::cbor::{MapBuilder, MapParser};
-use crate::extensions::MakeCredentialExtensions;
-use crate::status::{Result, StatusCode};
-use crate::types::{
-    PublicKeyCredentialDescriptor, PublicKeyCredentialParameters, RelyingParty, User,
+use crate::{
+    CredProtect, UpResult, UvResult,
+    authenticator::Authenticator,
+    callbacks::AuthenticatorCallbacks,
+    cbor::{MapBuilder, MapParser},
+    extensions::MakeCredentialExtensions,
+    status::{Result, StatusCode},
+    types::{PublicKeyCredentialDescriptor, PublicKeyCredentialParameters, RelyingParty, User},
 };
-use crate::{CredProtect, UpResult, UvResult};
 
 use soft_fido2_crypto::ecdsa;
 
+use std::time::{SystemTime, UNIX_EPOCH};
+
+use rand::RngCore;
 use sha2::{Digest, Sha256};
 
 /// MakeCredential request parameter keys
@@ -323,7 +326,6 @@ struct AttestationCredential {
 
 /// Generate a random credential ID
 fn generate_credential_id() -> Vec<u8> {
-    use rand::RngCore;
     let mut id = vec![0u8; 32];
     rand::thread_rng().fill_bytes(&mut id);
     id
@@ -331,7 +333,6 @@ fn generate_credential_id() -> Vec<u8> {
 
 /// Get current timestamp in seconds
 fn current_timestamp() -> i64 {
-    use std::time::{SystemTime, UNIX_EPOCH};
     SystemTime::now()
         .duration_since(UNIX_EPOCH)
         .unwrap_or_default()

@@ -33,26 +33,13 @@ cargo build --no-default-features
 # Run basic tests
 make test
 
-# Run integration tests (in-memory WebAuthn)
-make test-integration
-
-# Run E2E tests (requires UHID permissions)
+# Run E2E tests (requires UHID permissions, check below)
 make test-e2e
-
-# Run all tests
-make test-all
 ```
 
 ### Linting and Formatting
 
 ```bash
-# Format code
-cargo fmt
-
-# Run clippy
-cargo clippy --all-targets --all-features -- -D warnings
-
-# Run both
 make lint
 ```
 

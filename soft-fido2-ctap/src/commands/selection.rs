@@ -5,11 +5,13 @@
 //!
 //! Spec: <https://fidoalliance.org/specs/fido-v2.2-rd-20230321/fido-client-to-authenticator-protocol-v2.2-rd-20230321.html#authenticatorSelection>
 
-use crate::UpResult;
-use crate::authenticator::Authenticator;
-use crate::callbacks::AuthenticatorCallbacks;
-use crate::cbor::MapBuilder;
-use crate::status::{Result, StatusCode};
+use crate::{
+    UpResult,
+    authenticator::Authenticator,
+    callbacks::AuthenticatorCallbacks,
+    cbor::MapBuilder,
+    status::{Result, StatusCode},
+};
 
 /// Handle authenticatorSelection command
 ///
@@ -35,10 +37,13 @@ pub fn handle<C: AuthenticatorCallbacks>(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::UvResult;
-    use crate::authenticator::{Authenticator, AuthenticatorConfig};
-    use crate::callbacks::{CredentialStorageCallbacks, UserInteractionCallbacks};
-    use crate::types::Credential;
+
+    use crate::{
+        UvResult,
+        authenticator::{Authenticator, AuthenticatorConfig},
+        callbacks::{CredentialStorageCallbacks, UserInteractionCallbacks},
+        types::Credential,
+    };
 
     struct AcceptingCallbacks;
 

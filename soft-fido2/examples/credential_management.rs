@@ -19,10 +19,7 @@
 //! cargo run --example credential_management --features pure-rust
 //! ```
 
-use soft_fido2::Result;
-use soft_fido2::client::Client;
-use soft_fido2::transport::TransportList;
-use soft_fido2::{PinProtocol, PinUvAuthEncapsulation};
+use soft_fido2::{Client, PinProtocol, PinUvAuthEncapsulation, Result, TransportList};
 
 use soft_fido2_ctap::cbor::Value;
 

@@ -20,12 +20,10 @@
 //!
 //! The authenticator will run until you press Ctrl+C.
 
-use soft_fido2::AuthenticatorOptions;
-use soft_fido2::authenticator::{
-    Authenticator, AuthenticatorCallbacks, AuthenticatorConfig, UpResult, UvResult,
+use soft_fido2::{
+    Authenticator, AuthenticatorCallbacks, AuthenticatorConfig, AuthenticatorOptions, Credential,
+    CredentialRef, Result, Uhid, UpResult, UvResult,
 };
-use soft_fido2::uhid::Uhid;
-use soft_fido2::{Credential, CredentialRef, Result};
 
 use soft_fido2_transport::{Cmd, Message, Packet};
 

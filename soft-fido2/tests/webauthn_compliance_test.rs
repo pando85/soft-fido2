@@ -3,16 +3,17 @@
 //! This test suite validates that soft-fido2 produces valid WebAuthn-compliant
 //! responses that match the spec requirements.
 
+use soft_fido2::{
+    Authenticator, AuthenticatorCallbacks, AuthenticatorConfig, AuthenticatorOptions, Credential,
+    CredentialRef, Result, UpResult, UvResult,
+};
+
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 
 use base64::Engine;
 use base64::engine::general_purpose::URL_SAFE_NO_PAD;
 use sha2::{Digest, Sha256};
-use soft_fido2::{
-    Authenticator, AuthenticatorCallbacks, AuthenticatorConfig, AuthenticatorOptions, Credential,
-    CredentialRef, Result, UpResult, UvResult,
-};
 
 const RP_ID: &str = "example.com";
 const ORIGIN: &str = "https://example.com";

@@ -1,13 +1,4 @@
-//! CTAP Command Types (pure-rust compatibility layer)
-//!
-//! This module provides API compatibility with zig-ffi for command configuration.
-//! In pure-rust implementation, these types are informational only - all commands
-//! are supported by default.
-
 /// CTAP 2.1 Command Codes
-///
-/// This enum is provided for API compatibility with zig-ffi.
-/// In pure-rust implementation, all commands are supported by default.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 #[repr(u8)]
 pub enum CtapCommand {

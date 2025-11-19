@@ -1,10 +1,10 @@
 //! Error types for cryptographic operations
 
-#[cfg(feature = "std")]
-use thiserror::Error;
-
 #[cfg(not(feature = "std"))]
 use core::fmt;
+
+#[cfg(feature = "std")]
+use thiserror::Error;
 
 /// Cryptographic operation errors
 #[cfg(feature = "std")]

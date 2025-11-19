@@ -7,11 +7,10 @@
 //! cargo run --example client --features pure-rust
 //! ```
 
-use soft_fido2::client::Client;
-use soft_fido2::transport::TransportList;
+use soft_fido2::{Client, TransportList};
 
 fn main() {
-    println!("Keylib Rust Client Example");
+    println!("soft-fido2 Rust Client Example");
 
     // Enumerate available transports
     println!("Enumerating available transports...");

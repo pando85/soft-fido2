@@ -1,5 +1,6 @@
 [package]
 name = "soft-fido2-ctap"
+description = "CTAP 2.0/2.1 protocol implementation for the soft-fido2 FIDO2/WebAuthn authenticator"
 version.workspace = true
 authors.workspace = true
 rust-version.workspace = true
@@ -9,9 +10,8 @@ repository.workspace = true
 readme.workspace = true
 
 [dependencies]
-# Internal dependencies
-soft-fido2-crypto = { path = "../soft-fido2-crypto", default-features = false }
-soft-fido2-transport = { path = "../soft-fido2-transport", optional = true }
+soft-fido2-crypto.workspace = true
+soft-fido2-transport = { workspace = true, optional = true }
 
 # CBOR serialization
 cbor4ii.workspace = true

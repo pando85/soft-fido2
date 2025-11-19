@@ -34,9 +34,6 @@ pub struct Extensions {
 }
 
 /// Owned representation of a FIDO2 credential
-///
-/// This is the unified credential type used by both implementations.
-/// It matches the zig-ffi structure exactly.
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
 pub struct Credential {
     /// Credential ID (max 64 bytes)
@@ -140,7 +137,6 @@ impl Credential {
     }
 }
 
-// Conversion from keylib-ctap credential type (pure Rust implementation)
 impl From<soft_fido2_ctap::types::Credential> for Credential {
     fn from(cred: soft_fido2_ctap::types::Credential) -> Self {
         Credential {
@@ -167,7 +163,6 @@ impl From<soft_fido2_ctap::types::Credential> for Credential {
     }
 }
 
-// Conversion to keylib-ctap credential type (pure Rust implementation)
 impl From<Credential> for soft_fido2_ctap::types::Credential {
     fn from(cred: Credential) -> Self {
         soft_fido2_ctap::types::Credential {

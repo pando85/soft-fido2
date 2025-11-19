@@ -3,10 +3,12 @@
 //! Routes CTAP commands to their appropriate handlers and manages the
 //! authenticator state.
 
-use crate::authenticator::Authenticator;
-use crate::callbacks::AuthenticatorCallbacks;
-use crate::commands::CommandCode;
-use crate::status::{Result, StatusCode};
+use crate::{
+    authenticator::Authenticator,
+    callbacks::AuthenticatorCallbacks,
+    commands::CommandCode,
+    status::{Result, StatusCode},
+};
 
 /// CTAP command dispatcher
 ///
@@ -92,10 +94,13 @@ impl<C: AuthenticatorCallbacks> CommandDispatcher<C> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::authenticator::AuthenticatorConfig;
-    use crate::callbacks::{CredentialStorageCallbacks, UserInteractionCallbacks};
-    use crate::types::Credential;
-    use crate::{UpResult, UvResult};
+
+    use crate::{
+        UpResult, UvResult,
+        authenticator::AuthenticatorConfig,
+        callbacks::{CredentialStorageCallbacks, UserInteractionCallbacks},
+        types::Credential,
+    };
 
     struct MockCallbacks;
 

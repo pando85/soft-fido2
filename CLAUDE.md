@@ -10,7 +10,6 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 - **soft-fido2-crypto**: Cryptographic primitives (ECDSA, ECDH, PIN protocols)
 - **soft-fido2-ctap**: CTAP2 protocol implementation (authenticator, commands, callbacks)
 - **soft-fido2-transport**: Transport layer (USB HID via hidapi, Linux UHID virtual devices)
-- **keylib**: High-level API combining all components
 
 ## Common Commands
 
@@ -53,7 +52,6 @@ cargo clippy --all-targets --all-features -- -D warnings  # Lint
 
 ### Examples
 ```bash
-# Run examples (located in keylib/examples/)
 cargo run --example authenticator      # Virtual authenticator demo
 cargo run --example client              # CTAP client demo
 cargo run --example credential_management  # Credential management demo
@@ -89,7 +87,7 @@ make pre-commit          # Run pre-commit on all files
 - CTAP HID protocol implementation
 - Channel management and packet fragmentation
 
-**Layer 4: High-Level API (keylib/)**
+**Layer 4: High-Level API (soft-fido2/)**
 - Combines all components into ergonomic API
 - Builder patterns for complex configuration
 - Examples and integration tests
@@ -123,11 +121,6 @@ make pre-commit          # Run pre-commit on all files
 - `channel.rs`: Channel ID management
 - `runner.rs`: Command execution loop
 
-**Client API (keylib/src/rust_impl/client.rs)**
-- High-level CTAP client for communicating with authenticators
-- Issues commands: getInfo, makeCredential, getAssertion, clientPIN
-- Transport enumeration and lifecycle management
-
 ## Code Style & Safety
 
 ### Rust Settings
@@ -157,26 +150,54 @@ make pre-commit          # Run pre-commit on all files
 ### Production Standards
 
 **Import Ordering:**
-All imports must follow this order (separated by blank lines):
+All imports must be placed at the top of the file and follow strict ordering rules.
+
+**Location:**
+- Production code: Imports at the very top of the file
+- Test code: Imports at the top of the test module (`#[cfg(test)] mod tests`)
+
+**Grouping Order** (separated by blank lines):
 1. `super` imports
 2. `crate` imports
-3. Same workspace crates (soft-fido2-crypto, soft-fido2-ctap, soft-fido2-transport)
-4. `std` imports
+3. Same workspace crates (soft-fido2-crypto, soft-fido2-ctap, soft-fido2-transport, soft-fido2)
+4. `std` or `alloc` imports (depending on no_std context)
 5. External crates (third-party dependencies)
 
-Example:
+**Formatting Rules:**
+- Imports from different crate paths must be on separate lines
+- Imports from the same crate path (same submodule) must be grouped with braces
+- Each import line must end with a semicolon
+
+**Correct Example:**
 ```rust
 use super::SomeType;
 
 use crate::error::Error;
+use crate::pin_token::{Permission, PinToken, PinTokenManager};
 
-use keylib_crypto::ecdsa;
+use soft_fido2_crypto::{ecdsa, pin_protocol};
 
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 
 use ciborium::cbor;
 use serde::Serialize;
+```
+
+**Incorrect Examples:**
+```rust
+// ❌ Wrong: combining different submodules with braces
+use std::{collections::HashMap, sync::{Arc, Mutex}};
+
+// ❌ Wrong: not grouping same submodule imports
+use crate::pin_token::Permission;
+use crate::pin_token::PinToken;
+use crate::pin_token::PinTokenManager;
+
+// ❌ Wrong: imports not in correct order
+use serde::Serialize;
+use crate::error::Error;
+use std::sync::Arc;
 ```
 
 **Workspace Dependencies:**
@@ -205,12 +226,6 @@ Run manually with: `make pre-commit`
 ### Test Organization
 
 **Unit tests**: In `#[cfg(test)] mod tests` within source files
-
-**Integration tests** (keylib/tests/):
-- `webauthn_inmemory_test.rs` - In-memory WebAuthn flow (no hardware required, runs in CI)
-- `integration.rs` - Basic integration tests
-- `credential_storage_test.rs` - Credential storage tests
-- `e2e_webauthn_test.rs` - Full end-to-end WebAuthn flow with UHID virtual device
 
 **Examples as documentation**: All examples in `soft-fido2/examples/` serve as usage documentation
 

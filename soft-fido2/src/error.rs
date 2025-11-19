@@ -59,7 +59,6 @@ impl fmt::Display for Error {
 
 impl std::error::Error for Error {}
 
-// Conversion from legacy i32 error codes (zig-ffi)
 impl From<i32> for Error {
     fn from(value: i32) -> Self {
         match value {
@@ -75,7 +74,6 @@ impl From<i32> for Error {
     }
 }
 
-// Conversion from keylib-ctap StatusCode (pure Rust implementation)
 impl From<soft_fido2_ctap::StatusCode> for Error {
     fn from(status: soft_fido2_ctap::StatusCode) -> Self {
         use soft_fido2_ctap::StatusCode;
@@ -133,7 +131,6 @@ impl From<soft_fido2_ctap::StatusCode> for Error {
     }
 }
 
-// Conversion to keylib-ctap StatusCode (pure Rust implementation)
 impl From<Error> for soft_fido2_ctap::StatusCode {
     fn from(error: Error) -> Self {
         use soft_fido2_ctap::StatusCode;

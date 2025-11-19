@@ -7,6 +7,8 @@
 //! Spec: <https://fidoalliance.org/specs/fido-v2.2-rd-20230321/fido-client-to-authenticator-protocol-v2.2-rd-20230321.html#sctn-extensions>
 
 use crate::status::Result;
+
+use rand::RngCore;
 use serde::{Deserialize, Serialize};
 
 /// Extension identifiers
@@ -173,7 +175,6 @@ impl MakeCredentialExtensions {
         // largeBlobKey - return the generated key (32 random bytes)
         if let Some(true) = self.large_blob_key {
             // Generate random 32-byte key
-            use rand::RngCore;
             let mut key = vec![0u8; 32];
             rand::thread_rng().fill_bytes(&mut key);
 

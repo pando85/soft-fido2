@@ -3,17 +3,17 @@
 //! This module implements the core authenticator logic including configuration,
 //! PIN management, and overall state coordination.
 
-use crate::callbacks::AuthenticatorCallbacks;
-use crate::pin_token::{Permission, PinToken, PinTokenManager};
-use crate::{CoseAlgorithm, StatusCode};
+use crate::{
+    CoseAlgorithm, StatusCode,
+    callbacks::AuthenticatorCallbacks,
+    pin_token::{Permission, PinToken, PinTokenManager},
+};
 
-use soft_fido2_crypto::pin_protocol;
+use soft_fido2_crypto::pin_protocol::{self, v2};
 
-use alloc::boxed::Box;
-use alloc::collections::BTreeMap;
-use alloc::sync::Arc;
-use alloc::vec::Vec;
+use alloc::{boxed::Box, collections::BTreeMap, sync::Arc, vec::Vec};
 
+use rand::RngCore;
 use sha2::{Digest, Sha256};
 use subtle::ConstantTimeEq;
 
@@ -276,7 +276,6 @@ impl<C: AuthenticatorCallbacks> Authenticator<C> {
     pub fn new(config: AuthenticatorConfig, callbacks: C) -> Self {
         // Generate or use provided wrapping key
         let credential_wrapping_key = config.credential_wrapping_key.unwrap_or_else(|| {
-            use rand::RngCore;
             let mut key = [0u8; 32];
             rand::thread_rng().fill_bytes(&mut key);
             key
@@ -389,7 +388,6 @@ impl<C: AuthenticatorCallbacks> Authenticator<C> {
         let hash = Sha256::digest(pin_bytes);
 
         // Compare using constant-time comparison
-        use subtle::ConstantTimeEq;
         if pin_hash.ct_eq(&hash[..]).into() {
             // PIN correct - reset retry counter
             self.pin_retries = MAX_PIN_RETRIES;
@@ -471,7 +469,6 @@ impl<C: AuthenticatorCallbacks> Authenticator<C> {
         rp_id: Option<String>,
     ) -> Result<[u8; 32], StatusCode> {
         // Generate random token
-        use rand::RngCore;
         let mut token_bytes = [0u8; 32];
         rand::thread_rng().fill_bytes(&mut token_bytes);
 
@@ -667,8 +664,6 @@ impl<C: AuthenticatorCallbacks> Authenticator<C> {
         rp_id: &str,
         algorithm: i32,
     ) -> Result<Vec<u8>, StatusCode> {
-        use soft_fido2_crypto::pin_protocol::v2;
-
         // Version byte (1 = wrapped credential v1)
         let version: u8 = 1;
 
@@ -710,8 +705,6 @@ impl<C: AuthenticatorCallbacks> Authenticator<C> {
         &self,
         credential_id: &[u8],
     ) -> Result<(Vec<u8>, String, i32), StatusCode> {
-        use soft_fido2_crypto::pin_protocol::v2;
-
         // Minimum size: version(1) + IV(16) + min_encrypted(16) + HMAC(16) = 49 bytes
         if credential_id.len() < 49 {
             return Err(StatusCode::InvalidParameter);
@@ -770,9 +763,12 @@ impl<C: AuthenticatorCallbacks> Authenticator<C> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::callbacks::{CredentialStorageCallbacks, UserInteractionCallbacks};
-    use crate::types::Credential;
-    use crate::{UpResult, UvResult};
+
+    use crate::{
+        UpResult, UvResult,
+        callbacks::{CredentialStorageCallbacks, UserInteractionCallbacks},
+        types::Credential,
+    };
 
     // Mock callbacks for testing
     struct MockCallbacks;

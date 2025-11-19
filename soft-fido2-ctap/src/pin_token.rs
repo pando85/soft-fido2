@@ -318,8 +318,8 @@ fn current_timestamp_ms() -> u64 {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::thread;
-    use std::time::Duration;
+
+    use std::{thread, time::Duration};
 
     /// Create a test token with default values
     fn create_test_token() -> PinToken {

@@ -1,7 +1,3 @@
-//! CTAP Transport Layer
-//!
-//! Provides USB HID and Linux UHID transport implementations for CTAP communication.
-
 use crate::error::{Error, Result};
 
 #[cfg(target_os = "linux")]
@@ -15,8 +11,6 @@ use std::sync::{Arc, Mutex};
 use smallvec::SmallVec;
 
 /// Safe Rust wrapper for Transport
-///
-/// Matches the API of the zig-ffi Transport type.
 pub struct Transport {
     inner: Arc<Mutex<TransportInner>>,
 }
@@ -470,8 +464,6 @@ impl Drop for Transport {
 }
 
 /// Safe Rust wrapper for TransportList
-///
-/// Matches the API of the zig-ffi TransportList type.
 pub struct TransportList {
     transports: Vec<Transport>,
 }

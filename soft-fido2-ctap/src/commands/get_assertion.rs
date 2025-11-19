@@ -4,13 +4,15 @@
 //!
 //! Spec: <https://fidoalliance.org/specs/fido-v2.2-rd-20230321/fido-client-to-authenticator-protocol-v2.2-rd-20230321.html#authenticatorGetAssertion>
 
-use crate::authenticator::Authenticator;
-use crate::callbacks::AuthenticatorCallbacks;
-use crate::cbor::{MapBuilder, MapParser};
-use crate::extensions::GetAssertionExtensions;
-use crate::status::{Result, StatusCode};
-use crate::types::PublicKeyCredentialDescriptor;
-use crate::{UpResult, UvResult};
+use crate::{
+    UpResult, UvResult,
+    authenticator::Authenticator,
+    callbacks::AuthenticatorCallbacks,
+    cbor::{MapBuilder, MapParser},
+    extensions::GetAssertionExtensions,
+    status::{Result, StatusCode},
+    types::PublicKeyCredentialDescriptor,
+};
 
 use soft_fido2_crypto::ecdsa;
 

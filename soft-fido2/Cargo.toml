@@ -1,6 +1,6 @@
 [package]
 name = "soft-fido2"
-description = "Keylib bindings"
+description = "A pure Rust implementation of FIDO2/WebAuthn CTAP 2.0/2.1 protocol"
 authors.workspace = true
 edition.workspace = true
 license-file.workspace = true
@@ -15,16 +15,11 @@ default = ["std", "usb"]
 std = ["soft-fido2-crypto/std", "soft-fido2-ctap/std", "soft-fido2-transport"]
 # Enable USB HID transport (requires std and libudev on Linux)
 usb = ["std", "soft-fido2-transport/usb"]
-# Integration tests
-integration-tests = []
 
 [dependencies]
-# Pure Rust implementation
-soft-fido2-crypto = { path = "../soft-fido2-crypto", default-features = false }
-soft-fido2-ctap = { path = "../soft-fido2-ctap", default-features = false }
-soft-fido2-transport = { path = "../soft-fido2-transport", optional = true }
-
-# CBOR and cryptography
+soft-fido2-crypto.workspace = true
+soft-fido2-ctap.workspace = true
+soft-fido2-transport = { workspace = true, optional = true }
 cbor4ii.workspace = true
 serde_bytes.workspace = true
 p256.workspace = true
@@ -66,4 +61,3 @@ name = "pin_protocol"
 
 [[example]]
 name = "credential_management"
-

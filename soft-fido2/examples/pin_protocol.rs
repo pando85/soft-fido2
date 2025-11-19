@@ -18,9 +18,7 @@
 //! cargo run --example pin_protocol --features pure-rust
 //! ```
 
-use soft_fido2::Result;
-use soft_fido2::transport::TransportList;
-use soft_fido2::{PinProtocol, PinUvAuthEncapsulation};
+use soft_fido2::{PinProtocol, PinUvAuthEncapsulation, Result, TransportList};
 
 const PIN: &str = "123456";
 

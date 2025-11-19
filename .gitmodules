@@ -1,3 +1,0 @@
-[submodule "keylib-sys/keylib"]
-	path = keylib-sys/keylib
-	url = https://github.com/pando85/keylib.git

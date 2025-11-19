@@ -3,15 +3,16 @@
 //! This test ensures a complete WebAuthn registration and authentication flow
 //! works correctly without requiring any hardware or USB support.
 
+use soft_fido2::{
+    Authenticator, AuthenticatorCallbacks, AuthenticatorConfig, AuthenticatorOptions, Credential,
+    CredentialRef, Result, UpResult, UvResult,
+};
+
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 
 use base64::Engine;
 use sha2::{Digest, Sha256};
-use soft_fido2::{
-    Authenticator, AuthenticatorCallbacks, AuthenticatorConfig, AuthenticatorOptions, Credential,
-    CredentialRef, Result, UpResult, UvResult,
-};
 
 const PIN: &str = "123456";
 const RP_ID: &str = "example.com";

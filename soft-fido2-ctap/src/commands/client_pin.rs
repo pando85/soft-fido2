@@ -9,10 +9,15 @@
 //!
 //! Spec: <https://fidoalliance.org/specs/fido-v2.2-rd-20230321/fido-client-to-authenticator-protocol-v2.2-rd-20230321.html#authenticatorClientPIN>
 
-use crate::authenticator::Authenticator;
-use crate::callbacks::AuthenticatorCallbacks;
-use crate::cbor::{MapBuilder, MapParser};
-use crate::status::{Result, StatusCode};
+use crate::{
+    authenticator::Authenticator,
+    callbacks::AuthenticatorCallbacks,
+    cbor::{MapBuilder, MapParser},
+    status::{Result, StatusCode},
+};
+
+use rand::RngCore;
+use subtle::ConstantTimeEq;
 
 /// ClientPIN subcommand codes
 #[repr(u8)]
@@ -340,7 +345,6 @@ fn handle_get_pin_token<C: AuthenticatorCallbacks>(
     // a different approach in the authenticator's PIN storage).
 
     // Generate random PIN token (32 bytes)
-    use rand::RngCore;
     let mut token = [0u8; 32];
     rand::thread_rng().fill_bytes(&mut token);
 
@@ -414,7 +418,6 @@ fn handle_get_pin_uv_auth_token_using_pin_with_permissions<C: AuthenticatorCallb
 
     // Verify PIN hash by comparing first 16 bytes with stored PIN hash
     if let Some(stored_pin_hash) = auth.pin_hash() {
-        use subtle::ConstantTimeEq;
         let is_valid: bool = stored_pin_hash[..16]
             .ct_eq(&decrypted_pin_hash[..16])
             .into();
@@ -504,11 +507,13 @@ fn parse_cose_key(cose_key: &crate::cbor::Value) -> Result<Vec<u8>> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::authenticator::Authenticator;
-    use crate::authenticator::AuthenticatorConfig;
-    use crate::callbacks::{CredentialStorageCallbacks, UserInteractionCallbacks};
-    use crate::types::Credential;
-    use crate::{UpResult, UvResult};
+
+    use crate::{
+        UpResult, UvResult,
+        authenticator::{Authenticator, AuthenticatorConfig},
+        callbacks::{CredentialStorageCallbacks, UserInteractionCallbacks},
+        types::Credential,
+    };
 
     // Mock callbacks for testing
     struct MockCallbacks;

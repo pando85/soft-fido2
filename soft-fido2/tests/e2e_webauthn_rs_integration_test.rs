@@ -37,23 +37,20 @@
 
 #![cfg(feature = "std")]
 
-use std::collections::HashMap;
-use std::sync::{Arc, Mutex};
-
-use base64::prelude::*;
-use serial_test::serial;
-use sha2::{Digest, Sha256};
-
 use soft_fido2::{
     Authenticator, AuthenticatorCallbacks, AuthenticatorConfig, AuthenticatorOptions, Credential,
     CredentialRef, Result as SoftFido2Result, UpResult, UvResult,
 };
 
-// webauthn-rs imports
-use webauthn_rs::prelude::*;
+use std::collections::HashMap;
+use std::sync::{Arc, Mutex};
 
-// p256 for signature verification
-use p256::ecdsa::{Signature, VerifyingKey, signature::Verifier};
+use base64::prelude::*;
+use p256::ecdsa::signature::Verifier;
+use p256::ecdsa::{Signature, VerifyingKey};
+use serial_test::serial;
+use sha2::{Digest, Sha256};
+use webauthn_rs::prelude::*;
 
 const TEST_RP_ID: &str = "localhost";
 const TEST_RP_NAME: &str = "Test Relying Party";

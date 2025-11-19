@@ -50,15 +50,16 @@
 //! - Counter-based replay protection
 //! - Extension support (credProtect, hmac-secret)
 
-use std::collections::HashMap;
-use std::sync::{Arc, Mutex};
-use std::time::Duration;
-
 use soft_fido2::{
     Authenticator, AuthenticatorCallbacks, AuthenticatorConfig, AuthenticatorOptions, Credential,
     CredentialRef, Error, Result, UpResult, UvResult,
 };
+
 use soft_fido2_transport::{CommandHandler, UhidDevice};
+
+use std::collections::HashMap;
+use std::sync::{Arc, Mutex};
+use std::time::Duration;
 
 /// Wrapper that implements CommandHandler for the high-level Authenticator
 struct AuthenticatorHandler<C: AuthenticatorCallbacks> {

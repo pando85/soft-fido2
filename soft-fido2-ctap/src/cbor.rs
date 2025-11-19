@@ -11,9 +11,8 @@
 
 use crate::status::{Result, StatusCode};
 
-use alloc::collections::BTreeMap;
-use alloc::vec::Vec;
-use core::fmt;
+use alloc::{collections::BTreeMap, vec::Vec};
+use core::{cmp::Ordering, fmt};
 
 #[cfg(feature = "std")]
 use std::io::{self, Write};
@@ -169,9 +168,7 @@ impl PartialOrd for CborOrderedI32 {
 }
 
 impl Ord for CborOrderedI32 {
-    fn cmp(&self, other: &Self) -> core::cmp::Ordering {
-        use core::cmp::Ordering;
-
+    fn cmp(&self, other: &Self) -> Ordering {
         let a = self.0;
         let b = other.0;
 

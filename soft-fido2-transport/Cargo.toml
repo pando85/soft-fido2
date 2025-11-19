@@ -1,5 +1,6 @@
 [package]
 name = "soft-fido2-transport"
+description = "Transport layer implementations for the soft-fido2 FIDO2/WebAuthn authenticator"
 version.workspace = true
 authors.workspace = true
 rust-version.workspace = true

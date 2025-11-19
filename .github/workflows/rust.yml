@@ -42,9 +42,6 @@ jobs:
         id: toolchain
         uses: dtolnay/rust-toolchain@stable
 
-      - name: Install Zig
-        uses: mlugg/setup-zig@v2
-
       - run: rustup override set ${{steps.toolchain.outputs.name}}
       - run: rustup component add clippy
 
@@ -77,9 +74,6 @@ jobs:
           toolchain: stable
           target: ${{ matrix.job.target }}
           override: true
-
-      - name: Install Zig
-        uses: mlugg/setup-zig@v2
 
       - name: Build
         shell: bash

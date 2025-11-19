@@ -176,6 +176,7 @@ impl<H: CommandHandler> AuthenticatorRunner<H> {
 #[cfg(all(test, feature = "usb"))]
 mod tests {
     use super::*;
+
     use crate::Cmd;
 
     struct MockHandler;

@@ -199,6 +199,7 @@ impl Default for ChannelManager {
 #[cfg(test)]
 mod tests {
     use super::*;
+
     use crate::ctaphid::Cmd;
 
     #[test]

@@ -1,19 +1,4 @@
-// Compile with either feature
-#![allow(unexpected_cfgs)]
-#![cfg(any(feature = "zig-ffi", feature = "pure-rust"))]
-
-//! Test for credential storage and retrieval
-//!
-//! This tests the full cycle: create credential -> store -> retrieve -> authenticate
-//! Works with both zig-ffi and pure-rust implementations
-
-#[cfg(feature = "zig-ffi")]
-use soft_fido2::credential::{Credential, Extensions, RelyingParty, User};
-
-#[cfg(all(feature = "pure-rust", not(feature = "zig-ffi")))]
-use soft_fido2::{Credential, Extensions, RelyingParty, User};
-
-use soft_fido2::Result;
+use soft_fido2::{Credential, Extensions, RelyingParty, Result, User};
 
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};

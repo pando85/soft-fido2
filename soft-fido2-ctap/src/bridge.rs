@@ -1,16 +1,5 @@
-//! Transport-Protocol Bridge
-//!
-//! Connects the CTAP transport layer (keylib-transport) with the CTAP
-//! protocol layer (keylib-ctap) by implementing the CommandHandler trait.
-//!
-//! This module is only available when the "transport" feature is enabled.
-
 #[cfg(feature = "transport")]
-use crate::callbacks::AuthenticatorCallbacks;
-#[cfg(feature = "transport")]
-use crate::dispatcher::CommandDispatcher;
-#[cfg(feature = "transport")]
-use crate::status::StatusCode;
+use crate::{callbacks::AuthenticatorCallbacks, dispatcher::CommandDispatcher, status::StatusCode};
 
 /// Bridge between transport CommandHandler and CTAP CommandDispatcher
 ///
@@ -83,10 +72,14 @@ impl<C: AuthenticatorCallbacks> soft_fido2_transport::CommandHandler for Transpo
 #[cfg(all(test, feature = "transport"))]
 mod tests {
     use super::*;
-    use crate::authenticator::{Authenticator, AuthenticatorConfig};
-    use crate::callbacks::{CredentialStorageCallbacks, UserInteractionCallbacks};
-    use crate::types::Credential;
-    use crate::{Result, UpResult, UvResult};
+
+    use crate::{
+        Result, UpResult, UvResult,
+        authenticator::{Authenticator, AuthenticatorConfig},
+        callbacks::{CredentialStorageCallbacks, UserInteractionCallbacks},
+        types::Credential,
+    };
+
     use soft_fido2_transport::CommandHandler;
 
     struct MockCallbacks;

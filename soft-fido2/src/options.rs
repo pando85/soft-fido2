@@ -1,14 +1,4 @@
-//! Authenticator Options (pure-rust compatibility layer)
-//!
-//! This module provides API compatibility with zig-ffi for options configuration.
-//! In pure-rust implementation, these options control the authenticator's reported
-//! capabilities via getInfo responses.
-
 /// Authenticator options for controlling device capabilities
-///
-/// This struct provides API compatibility with zig-ffi.
-/// In pure-rust implementation, these options are informational and control
-/// what capabilities are reported in getInfo responses.
 #[derive(Debug, Clone)]
 pub struct AuthenticatorOptions {
     /// Resident key (discoverable credentials) support

@@ -11,6 +11,7 @@ use soft_fido2_ctap::cbor::{MapBuilder, Value};
 
 use p256::elliptic_curve::sec1::ToEncodedPoint;
 use p256::{PublicKey as P256PublicKey, SecretKey as P256SecretKey};
+
 use rand::rngs::OsRng;
 
 /// PIN protocol version
@@ -41,8 +42,6 @@ impl From<PinUvAuthProtocol> for PinProtocol {
 }
 
 /// PIN/UV authentication encapsulation
-///
-/// State machine for PIN protocol operations. Matches the API of zig-ffi.
 pub struct PinUvAuthEncapsulation {
     protocol: PinProtocol,
     /// Platform's persistent key pair (for multiple operations)

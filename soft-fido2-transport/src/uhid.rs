@@ -172,8 +172,8 @@ impl UhidDevice {
             "virtual-fido",
             "virtual-fido-001",
             BUS_USB,
-            0x15d9, // Match Zig implementation (NOT Yubico - browsers recognize Yubico and force U2F)
-            0x0a37, // Match Zig implementation
+            0x15d9, // NOT Yubico - browsers recognize Yubico and force U2F
+            0x0a37,
             0x0001, // Version
             FIDO_HID_REPORT_DESCRIPTOR,
         )?;

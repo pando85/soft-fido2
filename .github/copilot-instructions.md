@@ -9,7 +9,7 @@
 - **soft-fido2-crypto**: Cryptographic primitives (ECDSA, ECDH, PIN protocols)
 - **soft-fido2-ctap**: CTAP2 protocol implementation (authenticator, commands, callbacks)
 - **soft-fido2-transport**: Transport layer (USB HID via hidapi, Linux UHID virtual devices)
-- **keylib**: High-level API combining all components
+- **soft-fido2**: High-level API combining all components
 
 ### Core Components
 
@@ -36,26 +36,54 @@
 
 ### Import Ordering
 
-All imports must follow this order (separated by blank lines):
+All imports must be placed at the top of the file and follow strict ordering rules.
+
+**Location:**
+- Production code: Imports at the very top of the file
+- Test code: Imports at the top of the test module (`#[cfg(test)] mod tests`)
+
+**Grouping Order** (separated by blank lines):
 1. `super` imports
 2. `crate` imports
-3. Same workspace crates (soft-fido2-crypto, soft-fido2-ctap, soft-fido2-transport)
-4. `std` imports
+3. Same workspace crates (soft-fido2-crypto, soft-fido2-ctap, soft-fido2-transport, soft-fido2)
+4. `std` or `alloc` imports (depending on no_std context)
 5. External crates (third-party dependencies)
 
-Example:
+**Formatting Rules:**
+- Imports from different crate paths must be on separate lines
+- Imports from the same crate path (same submodule) must be grouped with braces
+- Each import line must end with a semicolon
+
+**Correct Example:**
 ```rust
 use super::SomeType;
 
 use crate::error::Error;
+use crate::pin_token::{Permission, PinToken, PinTokenManager};
 
-use soft_fido2_crypto::ecdsa;
+use soft_fido2_crypto::{ecdsa, pin_protocol};
 
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 
-use cbor4ii::serde;
+use ciborium::cbor;
 use serde::Serialize;
+```
+
+**Incorrect Examples:**
+```rust
+// ❌ Wrong: combining different submodules with braces
+use std::{collections::HashMap, sync::{Arc, Mutex}};
+
+// ❌ Wrong: not grouping same submodule imports
+use crate::pin_token::Permission;
+use crate::pin_token::PinToken;
+use crate::pin_token::PinTokenManager;
+
+// ❌ Wrong: imports not in correct order
+use serde::Serialize;
+use crate::error::Error;
+use std::sync::Arc;
 ```
 
 ### Safety & Memory Management

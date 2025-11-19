@@ -3,8 +3,7 @@
 //! These traits define the interface between the CTAP protocol implementation
 //! and the platform-specific user interaction and storage mechanisms.
 
-use crate::StatusCode;
-use crate::types::Credential;
+use crate::{StatusCode, types::Credential};
 
 /// Result of a user presence check
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

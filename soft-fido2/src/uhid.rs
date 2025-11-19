@@ -7,7 +7,7 @@ use crate::error::{Error, Result};
 #[cfg(target_os = "linux")]
 use soft_fido2_transport::UhidDevice;
 
-/// UHID virtual device wrapper (matches zig-ffi API)
+/// UHID virtual device wrapper
 #[cfg(target_os = "linux")]
 pub struct Uhid {
     device: UhidDevice,

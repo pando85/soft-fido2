@@ -9,10 +9,11 @@
 //!
 //! Spec: <https://fidoalliance.org/specs/fido-v2.2-rd-20230321/fido-client-to-authenticator-protocol-v2.2-rd-20230321.html#authenticatorGetInfo>
 
-use crate::authenticator::Authenticator;
-use crate::callbacks::AuthenticatorCallbacks;
-use crate::cbor::MapBuilder;
-use crate::status::Result;
+use crate::{
+    authenticator::Authenticator, callbacks::AuthenticatorCallbacks, cbor::MapBuilder,
+    status::Result,
+};
+
 use serde::Serialize;
 
 /// GetInfo response keys
@@ -178,13 +179,15 @@ pub fn handle<C: AuthenticatorCallbacks>(auth: &Authenticator<C>) -> Result<Vec<
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::authenticator::AuthenticatorConfig;
-    use crate::callbacks::{
-        CredentialStorageCallbacks, UpResult, UserInteractionCallbacks, UvResult,
+
+    use crate::{
+        UpResult, UvResult,
+        authenticator::AuthenticatorConfig,
+        callbacks::{CredentialStorageCallbacks, UserInteractionCallbacks},
+        cbor::MapParser,
+        status::StatusCode,
+        types::Credential,
     };
-    use crate::cbor::MapParser;
-    use crate::status::StatusCode;
-    use crate::types::Credential;
 
     // Simple mock for testing
     struct MockCallbacks;

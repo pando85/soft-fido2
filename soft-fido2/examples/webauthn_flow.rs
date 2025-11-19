@@ -13,15 +13,13 @@
 //! cargo run --example webauthn_flow --features pure-rust
 //! ```
 
+use soft_fido2::{
+    Client, ClientDataHash, GetAssertionRequest, MakeCredentialRequest, PinProtocol, PinUvAuth,
+    PinUvAuthEncapsulation, PinUvAuthProtocol, RelyingParty, Result, TransportList, User,
+};
+
 use base64::Engine;
 use sha2::{Digest, Sha256};
-use soft_fido2::client::Client;
-use soft_fido2::transport::TransportList;
-use soft_fido2::{
-    ClientDataHash, GetAssertionRequest, MakeCredentialRequest, PinUvAuth, PinUvAuthProtocol,
-    RelyingParty, Result, User,
-};
-use soft_fido2::{PinProtocol, PinUvAuthEncapsulation};
 
 const PIN: &str = "123456";
 const RP_ID: &str = "example.com";

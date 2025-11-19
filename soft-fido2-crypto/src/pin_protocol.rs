@@ -5,17 +5,17 @@
 //! Protocol V1: AES-256-CBC encryption + SHA-256 HMAC
 //! Protocol V2: HMAC-SHA-256 only (FIPS-approved, no encryption for auth)
 
+extern crate alloc;
+
 use crate::error::{CryptoError, Result};
 
-extern crate alloc;
 use alloc::vec;
 use alloc::vec::Vec;
 
 use aes::Aes256;
-use cbc::{
-    Decryptor, Encryptor,
-    cipher::{BlockDecryptMut, BlockEncryptMut, KeyIvInit, block_padding::Pkcs7},
-};
+use cbc::cipher::block_padding::Pkcs7;
+use cbc::cipher::{BlockDecryptMut, BlockEncryptMut, KeyIvInit};
+use cbc::{Decryptor, Encryptor};
 use hmac::{Hmac, Mac};
 use sha2::{Digest, Sha256};
 use subtle::ConstantTimeEq;

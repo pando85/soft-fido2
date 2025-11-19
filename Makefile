@@ -1,6 +1,6 @@
 CARGO_TARGET_DIR ?= target
 CARGO_TARGET ?= x86_64-unknown-linux-gnu
-PKG_BASE_NAME ?= keylib-${CARGO_TARGET}
+PKG_BASE_NAME ?= soft-fido2-${CARGO_TARGET}
 PROJECT_VERSION := $(shell sed -n 's/^version = "\(.*\)"/\1/p' ./Cargo.toml | head -n1)
 
 .DEFAULT: help
@@ -12,7 +12,7 @@ help:	## Show this help menu.
 	@echo ""
 
 .PHONY: build
-build:	## compile keylib
+build:	## compile soft-fido2
 build:
 	cargo build
 
@@ -66,7 +66,7 @@ test-all: test test-e2e
 update-version: ## update version from VERSION file in all Cargo.toml manifests
 update-version: */Cargo.toml
 	@VERSION=$$(sed -n 's/^version = "\(.*\)"/\1/p' Cargo.toml | head -n1); \
-	sed -i -E "s/(keylib-[a-z0-9-]+ = \{ path = \"[^\"]+\", version = )\"[^\"]+\"/\1\"$$VERSION\"/g" Cargo.toml && \
+	sed -i -E "s/(soft-fido2-[a-z0-9-]+ = \{[^\}]*version[[:space:]]*=[[:space:]]*)\"[^\"]+\"/\1\"$$VERSION\"/g" Cargo.toml && \
 	cargo update --workspace ;
 
 .PHONY: update-changelog
