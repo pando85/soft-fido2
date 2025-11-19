@@ -245,14 +245,21 @@ impl MapBuilder {
     /// Insert bytes directly (encodes as CBOR byte string)
     pub fn insert_bytes(mut self, key: i32, bytes: &[u8]) -> Result<Self> {
         #[cfg(test)]
-        eprintln!("[CBOR DEBUG] MapBuilder::insert_bytes() - key={}, bytes_len={}, first_bytes={:02x?}",
-                 key, bytes.len(), &bytes[..bytes.len().min(8)]);
+        eprintln!(
+            "[CBOR DEBUG] MapBuilder::insert_bytes() - key={}, bytes_len={}, first_bytes={:02x?}",
+            key,
+            bytes.len(),
+            &bytes[..bytes.len().min(8)]
+        );
 
         let encoded = encode(&serde_bytes::Bytes::new(bytes))?;
 
         #[cfg(test)]
-        eprintln!("[CBOR DEBUG]   Encoded to CBOR: {} bytes, cbor={:02x?}",
-                 encoded.len(), &encoded[..encoded.len().min(16)]);
+        eprintln!(
+            "[CBOR DEBUG]   Encoded to CBOR: {} bytes, cbor={:02x?}",
+            encoded.len(),
+            &encoded[..encoded.len().min(16)]
+        );
 
         self.entries.push((key, encoded));
         Ok(self)
@@ -264,12 +271,19 @@ impl MapBuilder {
         let mut map = BTreeMap::new();
 
         #[cfg(test)]
-        eprintln!("[CBOR DEBUG] MapBuilder::build() - building map with {} entries", self.entries.len());
+        eprintln!(
+            "[CBOR DEBUG] MapBuilder::build() - building map with {} entries",
+            self.entries.len()
+        );
 
         for (key, value_bytes) in self.entries {
             #[cfg(test)]
-            eprintln!("[CBOR DEBUG]   Entry key={}, value_bytes_len={}, first_bytes={:02x?}",
-                     key, value_bytes.len(), &value_bytes[..value_bytes.len().min(8)]);
+            eprintln!(
+                "[CBOR DEBUG]   Entry key={}, value_bytes_len={}, first_bytes={:02x?}",
+                key,
+                value_bytes.len(),
+                &value_bytes[..value_bytes.len().min(8)]
+            );
 
             // We need to store the raw CBOR bytes for each value
             // cbor4ii doesn't have a Value type, so we use a wrapper
@@ -282,9 +296,13 @@ impl MapBuilder {
         // Write map header
         let len = map.len();
         if len <= 23 {
-            buffer.write_all(&[0xa0 | len as u8]).map_err(|_| StatusCode::InvalidCbor)?;
+            buffer
+                .write_all(&[0xa0 | len as u8])
+                .map_err(|_| StatusCode::InvalidCbor)?;
         } else if len <= 255 {
-            buffer.write_all(&[0xb8, len as u8]).map_err(|_| StatusCode::InvalidCbor)?;
+            buffer
+                .write_all(&[0xb8, len as u8])
+                .map_err(|_| StatusCode::InvalidCbor)?;
         } else {
             return Err(StatusCode::InvalidCbor);
         }
@@ -296,38 +314,63 @@ impl MapBuilder {
             if k >= 0 {
                 // Positive integer
                 if k <= 23 {
-                    buffer.write_all(&[k as u8]).map_err(|_| StatusCode::InvalidCbor)?;
+                    buffer
+                        .write_all(&[k as u8])
+                        .map_err(|_| StatusCode::InvalidCbor)?;
                 } else if k <= 255 {
-                    buffer.write_all(&[0x18, k as u8]).map_err(|_| StatusCode::InvalidCbor)?;
+                    buffer
+                        .write_all(&[0x18, k as u8])
+                        .map_err(|_| StatusCode::InvalidCbor)?;
                 } else if k <= 65535 {
-                    buffer.write_all(&[0x19, (k >> 8) as u8, k as u8]).map_err(|_| StatusCode::InvalidCbor)?;
+                    buffer
+                        .write_all(&[0x19, (k >> 8) as u8, k as u8])
+                        .map_err(|_| StatusCode::InvalidCbor)?;
                 } else {
-                    buffer.write_all(&[0x1a]).map_err(|_| StatusCode::InvalidCbor)?;
-                    buffer.write_all(&k.to_be_bytes()).map_err(|_| StatusCode::InvalidCbor)?;
+                    buffer
+                        .write_all(&[0x1a])
+                        .map_err(|_| StatusCode::InvalidCbor)?;
+                    buffer
+                        .write_all(&k.to_be_bytes())
+                        .map_err(|_| StatusCode::InvalidCbor)?;
                 }
             } else {
                 // Negative integer: CBOR encodes as -(value + 1)
                 let abs_val = (-k - 1) as u32;
                 if abs_val <= 23 {
-                    buffer.write_all(&[0x20 | abs_val as u8]).map_err(|_| StatusCode::InvalidCbor)?;
+                    buffer
+                        .write_all(&[0x20 | abs_val as u8])
+                        .map_err(|_| StatusCode::InvalidCbor)?;
                 } else if abs_val <= 255 {
-                    buffer.write_all(&[0x38, abs_val as u8]).map_err(|_| StatusCode::InvalidCbor)?;
+                    buffer
+                        .write_all(&[0x38, abs_val as u8])
+                        .map_err(|_| StatusCode::InvalidCbor)?;
                 } else if abs_val <= 65535 {
-                    buffer.write_all(&[0x39, (abs_val >> 8) as u8, abs_val as u8]).map_err(|_| StatusCode::InvalidCbor)?;
+                    buffer
+                        .write_all(&[0x39, (abs_val >> 8) as u8, abs_val as u8])
+                        .map_err(|_| StatusCode::InvalidCbor)?;
                 } else {
-                    buffer.write_all(&[0x3a]).map_err(|_| StatusCode::InvalidCbor)?;
-                    buffer.write_all(&abs_val.to_be_bytes()).map_err(|_| StatusCode::InvalidCbor)?;
+                    buffer
+                        .write_all(&[0x3a])
+                        .map_err(|_| StatusCode::InvalidCbor)?;
+                    buffer
+                        .write_all(&abs_val.to_be_bytes())
+                        .map_err(|_| StatusCode::InvalidCbor)?;
                 }
             }
 
             // Write the value (already encoded as CBOR)
-            buffer.write_all(&value.0).map_err(|_| StatusCode::InvalidCbor)?;
+            buffer
+                .write_all(&value.0)
+                .map_err(|_| StatusCode::InvalidCbor)?;
         }
 
         let result = buffer.to_vec();
         #[cfg(test)]
-        eprintln!("[CBOR DEBUG] MapBuilder::build() - final CBOR bytes: {} bytes, first={:02x?}",
-                 result.len(), &result[..result.len().min(16)]);
+        eprintln!(
+            "[CBOR DEBUG] MapBuilder::build() - final CBOR bytes: {} bytes, first={:02x?}",
+            result.len(),
+            &result[..result.len().min(16)]
+        );
         Ok(result)
     }
 
@@ -354,8 +397,11 @@ impl Serialize for RawCborValue {
         S: serde::Serializer,
     {
         #[cfg(test)]
-        eprintln!("[CBOR DEBUG] RawCborValue::serialize() - raw_bytes: {} bytes, cbor={:02x?}",
-                 self.0.len(), &self.0[..self.0.len().min(16)]);
+        eprintln!(
+            "[CBOR DEBUG] RawCborValue::serialize() - raw_bytes: {} bytes, cbor={:02x?}",
+            self.0.len(),
+            &self.0[..self.0.len().min(16)]
+        );
 
         // Deserialize the raw CBOR and re-serialize it
         let value: Value =
@@ -640,7 +686,10 @@ mod tests {
 
         eprintln!("Decoded credential ID: {:02x?}", decoded_id);
 
-        assert_eq!(credential_id, decoded_id, "Credential ID corrupted in round-trip!");
+        assert_eq!(
+            credential_id, decoded_id,
+            "Credential ID corrupted in round-trip!"
+        );
     }
 
     #[test]
@@ -666,10 +715,6 @@ mod tests {
 
         // Keys should appear in this order: 1, 3, -1, -2, -3
         // CBOR encoding: 0x01, 0x03, 0x20, 0x21, 0x22
-        let key_positions = [
-            1,  // First key after map header
-            // Find subsequent keys by looking for text string encodings
-        ];
 
         // First key should be 1 (0x01)
         assert_eq!(cbor[1], 0x01, "First key should be 1");

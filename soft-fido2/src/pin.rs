@@ -11,7 +11,7 @@ use soft_fido2_crypto::pin_protocol;
 use p256::elliptic_curve::sec1::ToEncodedPoint;
 use p256::{PublicKey as P256PublicKey, SecretKey as P256SecretKey};
 use rand::rngs::OsRng;
-use soft_fido2_ctap::cbor::Value;
+use soft_fido2_ctap::cbor::{MapBuilder, Value};
 
 /// PIN protocol version
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -97,26 +97,18 @@ impl PinUvAuthEncapsulation {
         public_array.copy_from_slice(public_bytes);
         self.platform_public = Some(public_array);
 
-        // Build getKeyAgreement request
-        let request_map = vec![
-            (
-                Value::Integer(1.into()), // pinUvAuthProtocol
-                Value::Integer(
-                    match self.protocol {
-                        PinProtocol::V1 => 1,
-                        PinProtocol::V2 => 2,
-                    }
-                    .into(),
-                ),
-            ),
-            (
-                Value::Integer(2.into()), // subCommand (getKeyAgreement = 0x02)
-                Value::Integer(0x02.into()),
-            ),
-        ];
+        // Build getKeyAgreement request using MapBuilder
+        let protocol_version = match self.protocol {
+            PinProtocol::V1 => 1u8,
+            PinProtocol::V2 => 2u8,
+        };
 
-        let mut request_bytes = Vec::new();
-        soft_fido2_ctap::cbor::into_writer(&Value::Map(request_map), &mut request_bytes)
+        let request_bytes = MapBuilder::new()
+            .insert(1, protocol_version) // pinUvAuthProtocol
+            .map_err(|_| Error::Other)?
+            .insert(2, 0x02u8) // subCommand (getKeyAgreement = 0x02)
+            .map_err(|_| Error::Other)?
+            .build()
             .map_err(|_| Error::Other)?;
 
         // Send clientPin command (0x06)
@@ -207,48 +199,39 @@ impl PinUvAuthEncapsulation {
             }
         };
 
-        // Get platform key agreement parameter
+        // Get platform key agreement parameter (still returns Value for compatibility)
         let platform_key_agreement = self.get_key_agreement_cose()?;
 
-        // Build getPinUvAuthTokenUsingPinWithPermissions request
-        let mut request_map = vec![
-            (
-                Value::Integer(1.into()), // pinUvAuthProtocol
-                Value::Integer(
-                    match self.protocol {
-                        PinProtocol::V1 => 1,
-                        PinProtocol::V2 => 2,
-                    }
-                    .into(),
-                ),
-            ),
-            (
-                Value::Integer(2.into()), // subCommand (getPinUvAuthTokenUsingPinWithPermissions = 0x09)
-                Value::Integer(0x09.into()),
-            ),
-            (
-                Value::Integer(3.into()), // keyAgreement
-                platform_key_agreement,
-            ),
-            (
-                Value::Integer(6.into()), // pinHashEnc (0x06)
-                Value::Bytes(pin_hash_enc),
-            ),
-            (
-                Value::Integer(9.into()), // permissions (0x09)
-                Value::Integer(permissions.into()),
-            ),
-        ];
+        // Build getPinUvAuthTokenUsingPinWithPermissions request using MapBuilder
+        let protocol_version = match self.protocol {
+            PinProtocol::V1 => 1u8,
+            PinProtocol::V2 => 2u8,
+        };
+
+        let mut builder = MapBuilder::new();
+        builder = builder
+            .insert(1, protocol_version) // pinUvAuthProtocol
+            .map_err(|_| Error::Other)?;
+        builder = builder
+            .insert(2, 0x09u8) // subCommand (getPinUvAuthTokenUsingPinWithPermissions = 0x09)
+            .map_err(|_| Error::Other)?;
+        builder = builder
+            .insert(3, &platform_key_agreement) // keyAgreement
+            .map_err(|_| Error::Other)?;
+        builder = builder
+            .insert_bytes(6, &pin_hash_enc) // pinHashEnc (0x06)
+            .map_err(|_| Error::Other)?;
+        builder = builder
+            .insert(9, permissions) // permissions (0x09)
+            .map_err(|_| Error::Other)?;
+
         if let Some(rp_id_str) = rp_id {
-            request_map.push((
-                Value::Integer(10.into()), // rpId (0x0A)
-                Value::Text(rp_id_str.to_string()),
-            ));
+            builder = builder
+                .insert(10, rp_id_str) // rpId (0x0A)
+                .map_err(|_| Error::Other)?;
         }
 
-        let mut request_bytes = Vec::new();
-        soft_fido2_ctap::cbor::into_writer(&Value::Map(request_map), &mut request_bytes)
-            .map_err(|_| Error::Other)?;
+        let request_bytes = builder.build().map_err(|_| Error::Other)?;
 
         // Send clientPin command (0x06)
         let response = transport.send_ctap_command(0x06, &request_bytes)?;
