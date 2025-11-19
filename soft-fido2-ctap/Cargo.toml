@@ -23,8 +23,8 @@ sha2.workspace = true
 subtle.workspace = true
 rand.workspace = true
 
-# Error handling
-thiserror.workspace = true
+# Error handling (optional for std only)
+thiserror = { workspace = true, optional = true }
 
 # Utilities
 smallvec.workspace = true
@@ -38,5 +38,5 @@ soft-fido2-transport = { path = "../soft-fido2-transport" }
 
 [features]
 default = ["std"]
-std = ["soft-fido2-crypto/std"]
+std = ["soft-fido2-crypto/std", "dep:thiserror", "cbor4ii/use_std"]
 transport = ["dep:soft-fido2-transport", "std"]

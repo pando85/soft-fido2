@@ -3,206 +3,218 @@
 //! Status codes defined in FIDO2 specification:
 //! <https://fidoalliance.org/specs/fido-v2.2-rd-20230321/fido-client-to-authenticator-protocol-v2.2-rd-20230321.html#error-responses>
 
-use thiserror::Error;
+use core::fmt;
 
 /// CTAP2 status codes
 ///
 /// These status codes are returned in CTAP responses to indicate success or various error conditions.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Error)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 #[repr(u8)]
 pub enum StatusCode {
     /// Successful completion of command
-    #[error("Success")]
     Success = 0x00,
 
     /// Invalid command
-    #[error("Invalid command")]
     InvalidCommand = 0x01,
 
     /// Invalid parameter in request
-    #[error("Invalid parameter")]
     InvalidParameter = 0x02,
 
     /// Invalid message or item length
-    #[error("Invalid length")]
     InvalidLength = 0x03,
 
     /// Invalid message sequencing
-    #[error("Invalid sequence")]
     InvalidSeq = 0x04,
 
     /// Message timed out
-    #[error("Timeout")]
     Timeout = 0x05,
 
     /// Channel busy
-    #[error("Channel busy")]
     ChannelBusy = 0x06,
 
     /// Command requires channel lock
-    #[error("Lock required")]
     LockRequired = 0x0A,
 
     /// Invalid channel
-    #[error("Invalid channel")]
     InvalidChannel = 0x0B,
 
     /// CBOR unexpected type
-    #[error("CBOR unexpected type")]
     CborUnexpectedType = 0x11,
 
     /// Invalid CBOR encoding
-    #[error("Invalid CBOR")]
     InvalidCbor = 0x12,
 
     /// Missing required parameter
-    #[error("Missing parameter")]
     MissingParameter = 0x14,
 
     /// Limit exceeded
-    #[error("Limit exceeded")]
     LimitExceeded = 0x15,
 
     /// Unsupported extension
-    #[error("Unsupported extension")]
     UnsupportedExtension = 0x16,
 
     /// Credential excluded (already exists)
-    #[error("Credential excluded")]
     CredentialExcluded = 0x19,
 
     /// Processing (e.g. waiting for user presence)
-    #[error("Processing")]
     Processing = 0x21,
 
     /// Invalid credential
-    #[error("Invalid credential")]
     InvalidCredential = 0x22,
 
     /// User action pending
-    #[error("User action pending")]
     UserActionPending = 0x23,
 
     /// Operation pending
-    #[error("Operation pending")]
     OperationPending = 0x24,
 
     /// No operations pending
-    #[error("No operations")]
     NoOperations = 0x25,
 
     /// Unsupported algorithm
-    #[error("Unsupported algorithm")]
     UnsupportedAlgorithm = 0x26,
 
     /// Operation denied by user
-    #[error("Operation denied")]
     OperationDenied = 0x27,
 
     /// Key store full
-    #[error("Key store full")]
     KeyStoreFull = 0x28,
 
     /// Not busy
-    #[error("Not busy")]
     NotBusy = 0x29,
 
     /// No operation pending
-    #[error("No operation pending")]
     NoOperationPending = 0x2A,
 
     /// Unsupported option
-    #[error("Unsupported option")]
     UnsupportedOption = 0x2B,
 
     /// Invalid option
-    #[error("Invalid option")]
     InvalidOption = 0x2C,
 
     /// Keepalive cancel
-    #[error("Keepalive cancel")]
     KeepaliveCancel = 0x2D,
 
     /// No credentials found
-    #[error("No credentials")]
     NoCredentials = 0x2E,
 
     /// User action timeout
-    #[error("User action timeout")]
     UserActionTimeout = 0x2F,
 
     /// Not allowed
-    #[error("Not allowed")]
     NotAllowed = 0x30,
 
     /// PIN invalid
-    #[error("PIN invalid")]
     PinInvalid = 0x31,
 
     /// PIN blocked
-    #[error("PIN blocked")]
     PinBlocked = 0x32,
 
     /// PIN/UV auth parameter invalid
-    #[error("PIN auth invalid")]
     PinAuthInvalid = 0x33,
 
     /// PIN/UV auth blocked
-    #[error("PIN auth blocked")]
     PinAuthBlocked = 0x34,
 
     /// PIN not set
-    #[error("PIN not set")]
     PinNotSet = 0x35,
 
     /// PIN required for this operation
-    #[error("PIN required")]
     PinRequired = 0x36,
 
     /// PIN policy violation
-    #[error("PIN policy violation")]
     PinPolicyViolation = 0x37,
 
     /// PIN token expired
-    #[error("PIN token expired")]
     PinTokenExpired = 0x38,
 
     /// Request too large
-    #[error("Request too large")]
     RequestTooLarge = 0x39,
 
     /// Action timeout
-    #[error("Action timeout")]
     ActionTimeout = 0x3A,
 
     /// User presence required
-    #[error("UP required")]
     UpRequired = 0x3B,
 
     /// User verification blocked
-    #[error("UV blocked")]
     UvBlocked = 0x3C,
 
     /// Integrity failure
-    #[error("Integrity failure")]
     IntegrityFailure = 0x3D,
 
     /// Invalid subcommand
-    #[error("Invalid subcommand")]
     InvalidSubcommand = 0x3E,
 
     /// User verification invalid
-    #[error("UV invalid")]
     UvInvalid = 0x3F,
 
     /// Unauthorized permission
-    #[error("Unauthorized permission")]
     UnauthorizedPermission = 0x40,
 
     /// Other unspecified error
-    #[error("Other error")]
     Other = 0x7F,
 }
+
+impl fmt::Display for StatusCode {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let msg = match self {
+            Self::Success => "Success",
+            Self::InvalidCommand => "Invalid command",
+            Self::InvalidParameter => "Invalid parameter",
+            Self::InvalidLength => "Invalid length",
+            Self::InvalidSeq => "Invalid sequence",
+            Self::Timeout => "Timeout",
+            Self::ChannelBusy => "Channel busy",
+            Self::LockRequired => "Lock required",
+            Self::InvalidChannel => "Invalid channel",
+            Self::CborUnexpectedType => "CBOR unexpected type",
+            Self::InvalidCbor => "Invalid CBOR",
+            Self::MissingParameter => "Missing parameter",
+            Self::LimitExceeded => "Limit exceeded",
+            Self::UnsupportedExtension => "Unsupported extension",
+            Self::CredentialExcluded => "Credential excluded",
+            Self::Processing => "Processing",
+            Self::InvalidCredential => "Invalid credential",
+            Self::UserActionPending => "User action pending",
+            Self::OperationPending => "Operation pending",
+            Self::NoOperations => "No operations",
+            Self::UnsupportedAlgorithm => "Unsupported algorithm",
+            Self::OperationDenied => "Operation denied",
+            Self::KeyStoreFull => "Key store full",
+            Self::NotBusy => "Not busy",
+            Self::NoOperationPending => "No operation pending",
+            Self::UnsupportedOption => "Unsupported option",
+            Self::InvalidOption => "Invalid option",
+            Self::KeepaliveCancel => "Keepalive cancel",
+            Self::NoCredentials => "No credentials",
+            Self::UserActionTimeout => "User action timeout",
+            Self::NotAllowed => "Not allowed",
+            Self::PinInvalid => "PIN invalid",
+            Self::PinBlocked => "PIN blocked",
+            Self::PinAuthInvalid => "PIN auth invalid",
+            Self::PinAuthBlocked => "PIN auth blocked",
+            Self::PinNotSet => "PIN not set",
+            Self::PinRequired => "PIN required",
+            Self::PinPolicyViolation => "PIN policy violation",
+            Self::PinTokenExpired => "PIN token expired",
+            Self::RequestTooLarge => "Request too large",
+            Self::ActionTimeout => "Action timeout",
+            Self::UpRequired => "UP required",
+            Self::UvBlocked => "UV blocked",
+            Self::IntegrityFailure => "Integrity failure",
+            Self::InvalidSubcommand => "Invalid subcommand",
+            Self::UvInvalid => "UV invalid",
+            Self::UnauthorizedPermission => "Unauthorized permission",
+            Self::Other => "Other error",
+        };
+        write!(f, "{}", msg)
+    }
+}
+
+/// Implement std::error::Error only when std is available
+#[cfg(feature = "std")]
+impl std::error::Error for StatusCode {}
 
 impl StatusCode {
     /// Convert status code to byte value

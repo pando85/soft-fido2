@@ -11,7 +11,7 @@ use crate::{
 
 use soft_fido2_crypto::pin_protocol::{self, v2};
 
-use alloc::{boxed::Box, collections::BTreeMap, string::String, sync::Arc, vec, vec::Vec};
+use alloc::{boxed::Box, collections::BTreeMap, string::{String, ToString}, sync::Arc, vec, vec::Vec};
 
 use rand::RngCore;
 use sha2::{Digest, Sha256};
@@ -745,7 +745,7 @@ impl<C: AuthenticatorCallbacks> Authenticator<C> {
             return Err(StatusCode::InvalidParameter);
         }
 
-        let rp_id = std::str::from_utf8(&plaintext[33..33 + rp_id_len])
+        let rp_id = core::str::from_utf8(&plaintext[33..33 + rp_id_len])
             .map_err(|_| StatusCode::InvalidParameter)?
             .to_string();
 

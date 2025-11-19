@@ -3,7 +3,7 @@
 //! Core data structures used in CTAP protocol messages.
 //! All types support CBOR serialization as required by the FIDO2 spec.
 
-use alloc::string::String;
+use alloc::string::{String, ToString};
 use alloc::vec::Vec;
 
 #[cfg(feature = "std")]

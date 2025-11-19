@@ -16,7 +16,7 @@ use crate::{
 
 use soft_fido2_crypto::ecdsa;
 
-use alloc::format;
+use alloc::{format, string::{String, ToString}, vec::Vec};
 
 use sha2::{Digest, Sha256};
 

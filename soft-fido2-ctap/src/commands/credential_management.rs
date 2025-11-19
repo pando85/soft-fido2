@@ -17,7 +17,7 @@ use crate::{
     types::User,
 };
 
-use alloc::vec;
+use alloc::{format, string::{String, ToString}, vec, vec::Vec};
 
 /// Credential Management subcommand codes
 #[repr(u8)]

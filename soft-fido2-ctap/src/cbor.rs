@@ -155,19 +155,38 @@ impl<const N: usize> Default for StackBuffer<N> {
 }
 
 /// Encode a value to CBOR bytes using stack buffer (zero heap allocations during encoding)
+#[cfg(feature = "std")]
 pub fn encode<T: Serialize>(value: &T) -> Result<Vec<u8>> {
     let mut buffer = StackBuffer::<MAX_CTAP_MESSAGE_SIZE>::new();
     cbor4ii::serde::to_writer(&mut buffer, value).map_err(|_| StatusCode::InvalidCbor)?;
     Ok(buffer.to_vec())
 }
 
+/// Encode a value to CBOR bytes (no_std fallback using to_vec)
+#[cfg(not(feature = "std"))]
+pub fn encode<T: Serialize>(value: &T) -> Result<Vec<u8>> {
+    cbor4ii::serde::to_vec(Vec::new(), value).map_err(|_| StatusCode::InvalidCbor)
+}
+
 /// Encode directly to a provided buffer (completely zero-allocation)
+#[cfg(feature = "std")]
 pub fn encode_to_buffer<T: Serialize, const N: usize>(
     value: &T,
     buffer: &mut StackBuffer<N>,
 ) -> Result<()> {
     buffer.clear();
     cbor4ii::serde::to_writer(buffer, value).map_err(|_| StatusCode::InvalidCbor)
+}
+
+/// Encode directly to a provided buffer (no_std variant)
+#[cfg(not(feature = "std"))]
+pub fn encode_to_buffer<T: Serialize, const N: usize>(
+    value: &T,
+    buffer: &mut StackBuffer<N>,
+) -> Result<()> {
+    buffer.clear();
+    let vec = cbor4ii::serde::to_vec(Vec::new(), value).map_err(|_| StatusCode::InvalidCbor)?;
+    buffer.write_all(&vec).map_err(|_| StatusCode::InvalidCbor)
 }
 
 /// Decode CBOR bytes to a value
@@ -189,9 +208,18 @@ pub fn from_value<T: for<'de> Deserialize<'de>>(value: &Value) -> Result<T> {
     decode(&bytes)
 }
 
-/// Encode a value directly to a writer (compatibility helper)
+/// Encode a value directly to a writer (compatibility helper, std only)
+#[cfg(feature = "std")]
 pub fn into_writer<T: Serialize, W: Write>(value: &T, writer: W) -> Result<()> {
     cbor4ii::serde::to_writer(writer, value).map_err(|_| StatusCode::InvalidCbor)
+}
+
+/// Encode a value directly to a writer (no_std fallback)
+#[cfg(not(feature = "std"))]
+pub fn into_writer<T: Serialize>(value: &T, writer: &mut Vec<u8>) -> Result<()> {
+    let bytes = encode(value)?;
+    writer.extend_from_slice(&bytes);
+    Ok(())
 }
 
 /// Wrapper for i32 that sorts by CBOR encoding order (for canonical CBOR)
