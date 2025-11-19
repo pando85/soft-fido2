@@ -17,6 +17,8 @@ use crate::{
     types::User,
 };
 
+use alloc::vec;
+
 /// Credential Management subcommand codes
 #[repr(u8)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

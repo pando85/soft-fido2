@@ -10,6 +10,8 @@ use crate::{
     status::{Result, StatusCode},
 };
 
+use alloc::vec;
+
 /// CTAP command dispatcher
 ///
 /// Receives raw CTAP command bytes and dispatches to the appropriate

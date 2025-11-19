@@ -11,7 +11,7 @@ use crate::{
 
 use soft_fido2_crypto::pin_protocol::{self, v2};
 
-use alloc::{boxed::Box, collections::BTreeMap, sync::Arc, vec::Vec};
+use alloc::{boxed::Box, collections::BTreeMap, string::String, sync::Arc, vec, vec::Vec};
 
 use rand::RngCore;
 use sha2::{Digest, Sha256};

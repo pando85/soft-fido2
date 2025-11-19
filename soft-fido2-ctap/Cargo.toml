@@ -26,6 +26,12 @@ rand.workspace = true
 # Error handling
 thiserror.workspace = true
 
+# Utilities
+smallvec.workspace = true
+
+# no_std support
+core2 = { version = "0.4", default-features = false, features = ["alloc"] }
+
 [dev-dependencies]
 hex.workspace = true
 soft-fido2-transport = { path = "../soft-fido2-transport" }

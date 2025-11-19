@@ -3,8 +3,10 @@
 //! Core data structures used in CTAP protocol messages.
 //! All types support CBOR serialization as required by the FIDO2 spec.
 
-use alloc::{string::String, vec::Vec};
+use alloc::string::String;
+use alloc::vec::Vec;
 
+#[cfg(feature = "std")]
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use serde::{Deserialize, Serialize};
@@ -331,11 +333,20 @@ impl Credential {
 }
 
 /// Get current Unix timestamp in seconds
+#[cfg(feature = "std")]
 fn current_timestamp() -> i64 {
     SystemTime::now()
         .duration_since(UNIX_EPOCH)
         .unwrap_or_default()
         .as_secs() as i64
+}
+
+/// Get current Unix timestamp in seconds (no_std fallback)
+#[cfg(not(feature = "std"))]
+fn current_timestamp() -> i64 {
+    // In no_std, return 0. Applications can override this by providing
+    // their own time source.
+    0
 }
 
 /// Authenticator transport types

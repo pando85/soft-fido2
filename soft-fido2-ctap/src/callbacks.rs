@@ -5,6 +5,9 @@
 
 use crate::{StatusCode, types::Credential};
 
+use alloc::string::String;
+use alloc::vec::Vec;
+
 /// Result of a user presence check
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum UpResult {

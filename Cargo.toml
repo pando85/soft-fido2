@@ -37,7 +37,7 @@ thiserror = "1.0"
 
 # Utilities
 hex = "0.4"
-smallvec = "1.13"
+smallvec = { version = "1.13", features = ["serde"] }
 spin = "0.9"
 
 # Transport
