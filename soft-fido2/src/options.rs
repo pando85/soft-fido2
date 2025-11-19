@@ -23,7 +23,9 @@ pub struct AuthenticatorOptions {
     /// Platform device (cannot be removed)
     pub plat: bool,
 
-    /// Client PIN capability
+    /// Client PIN capability. When `Some(true)` and UV is available, the
+    /// browser/client may defer verification to the authenticator instead of
+    /// prompting the user locally.
     pub client_pin: Option<bool>,
 
     /// PIN/UV auth token support
