@@ -59,13 +59,10 @@ fn main() -> Result<()> {
     let mut encapsulation = match PinUvAuthEncapsulation::new(&mut transport, protocol) {
         Ok(enc) => {
             println!("      ✓ PIN protocol V2 established");
-            println!("      [DEBUG] Key agreement completed successfully");
             enc
         }
         Err(e) => {
             eprintln!("      ✗ Failed to establish PIN protocol: {:?}", e);
-            eprintln!("      [DEBUG] Error details: {:?}", e);
-            eprintln!("      [DEBUG] Possible causes:");
             eprintln!("        - Authenticator doesn't support PIN protocol V2");
             eprintln!("        - Communication error with authenticator");
             return Err(e);
@@ -75,8 +72,6 @@ fn main() -> Result<()> {
 
     // Get PIN token for makeCredential
     println!("[1.3] Getting PIN token (PIN: {})...", PIN);
-    println!("      [DEBUG] Requesting permissions: 0x01 (makeCredential)");
-    println!("      [DEBUG] RP ID: {}", RP_ID);
     let permissions = 0x01; // makeCredential
     let pin_token = match encapsulation.get_pin_uv_auth_token_using_pin_with_permissions(
         &mut transport,
@@ -86,16 +81,10 @@ fn main() -> Result<()> {
     ) {
         Ok(token) => {
             println!("      ✓ PIN token obtained ({} bytes)", token.len());
-            println!(
-                "      [DEBUG] PIN token (first 8 bytes): {:02x?}",
-                &token[..8.min(token.len())]
-            );
             token
         }
         Err(e) => {
             eprintln!("      ✗ Failed to get PIN token: {:?}", e);
-            eprintln!("      [DEBUG] Error details: {:?}", e);
-            eprintln!("      [DEBUG] Common causes:");
             eprintln!("        - Incorrect PIN (expected: {})", PIN);
             eprintln!("        - PIN not set on authenticator");
             eprintln!("        - Authenticator returned CTAP error");
