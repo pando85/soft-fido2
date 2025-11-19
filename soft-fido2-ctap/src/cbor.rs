@@ -8,38 +8,22 @@
 //! - **Encoding**: Zero heap allocations during encoding (uses `StackBuffer`)
 //! - **Decoding**: Standard serde deserialization (allocates for parsed structs)
 //! - **Throughput**: ~5-10% faster than ciborium
-//!
-//! # Usage
-//!
-//! ```rust,ignore
-//! // Encode with automatic buffer management
-//! let cbor_bytes = encode(&my_struct)?;
-//!
-//! // Encode with explicit buffer reuse (zero allocations)
-//! let mut buffer = StackBuffer::new();
-//! encode_to_buffer(&my_struct, &mut buffer)?;
-//! transport.send(buffer.as_slice())?;
-//!
-//! // Decode
-//! let decoded: MyStruct = decode(&cbor_bytes)?;
-//! ```
 
 use crate::status::{Result, StatusCode};
 
 use alloc::collections::BTreeMap;
 use alloc::vec::Vec;
-
 use core::fmt;
-use serde::{Deserialize, Serialize};
-
-/// Type alias for CBOR Value (compatibility with ciborium)
-pub type Value = cbor4ii::core::Value;
 
 #[cfg(feature = "std")]
 use std::io::{self, Write};
 
 #[cfg(not(feature = "std"))]
 use core2::io::{self, Write};
+
+use serde::{Deserialize, Serialize};
+
+pub type Value = cbor4ii::core::Value;
 
 /// Maximum CTAP message size in bytes
 ///
@@ -244,49 +228,16 @@ impl MapBuilder {
 
     /// Insert bytes directly (encodes as CBOR byte string)
     pub fn insert_bytes(mut self, key: i32, bytes: &[u8]) -> Result<Self> {
-        #[cfg(test)]
-        eprintln!(
-            "[CBOR DEBUG] MapBuilder::insert_bytes() - key={}, bytes_len={}, first_bytes={:02x?}",
-            key,
-            bytes.len(),
-            &bytes[..bytes.len().min(8)]
-        );
-
         let encoded = encode(&serde_bytes::Bytes::new(bytes))?;
-
-        #[cfg(test)]
-        eprintln!(
-            "[CBOR DEBUG]   Encoded to CBOR: {} bytes, cbor={:02x?}",
-            encoded.len(),
-            &encoded[..encoded.len().min(16)]
-        );
-
         self.entries.push((key, encoded));
         Ok(self)
     }
 
     /// Build the map and encode to CBOR bytes
     pub fn build(self) -> Result<Vec<u8>> {
-        // Use BTreeMap with CborOrderedI32 to ensure canonical ordering (required by CTAP)
         let mut map = BTreeMap::new();
 
-        #[cfg(test)]
-        eprintln!(
-            "[CBOR DEBUG] MapBuilder::build() - building map with {} entries",
-            self.entries.len()
-        );
-
         for (key, value_bytes) in self.entries {
-            #[cfg(test)]
-            eprintln!(
-                "[CBOR DEBUG]   Entry key={}, value_bytes_len={}, first_bytes={:02x?}",
-                key,
-                value_bytes.len(),
-                &value_bytes[..value_bytes.len().min(8)]
-            );
-
-            // We need to store the raw CBOR bytes for each value
-            // cbor4ii doesn't have a Value type, so we use a wrapper
             map.insert(CborOrderedI32(key), RawCborValue(value_bytes));
         }
 
@@ -364,14 +315,7 @@ impl MapBuilder {
                 .map_err(|_| StatusCode::InvalidCbor)?;
         }
 
-        let result = buffer.to_vec();
-        #[cfg(test)]
-        eprintln!(
-            "[CBOR DEBUG] MapBuilder::build() - final CBOR bytes: {} bytes, first={:02x?}",
-            result.len(),
-            &result[..result.len().min(16)]
-        );
-        Ok(result)
+        Ok(buffer.to_vec())
     }
 
     /// Build the map as a CBOR Value for manual construction (compatibility with ciborium)
@@ -396,20 +340,8 @@ impl Serialize for RawCborValue {
     where
         S: serde::Serializer,
     {
-        #[cfg(test)]
-        eprintln!(
-            "[CBOR DEBUG] RawCborValue::serialize() - raw_bytes: {} bytes, cbor={:02x?}",
-            self.0.len(),
-            &self.0[..self.0.len().min(16)]
-        );
-
-        // Deserialize the raw CBOR and re-serialize it
         let value: Value =
             cbor4ii::serde::from_slice(&self.0[..]).map_err(serde::ser::Error::custom)?;
-
-        #[cfg(test)]
-        eprintln!("[CBOR DEBUG]   Decoded to Value: {:?}", value);
-
         value.serialize(serializer)
     }
 }
