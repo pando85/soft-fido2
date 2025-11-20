@@ -631,13 +631,13 @@ mod tests {
     #[test]
     fn test_type_aliases() {
         // Test that type aliases work correctly
-        let mut getinfo_buf = GetInfoBuffer::new();
+        let getinfo_buf = GetInfoBuffer::new();
         assert_eq!(getinfo_buf.len(), 0);
 
-        let mut makecred_buf = MakeCredRequestBuffer::new();
+        let makecred_buf = MakeCredRequestBuffer::new();
         assert_eq!(makecred_buf.len(), 0);
 
-        let mut getassertion_buf = GetAssertionRequestBuffer::new();
+        let getassertion_buf = GetAssertionRequestBuffer::new();
         assert_eq!(getassertion_buf.len(), 0);
     }
 
@@ -688,7 +688,7 @@ mod tests {
         let mut buffer = StackBuffer::<16>::new();
 
         encode_to_buffer(&value, &mut buffer).unwrap();
-        assert!(buffer.len() > 0);
+        assert!(!buffer.is_empty());
 
         let decoded: alloc::string::String = decode(buffer.as_slice()).unwrap();
         assert_eq!(decoded, "hi");

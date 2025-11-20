@@ -47,7 +47,7 @@ fn example_get_info() {
     println!("1. Building getInfo request (256-byte buffer):");
 
     // Use the type alias for convenience
-    let mut buffer = GetInfoBuffer::new();
+    let buffer = GetInfoBuffer::new();
 
     // getInfo has no parameters, so we just need an empty request
     // In a real implementation, this would be sent to the authenticator
@@ -104,7 +104,10 @@ fn example_make_credential() {
         Ok(bytes_written) => {
             println!("   ✓ Buffer allocated: {} bytes", buffer.capacity());
             println!("   ✓ Request encoded: {} bytes", bytes_written);
-            println!("   ✓ Remaining space: {} bytes\n", buffer.capacity() - bytes_written);
+            println!(
+                "   ✓ Remaining space: {} bytes\n",
+                buffer.capacity() - bytes_written
+            );
         }
         Err(e) => {
             println!("   ✗ Error: {:?}\n", e);
@@ -133,7 +136,10 @@ fn example_get_assertion() {
         Ok(bytes_written) => {
             println!("   ✓ Buffer allocated: {} bytes", buffer.capacity());
             println!("   ✓ Request encoded: {} bytes", bytes_written);
-            println!("   ✓ Remaining space: {} bytes\n", buffer.capacity() - bytes_written);
+            println!(
+                "   ✓ Remaining space: {} bytes\n",
+                buffer.capacity() - bytes_written
+            );
         }
         Err(e) => {
             println!("   ✗ Error: {:?}\n", e);

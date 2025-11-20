@@ -16,7 +16,7 @@ use crate::{
     status::{Result, StatusCode},
 };
 
-use alloc::{format, string::String, vec::Vec};
+use alloc::{string::String, vec::Vec};
 
 use rand::RngCore;
 use subtle::ConstantTimeEq;

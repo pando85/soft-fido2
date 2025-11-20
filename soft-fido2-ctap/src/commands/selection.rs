@@ -13,7 +13,7 @@ use crate::{
     status::{Result, StatusCode},
 };
 
-use alloc::{format, string::String, vec::Vec};
+use alloc::vec::Vec;
 
 /// Handle authenticatorSelection command
 ///
