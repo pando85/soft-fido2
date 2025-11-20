@@ -3,13 +3,11 @@
 //! This test ensures a complete WebAuthn registration and authentication flow
 //! works correctly without requiring any hardware or USB support.
 
-use soft_fido2::{
-    Authenticator, AuthenticatorCallbacks, AuthenticatorConfig, AuthenticatorOptions, Credential,
-    CredentialRef, Result, UpResult, UvResult,
-};
+mod common;
 
-use std::collections::HashMap;
-use std::sync::{Arc, Mutex};
+use soft_fido2::{Authenticator, AuthenticatorConfig, AuthenticatorOptions};
+
+use common::TestCallbacks;
 
 use base64::Engine;
 use sha2::{Digest, Sha256};
@@ -18,85 +16,10 @@ const PIN: &str = "123456";
 const RP_ID: &str = "example.com";
 const ORIGIN: &str = "https://example.com";
 
-/// Test callbacks for in-memory authenticator
-struct TestCallbacks {
-    credentials: Arc<Mutex<HashMap<Vec<u8>, Credential>>>,
-}
-
-impl TestCallbacks {
-    fn new() -> Self {
-        Self {
-            credentials: Arc::new(Mutex::new(HashMap::new())),
-        }
-    }
-}
-
-impl AuthenticatorCallbacks for TestCallbacks {
-    fn request_up(&self, _info: &str, _user: Option<&str>, _rp: &str) -> Result<UpResult> {
-        Ok(UpResult::Accepted)
-    }
-
-    fn request_uv(&self, _info: &str, _user: Option<&str>, _rp: &str) -> Result<UvResult> {
-        Ok(UvResult::Accepted)
-    }
-
-    fn write_credential(&self, cred_id: &[u8], _rp_id: &str, cred: &CredentialRef) -> Result<()> {
-        let mut store = self.credentials.lock().unwrap();
-        store.insert(cred_id.to_vec(), cred.to_owned());
-        Ok(())
-    }
-
-    fn read_credential(&self, cred_id: &[u8], _rp_id: &str) -> Result<Option<Credential>> {
-        let store = self.credentials.lock().unwrap();
-        Ok(store.get(cred_id).cloned())
-    }
-
-    fn delete_credential(&self, cred_id: &[u8]) -> Result<()> {
-        let mut store = self.credentials.lock().unwrap();
-        store.remove(cred_id);
-        Ok(())
-    }
-
-    fn list_credentials(&self, rp_id: &str, _user_id: Option<&[u8]>) -> Result<Vec<Credential>> {
-        let store = self.credentials.lock().unwrap();
-        let filtered: Vec<Credential> = store
-            .values()
-            .filter(|c| c.rp.id == rp_id)
-            .cloned()
-            .collect();
-        Ok(filtered)
-    }
-
-    fn enumerate_rps(&self) -> Result<Vec<(String, Option<String>, usize)>> {
-        let store = self.credentials.lock().unwrap();
-        let mut rp_map: HashMap<String, (Option<String>, usize)> = HashMap::new();
-
-        for cred in store.values() {
-            let entry = rp_map
-                .entry(cred.rp.id.clone())
-                .or_insert((cred.rp.name.clone(), 0));
-            entry.1 += 1;
-        }
-
-        let result: Vec<(String, Option<String>, usize)> = rp_map
-            .into_iter()
-            .map(|(rp_id, (rp_name, count))| (rp_id, rp_name, count))
-            .collect();
-
-        Ok(result)
-    }
-
-    fn credential_count(&self) -> Result<usize> {
-        let store = self.credentials.lock().unwrap();
-        Ok(store.len())
-    }
-}
-
 #[test]
 fn test_webauthn_inmemory_flow() {
     // Setup callbacks
     let callbacks = TestCallbacks::new();
-    let credentials = callbacks.credentials.clone();
 
     // Configure authenticator
     let config = AuthenticatorConfig::builder()
@@ -118,8 +41,8 @@ fn test_webauthn_inmemory_flow() {
     let pin_hash = compute_pin_hash(PIN);
     Authenticator::<TestCallbacks>::set_pin_hash(&pin_hash);
 
-    let mut auth =
-        Authenticator::with_config(callbacks, config).expect("Failed to create authenticator");
+    let mut auth = Authenticator::with_config(callbacks.clone(), config)
+        .expect("Failed to create authenticator");
 
     // ============================================================
     // PHASE 1: REGISTRATION (makeCredential)
@@ -187,7 +110,7 @@ fn test_webauthn_inmemory_flow() {
     );
 
     // Verify credentials were stored
-    let cred_count = credentials.lock().unwrap().len();
+    let cred_count = callbacks.credential_count();
     assert_eq!(cred_count, 1, "Expected 1 credential to be stored");
 }
 

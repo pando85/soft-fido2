@@ -655,6 +655,8 @@ impl<C: AuthenticatorCallbacks> Authenticator<C> {
     /// #     fn read_credential(&self, _: &[u8], _: &str) -> soft_fido2::Result<Option<Credential>> { Ok(None) }
     /// #     fn delete_credential(&self, _: &[u8]) -> soft_fido2::Result<()> { Ok(()) }
     /// #     fn list_credentials(&self, _: &str, _: Option<&[u8]>) -> soft_fido2::Result<Vec<Credential>> { Ok(vec![]) }
+    /// #     fn enumerate_rps(&self) -> soft_fido2::Result<Vec<(String, Option<String>, usize)>> { Ok(vec![]) }
+    /// #     fn credential_count(&self) -> soft_fido2::Result<usize> { Ok(0) }
     /// # }
     /// let callbacks = MyCallbacks;
     /// let mut auth = Authenticator::new(callbacks).unwrap();

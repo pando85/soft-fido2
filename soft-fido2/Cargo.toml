@@ -42,6 +42,7 @@ base64.workspace = true
 serial_test.workspace = true
 hex.workspace = true
 serde_cbor.workspace = true
+ciborium.workspace = true
 webauthn-rs = "0.5.3"
 url = "2.5"
 uuid = { version = "1.11", features = ["v4"] }

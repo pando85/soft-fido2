@@ -8,6 +8,7 @@ use crate::transport::Transport;
 
 use soft_fido2_ctap::cbor::{MapBuilder, Value};
 
+use serde::Serialize;
 use smallvec::SmallVec;
 
 /// Client for communicating with FIDO2 authenticators
@@ -56,10 +57,9 @@ impl Client {
 
         // Build user map manually to handle optional fields and byte array
         let user_cbor = {
-            use serde::Serialize;
-
             #[derive(Serialize)]
             struct UserEntity<'a> {
+                #[serde(with = "serde_bytes")]
                 id: &'a [u8],
                 #[serde(skip_serializing_if = "Option::is_none")]
                 name: Option<&'a str>,
@@ -84,8 +84,6 @@ impl Client {
             .map_err(|_| Error::Other)?;
 
         // 0x04: pubKeyCredParams (required) - ES256 only for now
-        use serde::Serialize;
-
         #[derive(Serialize)]
         struct PubKeyCredParam {
             alg: i32,
@@ -106,8 +104,6 @@ impl Client {
 
         // 0x07: options (optional)
         if request.resident_key.is_some() || request.user_verification.is_some() {
-            use serde::Serialize;
-
             #[derive(Serialize)]
             struct Options {
                 #[serde(skip_serializing_if = "Option::is_none")]
@@ -176,8 +172,6 @@ impl Client {
 
         // 0x03: allowList (optional)
         if !request.allow_list().is_empty() {
-            use serde::Serialize;
-
             #[derive(Serialize)]
             struct Credential<'a> {
                 id: &'a [u8],
@@ -202,8 +196,6 @@ impl Client {
 
         // 0x05: options (optional)
         if request.user_verification.is_some() {
-            use serde::Serialize;
-
             #[derive(Serialize)]
             struct Options {
                 #[serde(skip_serializing_if = "Option::is_none")]
@@ -307,10 +299,9 @@ impl Client {
 
         // Build user map manually to handle optional fields and byte array
         let user_cbor = {
-            use serde::Serialize;
-
             #[derive(Serialize)]
             struct UserEntity<'a> {
+                #[serde(with = "serde_bytes")]
                 id: &'a [u8],
                 #[serde(skip_serializing_if = "Option::is_none")]
                 name: Option<&'a str>,
@@ -335,8 +326,6 @@ impl Client {
             .map_err(|_| Error::Other)?;
 
         // 0x04: pubKeyCredParams (required) - ES256 only for now
-        use serde::Serialize;
-
         #[derive(Serialize)]
         struct PubKeyCredParam {
             alg: i32,
@@ -357,8 +346,6 @@ impl Client {
 
         // 0x07: options (optional)
         if request.resident_key.is_some() || request.user_verification.is_some() {
-            use serde::Serialize;
-
             #[derive(Serialize)]
             struct Options {
                 #[serde(skip_serializing_if = "Option::is_none")]
@@ -437,8 +424,6 @@ impl Client {
 
         // 0x03: allowList (optional)
         if !request.allow_list().is_empty() {
-            use serde::Serialize;
-
             #[derive(Serialize)]
             struct Credential<'a> {
                 id: &'a [u8],
@@ -463,8 +448,6 @@ impl Client {
 
         // 0x05: options (optional)
         if request.user_verification.is_some() {
-            use serde::Serialize;
-
             #[derive(Serialize)]
             struct Options {
                 #[serde(skip_serializing_if = "Option::is_none")]

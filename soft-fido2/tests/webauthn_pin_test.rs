@@ -1,26 +1,22 @@
-//! End-to-End WebAuthn Flow Tests
+//! WebAuthn PIN Protocol Tests
 //!
-//! These tests simulate a complete WebAuthn registration and authentication flow
-//! using the soft-fido2 authenticator with PIN protocol support.
+//! These tests validate PIN/UV authentication protocol support in soft-fido2.
 //!
-//! # Test Flow
+//! # Test Coverage
 //!
-//! 1. Create a virtual authenticator with PIN support
-//! 2. Perform registration (makeCredential) with PIN authentication
-//! 3. Perform authentication (getAssertion) with PIN authentication
-//! 4. Verify the complete flow succeeds
+//! - PIN protocol for registration (makeCredential)
+//! - PIN protocol for authentication (getAssertion)
+//! - User verification flows
 //!
-//! Run with: cargo test --test e2e_webauthn_test -- --ignored
+//! Run with: cargo test --test webauthn_pin_test -- --ignored
 
 #![cfg(feature = "std")]
 
-use soft_fido2::{
-    Authenticator, AuthenticatorCallbacks, AuthenticatorConfig, AuthenticatorOptions, Credential,
-    CredentialRef, Result, UpResult, UvResult,
-};
+mod common;
 
-use std::collections::HashMap;
-use std::sync::{Arc, Mutex};
+use soft_fido2::{Authenticator, AuthenticatorConfig, AuthenticatorOptions, Result};
+
+use common::TestCallbacks;
 
 use base64::prelude::*;
 use serial_test::serial;
@@ -30,80 +26,6 @@ use sha2::{Digest, Sha256};
 const TEST_PIN: &str = "123456";
 const TEST_RP_ID: &str = "test.example.com";
 const TEST_ORIGIN: &str = "https://test.example.com";
-
-/// Test callbacks for E2E tests
-struct TestCallbacks {
-    credentials: Arc<Mutex<HashMap<Vec<u8>, Credential>>>,
-}
-
-impl TestCallbacks {
-    fn new() -> Self {
-        Self {
-            credentials: Arc::new(Mutex::new(HashMap::new())),
-        }
-    }
-}
-
-impl AuthenticatorCallbacks for TestCallbacks {
-    fn request_up(&self, _info: &str, _user: Option<&str>, _rp: &str) -> Result<UpResult> {
-        Ok(UpResult::Accepted)
-    }
-
-    fn request_uv(&self, _info: &str, _user: Option<&str>, _rp: &str) -> Result<UvResult> {
-        Ok(UvResult::Accepted)
-    }
-
-    fn write_credential(&self, cred_id: &[u8], _rp_id: &str, cred: &CredentialRef) -> Result<()> {
-        let mut store = self.credentials.lock().unwrap();
-        store.insert(cred_id.to_vec(), cred.to_owned());
-        Ok(())
-    }
-
-    fn read_credential(&self, cred_id: &[u8], _rp_id: &str) -> Result<Option<Credential>> {
-        let store = self.credentials.lock().unwrap();
-        Ok(store.get(cred_id).cloned())
-    }
-
-    fn delete_credential(&self, cred_id: &[u8]) -> Result<()> {
-        let mut store = self.credentials.lock().unwrap();
-        store.remove(cred_id);
-        Ok(())
-    }
-
-    fn list_credentials(&self, rp_id: &str, _user_id: Option<&[u8]>) -> Result<Vec<Credential>> {
-        let store = self.credentials.lock().unwrap();
-        let filtered: Vec<Credential> = store
-            .values()
-            .filter(|c| c.rp.id == rp_id)
-            .cloned()
-            .collect();
-        Ok(filtered)
-    }
-
-    fn enumerate_rps(&self) -> Result<Vec<(String, Option<String>, usize)>> {
-        let store = self.credentials.lock().unwrap();
-        let mut rp_map: HashMap<String, (Option<String>, usize)> = HashMap::new();
-
-        for cred in store.values() {
-            let entry = rp_map
-                .entry(cred.rp.id.clone())
-                .or_insert((cred.rp.name.clone(), 0));
-            entry.1 += 1;
-        }
-
-        let result: Vec<(String, Option<String>, usize)> = rp_map
-            .into_iter()
-            .map(|(rp_id, (rp_name, count))| (rp_id, rp_name, count))
-            .collect();
-
-        Ok(result)
-    }
-
-    fn credential_count(&self) -> Result<usize> {
-        let store = self.credentials.lock().unwrap();
-        Ok(store.len())
-    }
-}
 
 /// Compute PIN hash (SHA-256)
 fn compute_pin_hash(pin: &str) -> [u8; 32] {
@@ -224,7 +146,6 @@ fn test_complete_webauthn_flow_with_pin() -> Result<()> {
 
     // Setup callbacks
     let callbacks = TestCallbacks::new();
-    let credentials = callbacks.credentials.clone();
 
     // Configure authenticator
     let config = AuthenticatorConfig::builder()
@@ -246,7 +167,7 @@ fn test_complete_webauthn_flow_with_pin() -> Result<()> {
     let pin_hash = compute_pin_hash(TEST_PIN);
     Authenticator::<TestCallbacks>::set_pin_hash(&pin_hash);
 
-    let mut auth = Authenticator::with_config(callbacks, config)?;
+    let mut auth = Authenticator::with_config(callbacks.clone(), config)?;
 
     // ============================================================
     // PHASE 1: REGISTRATION (makeCredential)
@@ -314,7 +235,7 @@ fn test_complete_webauthn_flow_with_pin() -> Result<()> {
     );
 
     // Verify credentials were stored
-    let cred_count = credentials.lock().unwrap().len();
+    let cred_count = callbacks.credential_count();
     assert_eq!(cred_count, 1, "Expected 1 credential to be stored");
 
     eprintln!("╔════════════════════════════════════════════════╗");
@@ -348,7 +269,7 @@ fn test_uv_only_flow() -> Result<()> {
         )
         .build();
 
-    let mut auth = Authenticator::with_config(callbacks, config)?;
+    let mut auth = Authenticator::with_config(callbacks.clone(), config)?;
 
     // Registration
     let challenge = b"uv-only-registration";
