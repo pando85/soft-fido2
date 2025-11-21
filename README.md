@@ -1,33 +1,24 @@
-# soft-fido2
+<h1 style="font-size: 64px; margin: 0"><span style="color: #de6e1c; font-size: 88px; line-height: 0.9;">🦀</span> <span style="color: inherit; font-size: 48px; vertical-align: middle;">soft-fido2</span></h1>
 
+![Build status](https://img.shields.io/github/actions/workflow/status/pando85/soft-fido2/rust.yml?branch=master)
 [![Crates.io](https://img.shields.io/crates/v/soft-fido2.svg)](https://crates.io/crates/soft-fido2)
 [![Documentation](https://docs.rs/soft-fido2/badge.svg)](https://docs.rs/soft-fido2)
-[![License](https://img.shields.io/badge/license-GPL--3.0-blue.svg)](LICENSE)
-[![Build Status](https://github.com/pando85/soft-fido2/workflows/CI/badge.svg)](https://github.com/pando85/soft-fido2/actions)
+[![License](https://img.shields.io/badge/license-GPL--3.0-blue.svg)](LICENSE) A pure Rust
+implementation of FIDO2/WebAuthn CTAP 2.0/2.1 protocol for virtual authenticators.
 
-A pure Rust implementation of FIDO2/WebAuthn CTAP 2.0/2.1 protocol for virtual authenticators.
-
-**soft-fido2** provides virtual FIDO2 authenticator capabilities for testing and development, enabling developers to implement WebAuthn authentication flows without physical security keys.
+**soft-fido2** provides virtual FIDO2 authenticator capabilities for testing and development,
+enabling developers to implement WebAuthn authentication flows without physical security keys.
 
 ## Features
 
-- 🔐 **Full CTAP 2.0/2.1 Protocol** - Complete implementation of FIDO2 Client-to-Authenticator Protocol
-- 🦀 **Pure Rust** - Zero dependencies on C libraries, fully memory-safe implementation
+- 🔐 **Full CTAP 2.0/2.1 Protocol** - Complete implementation of FIDO2 Client-to-Authenticator
+  Protocol
 - 🚫 **no_std Support** - Core protocol and cryptography work in embedded environments
 - 🔌 **Multiple Transports** - USB HID and Linux UHID virtual device support
 - 🧪 **Testing-First** - Designed for WebAuthn integration testing and development
 - 🎯 **Callback-Based** - Flexible user interaction model with customizable callbacks
 - 📦 **Modular Architecture** - Separate crates for crypto, protocol, and transport layers
 - 🔒 **Well-Audited Crypto** - Uses industry-standard cryptographic libraries (p256, sha2, aes)
-
-## Quick Start
-
-Add to your `Cargo.toml`:
-
-```toml
-[dependencies]
-soft-fido2 = "0.2"
-```
 
 ### Basic Example
 
@@ -66,12 +57,12 @@ soft-fido2/
 
 ### Crate Overview
 
-| Crate | Description | no_std |
-|-------|-------------|---------|
-| [`soft-fido2`](soft-fido2) | High-level API combining all components | ⚠️ Core only |
-| [`soft-fido2-crypto`](soft-fido2-crypto) | P-256 ECDSA/ECDH, PIN protocols V1/V2 | ✅ Yes |
-| [`soft-fido2-ctap`](soft-fido2-ctap) | CTAP command handlers and authenticator logic | ✅ Yes |
-| [`soft-fido2-transport`](soft-fido2-transport) | USB HID and UHID transport implementations | ❌ Requires std |
+| Crate                                          | Description                                   | no_std          |
+| ---------------------------------------------- | --------------------------------------------- | --------------- |
+| [`soft-fido2`](soft-fido2)                     | High-level API combining all components       | ⚠️ Core only    |
+| [`soft-fido2-crypto`](soft-fido2-crypto)       | P-256 ECDSA/ECDH, PIN protocols V1/V2         | ✅ Yes          |
+| [`soft-fido2-ctap`](soft-fido2-ctap)           | CTAP command handlers and authenticator logic | ✅ Yes          |
+| [`soft-fido2-transport`](soft-fido2-transport) | USB HID and UHID transport implementations    | ❌ Requires std |
 
 ## Usage
 
@@ -222,6 +213,7 @@ soft-fido2 = { version = "0.2", default-features = false }
 ```
 
 **Available in no_std:**
+
 - ✅ CTAP protocol logic
 - ✅ Cryptographic operations (ECDSA, ECDH)
 - ✅ PIN protocols V1 and V2
@@ -229,6 +221,7 @@ soft-fido2 = { version = "0.2", default-features = false }
 - ✅ CBOR encoding/decoding
 
 **Requires std:**
+
 - ❌ Transport layers (USB HID, UHID)
 - ❌ Client API
 - ❌ Time-based PIN token expiration (uses timestamp = 0 in no_std)
@@ -239,9 +232,11 @@ The [`soft-fido2/examples`](soft-fido2/examples) directory contains several comp
 
 - **[authenticator.rs](soft-fido2/examples/authenticator.rs)** - Virtual authenticator with UHID
 - **[client.rs](soft-fido2/examples/client.rs)** - CTAP client communicating with authenticators
-- **[webauthn_flow.rs](soft-fido2/examples/webauthn_flow.rs)** - Complete WebAuthn registration and authentication
+- **[webauthn_flow.rs](soft-fido2/examples/webauthn_flow.rs)** - Complete WebAuthn registration and
+  authentication
 - **[pin_protocol.rs](soft-fido2/examples/pin_protocol.rs)** - PIN protocol demonstration
-- **[credential_management.rs](soft-fido2/examples/credential_management.rs)** - Managing stored credentials
+- **[credential_management.rs](soft-fido2/examples/credential_management.rs)** - Managing stored
+  credentials
 
 Run examples:
 
@@ -295,20 +290,22 @@ cargo test --all-features
 
 soft-fido2 implements the following CTAP 2.0/2.1 commands:
 
-| Command | Support | Description |
-|---------|---------|-------------|
-| `authenticatorMakeCredential` | ✅ | Create new credential (registration) |
-| `authenticatorGetAssertion` | ✅ | Get authentication assertion (login) |
-| `authenticatorGetInfo` | ✅ | Get authenticator metadata |
-| `authenticatorClientPIN` | ✅ | PIN protocol operations (V1, V2) |
-| `authenticatorReset` | ✅ | Factory reset |
-| `authenticatorGetNextAssertion` | ✅ | Get next assertion in batch |
-| `authenticatorCredentialManagement` | ✅ | Manage stored credentials |
-| `authenticatorSelection` | ✅ | User verification and selection |
+| Command                             | Support | Description                          |
+| ----------------------------------- | ------- | ------------------------------------ |
+| `authenticatorMakeCredential`       | ✅      | Create new credential (registration) |
+| `authenticatorGetAssertion`         | ✅      | Get authentication assertion (login) |
+| `authenticatorGetInfo`              | ✅      | Get authenticator metadata           |
+| `authenticatorClientPIN`            | ✅      | PIN protocol operations (V1, V2)     |
+| `authenticatorReset`                | ✅      | Factory reset                        |
+| `authenticatorGetNextAssertion`     | ✅      | Get next assertion in batch          |
+| `authenticatorCredentialManagement` | ✅      | Manage stored credentials            |
+| `authenticatorSelection`            | ✅      | User verification and selection      |
 
 ## Security
 
-⚠️ **Important:** This library is designed for **testing and development** purposes. While it implements the FIDO2 specification correctly and uses well-audited cryptographic libraries, it is **not intended for production use** as a real security key.
+⚠️ **Important:** This library is designed for **testing and development** purposes. While it
+implements the FIDO2 specification correctly and uses well-audited cryptographic libraries, it is
+**not intended for production use** as a real security key.
 
 ### Cryptographic Dependencies
 
@@ -322,24 +319,27 @@ All cryptographic operations use well-maintained, audited libraries:
 
 ### Credential Storage
 
-Credentials are stored in memory by default. For persistent storage, implement custom callback functions that write to secure storage (encrypted filesystem, TPM, etc.).
+Credentials are stored in memory by default. For persistent storage, implement custom callback
+functions that write to secure storage (encrypted filesystem, TPM, etc.).
 
 ## Platform Support
 
 | Platform | USB HID | UHID Virtual Device |
-|----------|---------|---------------------|
+| -------- | ------- | ------------------- |
 | Linux    | ✅ Yes  | ✅ Yes              |
 | macOS    | ✅ Yes  | ❌ No               |
 | Windows  | ✅ Yes  | ❌ No               |
 | Embedded | ❌ No   | ❌ No               |
 
 **UHID Requirements** (Linux only):
+
 - UHID kernel module loaded: `sudo modprobe uhid`
 - User permissions: Add user to `fido` group or configure udev rules
 
 ## Contributing
 
-Contributions are welcome! Please feel free to submit a Pull Request. For major changes, please open an issue first to discuss what you would like to change.
+Contributions are welcome! Please feel free to submit a Pull Request. For major changes, please open
+an issue first to discuss what you would like to change.
 
 ### Development Setup
 
@@ -360,7 +360,8 @@ make lint
 
 ## License
 
-This project is licensed under the GNU General Public License v3.0 - see the [LICENSE](LICENSE) file for details.
+This project is licensed under the GNU General Public License v3.0 - see the [LICENSE](LICENSE) file
+for details.
 
 ## References
 
