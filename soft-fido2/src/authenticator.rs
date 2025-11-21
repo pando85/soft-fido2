@@ -386,6 +386,7 @@ pub struct AuthenticatorConfig {
     pub extensions: Vec<String>,
     pub force_resident_keys: bool,
     pub firmware_version: Option<u32>,
+    pub constant_sign_count: bool,
 }
 
 impl Default for AuthenticatorConfig {
@@ -398,6 +399,7 @@ impl Default for AuthenticatorConfig {
             extensions: vec![],
             force_resident_keys: true, // Default to true for testing use cases
             firmware_version: None,
+            constant_sign_count: false, // Default: counter increments normally
         }
     }
 }
@@ -417,6 +419,7 @@ pub struct AuthenticatorConfigBuilder {
     extensions: Vec<String>,
     force_resident_keys: bool,
     firmware_version: Option<u32>,
+    constant_sign_count: bool,
 }
 
 impl Default for AuthenticatorConfigBuilder {
@@ -429,6 +432,7 @@ impl Default for AuthenticatorConfigBuilder {
             extensions: vec![],
             force_resident_keys: true, // Default to true for testing use cases
             firmware_version: None,
+            constant_sign_count: false, // Default: counter increments normally
         }
     }
 }
@@ -473,6 +477,11 @@ impl AuthenticatorConfigBuilder {
         self
     }
 
+    pub fn constant_sign_count(mut self, constant: bool) -> Self {
+        self.constant_sign_count = constant;
+        self
+    }
+
     pub fn build(self) -> AuthenticatorConfig {
         AuthenticatorConfig {
             aaguid: self.aaguid,
@@ -490,6 +499,7 @@ impl AuthenticatorConfigBuilder {
             extensions: self.extensions,
             force_resident_keys: self.force_resident_keys,
             firmware_version: self.firmware_version,
+            constant_sign_count: self.constant_sign_count,
         }
     }
 }
@@ -555,7 +565,8 @@ impl<C: AuthenticatorCallbacks> Authenticator<C> {
             .with_aaguid(config.aaguid)
             .with_max_credentials(config.max_credentials)
             .with_extensions(config.extensions)
-            .with_force_resident_keys(config.force_resident_keys);
+            .with_force_resident_keys(config.force_resident_keys)
+            .with_constant_sign_count(config.constant_sign_count);
 
         if let Some(fw_version) = config.firmware_version {
             ctap_config = ctap_config.with_firmware_version(fw_version);

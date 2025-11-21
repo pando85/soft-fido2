@@ -281,16 +281,21 @@ pub fn handle<C: AuthenticatorCallbacks>(
         }
     }
 
-    // 8. Increment sign count
-    let new_sign_count = selected_cred.sign_count + 1;
+    // 8. Increment sign count (unless constant_sign_count is enabled)
+    let new_sign_count = if auth.config().constant_sign_count {
+        selected_cred.sign_count // Keep counter constant for privacy
+    } else {
+        selected_cred.sign_count + 1 // Normal incrementing behavior
+    };
 
     // Only update stored credentials (not wrapped ones)
-    if selected_cred.discoverable {
+    // Note: Wrapped credentials (non-resident) don't persist sign count
+    let write_back = !auth.config().constant_sign_count && selected_cred.discoverable;
+    if write_back {
         let mut updated_cred = selected_cred.clone();
         updated_cred.sign_count = new_sign_count;
         auth.callbacks().update_credential(&updated_cred)?;
     }
-    // Note: Wrapped credentials (non-resident) don't persist sign count
 
     // 9. Build extension outputs
     let extension_outputs = extensions.build_outputs();

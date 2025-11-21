@@ -324,12 +324,6 @@ impl Credential {
             cred_protect: CredProtect::UserVerificationOptional.to_u8(),
         }
     }
-
-    /// Increment signature counter
-    pub fn increment_counter(&mut self) -> u32 {
-        self.sign_count = self.sign_count.wrapping_add(1);
-        self.sign_count
-    }
 }
 
 /// Get current Unix timestamp in seconds
@@ -469,25 +463,6 @@ mod tests {
         assert_eq!(cred.rp_id, "example.com");
         assert_eq!(cred.sign_count, 0);
         assert!(cred.discoverable);
-    }
-
-    #[test]
-    fn test_credential_counter_increment() {
-        let mut cred = Credential::new(
-            vec![1],
-            "example.com".to_string(),
-            None,
-            vec![2],
-            None,
-            None,
-            -7,
-            vec![0u8; 32],
-            false,
-        );
-
-        assert_eq!(cred.increment_counter(), 1);
-        assert_eq!(cred.increment_counter(), 2);
-        assert_eq!(cred.sign_count, 2);
     }
 
     #[test]

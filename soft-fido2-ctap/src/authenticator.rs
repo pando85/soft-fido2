@@ -87,6 +87,15 @@ pub struct AuthenticatorConfig {
     ///
     /// Default: true (optimized for testing/virtual authenticator use cases)
     pub force_resident_keys: bool,
+
+    /// Use constant signature counter (for privacy)
+    ///
+    /// When true, the signature counter will not increment and remain at 0.
+    /// This enhances privacy by preventing cross-site tracking via counter correlation.
+    /// Some authenticators use this mode to avoid leaking usage patterns.
+    ///
+    /// Default: false (counter increments normally)
+    pub constant_sign_count: bool,
 }
 
 impl AuthenticatorConfig {
@@ -107,6 +116,7 @@ impl AuthenticatorConfig {
             min_pin_length: Some(4),       // CTAP default minimum PIN length
             credential_wrapping_key: None, // Will be generated if needed
             force_resident_keys: true,     // Default to true for testing use cases
+            constant_sign_count: false,    // Default: counter increments normally
         }
     }
 
@@ -155,6 +165,15 @@ impl AuthenticatorConfig {
     /// Force all credentials to be resident keys (for testing)
     pub fn with_force_resident_keys(mut self, force: bool) -> Self {
         self.force_resident_keys = force;
+        self
+    }
+
+    /// Use constant signature counter (for privacy)
+    ///
+    /// When enabled, the signature counter will not increment and remain at 0.
+    /// This enhances privacy by preventing cross-site tracking via counter correlation.
+    pub fn with_constant_sign_count(mut self, constant: bool) -> Self {
+        self.constant_sign_count = constant;
         self
     }
 }
