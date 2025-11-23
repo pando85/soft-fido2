@@ -5,6 +5,20 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/), and this project
 adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [v0.3.0](https://github.com/pando85/soft-fido2/tree/v0.3.0) - 2025-11-23
+
+### Added
+
+- Secure private key with secstr lib ([9fcb6cc](https://github.com/pando85/soft-fido2/commit/9fcb6cccc366afe9fc627be8316a383175ee78aa))
+  - **BREAKING**: This commit introduces the use of the `secstr` library
+to securely handle private keys in memory. This change Credential API
+now uses `SecStr` for storing private keys, enhancing security by
+minimizing the risk of sensitive data exposure.
+
+### Refactor
+
+- Reorder imports following style guide ([811bd22](https://github.com/pando85/soft-fido2/commit/811bd2228ed0e0f76177c63e15479c01fb00f28d))
+
 ## [v0.2.1](https://github.com/pando85/soft-fido2/tree/v0.2.1) - 2025-11-23
 
 ### Fixed
