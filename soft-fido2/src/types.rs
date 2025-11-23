@@ -2,11 +2,11 @@
 
 use crate::error::{Error, Result};
 
+use soft_fido2_ctap::SecBytes;
+
 use alloc::string::String;
 use alloc::vec::Vec;
-
 use serde::{Deserialize, Serialize};
-use soft_fido2_ctap::SecBytes;
 
 /// Relying party information
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]

@@ -8,7 +8,6 @@ extern crate alloc;
 use crate::error::{CryptoError, Result};
 
 use alloc::vec::Vec;
-
 use p256::elliptic_curve::sec1::ToEncodedPoint;
 use p256::{PublicKey, SecretKey};
 use rand::rngs::OsRng;

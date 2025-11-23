@@ -7,9 +7,8 @@ mod common;
 
 use soft_fido2::{Authenticator, AuthenticatorConfig, AuthenticatorOptions};
 
-use common::TestCallbacks;
-
 use base64::Engine;
+use common::TestCallbacks;
 use sha2::{Digest, Sha256};
 
 const PIN: &str = "123456";

@@ -1,8 +1,7 @@
 use crate::error::{Error, Result};
 
 #[cfg(target_os = "linux")]
-use soft_fido2_transport::UhidDevice;
-use soft_fido2_transport::{ChannelManager, Message, Packet};
+use soft_fido2_transport::{ChannelManager, Message, Packet, UhidDevice};
 #[cfg(feature = "usb")]
 use soft_fido2_transport::{UsbTransport as RawUsbTransport, enumerate_devices, init_usb};
 

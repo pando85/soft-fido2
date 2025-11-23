@@ -4,13 +4,11 @@
 //! with automatic memory zeroing and optional memory locking.
 
 use alloc::vec::Vec;
-
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use zeroize::{Zeroize, Zeroizing};
 
 #[cfg(feature = "std")]
 use secstr::SecVec;
-
 use subtle::ConstantTimeEq;
 
 /// Secure bytes for sensitive data (private keys, PINs, tokens)

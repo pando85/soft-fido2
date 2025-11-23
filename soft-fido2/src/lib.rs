@@ -77,6 +77,7 @@ pub use request::{
     MakeCredentialRequest, PinUvAuth, PinUvAuthProtocol,
 };
 pub use soft_fido2_ctap::StatusCode;
+
 pub use types::{Credential, CredentialRef, Extensions, RelyingParty, User};
 
 // std-only re-exports
