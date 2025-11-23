@@ -136,7 +136,7 @@ impl Client {
         let request_bytes = builder.build().map_err(|_| Error::Other)?;
 
         // Send CTAP command 0x01 (authenticatorMakeCredential)
-        let response = transport.send_ctap_command(0x01, &request_bytes)?;
+        let response = transport.send_ctap_command(0x01, &request_bytes, request.timeout_ms)?;
 
         Ok(response)
     }
@@ -225,7 +225,7 @@ impl Client {
         let request_bytes = builder.build().map_err(|_| Error::Other)?;
 
         // Send CTAP command 0x02 (authenticatorGetAssertion)
-        let response = transport.send_ctap_command(0x02, &request_bytes)?;
+        let response = transport.send_ctap_command(0x02, &request_bytes, request.timeout_ms)?;
 
         Ok(response)
     }
@@ -240,8 +240,8 @@ impl Client {
     ///
     /// The raw CBOR-encoded authenticator info
     pub fn authenticator_get_info(transport: &mut Transport) -> Result<Vec<u8>> {
-        // authenticatorGetInfo has no parameters
-        let response = transport.send_ctap_command(0x04, &[])?;
+        // authenticatorGetInfo has no parameters, use default 30s timeout
+        let response = transport.send_ctap_command(0x04, &[], 30000)?;
         Ok(response)
     }
 
@@ -378,7 +378,7 @@ impl Client {
         let request_bytes = builder.build().map_err(|_| Error::Other)?;
 
         // Send CTAP command 0x01 (authenticatorMakeCredential) using zero-allocation transport
-        transport.send_ctap_command_buf(0x01, &request_bytes, response)
+        transport.send_ctap_command_buf(0x01, &request_bytes, response, request.timeout_ms)
     }
 
     /// Get an assertion (zero-allocation variant)
@@ -477,7 +477,7 @@ impl Client {
         let request_bytes = builder.build().map_err(|_| Error::Other)?;
 
         // Send CTAP command 0x02 (authenticatorGetAssertion) using zero-allocation transport
-        transport.send_ctap_command_buf(0x02, &request_bytes, response)
+        transport.send_ctap_command_buf(0x02, &request_bytes, response, request.timeout_ms)
     }
 
     /// Send authenticatorGetInfo command (zero-allocation variant)
@@ -501,8 +501,8 @@ impl Client {
         transport: &mut Transport,
         response: &mut [u8],
     ) -> Result<usize> {
-        // authenticatorGetInfo has no parameters
-        transport.send_ctap_command_buf(0x04, &[], response)
+        // authenticatorGetInfo has no parameters, use default 30s timeout
+        transport.send_ctap_command_buf(0x04, &[], response, 30000)
     }
 }
 
