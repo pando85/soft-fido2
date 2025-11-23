@@ -283,10 +283,11 @@ impl Transport {
     /// # Arguments
     /// * `cmd` - CTAP authenticator command (0x01=makeCredential, 0x02=getAssertion, 0x04=getInfo, etc.)
     /// * `data` - CBOR-encoded command parameters
-    pub fn send_ctap_command(&mut self, cmd: u8, data: &[u8]) -> Result<Vec<u8>> {
+    /// * `timeout_ms` - Timeout in milliseconds for reading response
+    pub fn send_ctap_command(&mut self, cmd: u8, data: &[u8], timeout_ms: i32) -> Result<Vec<u8>> {
         // Use zero-allocation variant and convert to Vec
         let mut buffer = vec![0u8; 7609]; // Max CTAP response size
-        let len = self.send_ctap_command_buf(cmd, data, &mut buffer)?;
+        let len = self.send_ctap_command_buf(cmd, data, &mut buffer, timeout_ms)?;
         buffer.truncate(len);
         Ok(buffer)
     }
@@ -301,6 +302,7 @@ impl Transport {
     /// * `cmd` - CTAP command byte (e.g., 0x01 for makeCredential, 0x02 for getAssertion)
     /// * `data` - CBOR-encoded command parameters
     /// * `response` - Buffer to write the response into (should be at least 7609 bytes for max CTAP response)
+    /// * `timeout_ms` - Timeout in milliseconds for reading response
     ///
     /// # Returns
     ///
@@ -314,6 +316,7 @@ impl Transport {
         cmd: u8,
         data: &[u8],
         response: &mut [u8],
+        timeout_ms: i32,
     ) -> Result<usize> {
         use soft_fido2_transport::Cmd;
 
@@ -390,7 +393,7 @@ impl Transport {
         loop {
             drop(inner); // Release lock before read
             let mut buffer = [0u8; 64];
-            let bytes_read = self.read(&mut buffer, 5000)?;
+            let bytes_read = self.read(&mut buffer, timeout_ms)?;
             inner = self.inner.lock().unwrap();
 
             if bytes_read == 0 {

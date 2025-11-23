@@ -110,8 +110,8 @@ impl PinUvAuthEncapsulation {
             .build()
             .map_err(|_| Error::Other)?;
 
-        // Send clientPin command (0x06)
-        let response = transport.send_ctap_command(0x06, &request_bytes)?;
+        // Send clientPin command (0x06) with 30s timeout
+        let response = transport.send_ctap_command(0x06, &request_bytes, 30000)?;
 
         // Check CTAP status code (first byte)
         if response.is_empty() {
@@ -232,8 +232,8 @@ impl PinUvAuthEncapsulation {
 
         let request_bytes = builder.build().map_err(|_| Error::Other)?;
 
-        // Send clientPin command (0x06)
-        let response = transport.send_ctap_command(0x06, &request_bytes)?;
+        // Send clientPin command (0x06) with 30s timeout
+        let response = transport.send_ctap_command(0x06, &request_bytes, 30000)?;
 
         // Check CTAP status code (first byte)
         if response.is_empty() {
