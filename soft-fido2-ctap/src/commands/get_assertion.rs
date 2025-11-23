@@ -312,12 +312,17 @@ pub fn handle<C: AuthenticatorCallbacks>(
     // 11. Generate signature
     let sig_data = [&auth_data[..], &client_data_hash[..]].concat();
 
-    // Convert private key Vec to array
-    if selected_cred.private_key.len() != 32 {
+    // Use protected scope for key access
+    let key_bytes = selected_cred.private_key.as_slice();
+    if key_bytes.len() != 32 {
         return Err(StatusCode::InvalidCredential);
     }
-    let mut priv_key_array = [0u8; 32];
-    priv_key_array.copy_from_slice(&selected_cred.private_key);
+
+    let priv_key_array = {
+        let mut arr = [0u8; 32];
+        arr.copy_from_slice(key_bytes);
+        arr
+    };
 
     let signature = ecdsa::sign(&priv_key_array, &sig_data)?;
 

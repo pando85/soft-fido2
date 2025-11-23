@@ -4,12 +4,13 @@
 //! PIN management, and overall state coordination.
 
 use crate::{
-    CoseAlgorithm, StatusCode,
+    CoseAlgorithm, SecBytes, StatusCode,
     callbacks::AuthenticatorCallbacks,
     pin_token::{Permission, PinToken, PinTokenManager},
 };
 
 use soft_fido2_crypto::pin_protocol::{self, v2};
+use zeroize::Zeroizing;
 
 use alloc::{
     boxed::Box,
@@ -730,7 +731,7 @@ impl<C: AuthenticatorCallbacks> Authenticator<C> {
     pub fn unwrap_credential(
         &self,
         credential_id: &[u8],
-    ) -> Result<(Vec<u8>, String, i32), StatusCode> {
+    ) -> Result<(SecBytes, String, i32), StatusCode> {
         // Minimum size: version(1) + IV(16) + min_encrypted(16) + HMAC(16) = 49 bytes
         if credential_id.len() < 49 {
             return Err(StatusCode::InvalidParameter);
@@ -754,17 +755,20 @@ impl<C: AuthenticatorCallbacks> Authenticator<C> {
             return Err(StatusCode::InvalidParameter);
         }
 
-        // Decrypt
+        // Decrypt with protected buffer
         let encrypted = &credential_id[1..hmac_start];
-        let plaintext = v2::decrypt(&self.credential_wrapping_key, encrypted)
-            .map_err(|_| StatusCode::InvalidParameter)?;
+        let plaintext = Zeroizing::new(
+            v2::decrypt(&self.credential_wrapping_key, encrypted)
+                .map_err(|_| StatusCode::InvalidParameter)?,
+        );
 
         // Parse plaintext: private_key(32) || rp_id_len(1) || rp_id || algorithm(4)
         if plaintext.len() < 37 {
             return Err(StatusCode::InvalidParameter);
         }
 
-        let private_key = plaintext[0..32].to_vec();
+        // Extract into SecBytes immediately
+        let private_key = SecBytes::from_slice(&plaintext[0..32]);
         let rp_id_len = plaintext[32] as usize;
 
         if plaintext.len() < 33 + rp_id_len + 4 {
@@ -782,6 +786,7 @@ impl<C: AuthenticatorCallbacks> Authenticator<C> {
             plaintext[36 + rp_id_len],
         ]);
 
+        // plaintext dropped and zeroed here
         Ok((private_key, rp_id, algorithm))
     }
 }

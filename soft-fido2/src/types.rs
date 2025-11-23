@@ -2,7 +2,11 @@
 
 use crate::error::{Error, Result};
 
+use alloc::string::String;
+use alloc::vec::Vec;
+
 use serde::{Deserialize, Serialize};
+use soft_fido2_ctap::SecBytes;
 
 /// Relying party information
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
@@ -47,7 +51,19 @@ pub struct Credential {
     /// Algorithm (-7 for ES256)
     pub alg: i32,
     /// Private key bytes (32 bytes for ES256)
-    pub private_key: Vec<u8>,
+    ///
+    /// # Security
+    ///
+    /// - **With `std` feature** (default): Protected using `SecVec` which:
+    ///   - Zeros memory on drop using `mlock`
+    ///   - Prevents swapping to disk
+    ///   - Uses constant-time equality
+    /// - **Without `std` (no_std)**: Stored as plain `Vec<u8>` for compatibility.
+    ///   No memory protection is provided in no_std environments.
+    ///
+    /// The storage boundary (this field) is the primary protection point for
+    /// long-term credential storage.
+    pub private_key: SecBytes,
     /// Creation timestamp
     pub created: i64,
     /// Is resident key
@@ -75,17 +91,17 @@ pub struct CredentialRef<'a> {
     /// User display name (optional)
     pub user_display_name: Option<&'a str>,
     /// Signature counter
-    pub sign_count: u32,
+    pub sign_count: &'a u32,
     /// Algorithm (-7 for ES256)
-    pub alg: i32,
+    pub alg: &'a i32,
     /// Private key bytes (32 bytes for ES256)
-    pub private_key: &'a [u8],
+    pub private_key: &'a SecBytes,
     /// Creation timestamp
-    pub created: i64,
+    pub created: &'a i64,
     /// Is resident key
-    pub discoverable: bool,
+    pub discoverable: &'a bool,
     /// Credential protection level
-    pub cred_protect: Option<u8>,
+    pub cred_protect: Option<&'a u8>,
 }
 
 impl<'a> CredentialRef<'a> {
@@ -102,13 +118,13 @@ impl<'a> CredentialRef<'a> {
                 name: self.user_name.map(|s| s.to_string()),
                 display_name: self.user_display_name.map(|s| s.to_string()),
             },
-            sign_count: self.sign_count,
-            alg: self.alg,
-            private_key: self.private_key.to_vec(),
-            created: self.created,
-            discoverable: self.discoverable,
+            sign_count: self.sign_count.to_owned(),
+            alg: self.alg.to_owned(),
+            private_key: self.private_key.to_owned(),
+            created: self.created.to_owned(),
+            discoverable: self.discoverable.to_owned(),
             extensions: Extensions {
-                cred_protect: self.cred_protect,
+                cred_protect: self.cred_protect.copied(),
                 hmac_secret: None,
             },
         }

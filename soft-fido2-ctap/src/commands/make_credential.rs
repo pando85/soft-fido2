@@ -199,7 +199,7 @@ pub fn handle<C: AuthenticatorCallbacks>(
             user_id: user.id.clone(),
             user_name: user.name.clone(),
             user_display_name: user.display_name.clone(),
-            private_key: private_key.to_vec(),
+            private_key: crate::SecBytes::from_array(private_key),
             algorithm: alg.alg,
             sign_count: 0,
             created: current_timestamp(),
