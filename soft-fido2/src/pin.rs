@@ -11,7 +11,6 @@ use soft_fido2_ctap::cbor::{MapBuilder, Value};
 
 use p256::elliptic_curve::sec1::ToEncodedPoint;
 use p256::{PublicKey as P256PublicKey, SecretKey as P256SecretKey};
-
 use rand::rngs::OsRng;
 
 /// PIN protocol version

@@ -5,7 +5,7 @@
 //! Spec: <https://fidoalliance.org/specs/fido-v2.2-rd-20230321/fido-client-to-authenticator-protocol-v2.2-rd-20230321.html#authenticatorMakeCredential>
 
 use crate::{
-    CredProtect, UpResult, UvResult,
+    CredProtect, SecBytes, UpResult, UvResult,
     authenticator::Authenticator,
     callbacks::AuthenticatorCallbacks,
     cbor::{MapBuilder, MapParser},
@@ -19,11 +19,9 @@ use soft_fido2_crypto::ecdsa;
 #[cfg(feature = "std")]
 use std::time::{SystemTime, UNIX_EPOCH};
 
-use alloc::format;
 use alloc::string::{String, ToString};
-use alloc::vec;
 use alloc::vec::Vec;
-
+use alloc::{format, vec};
 use rand::RngCore;
 use sha2::{Digest, Sha256};
 
@@ -199,7 +197,7 @@ pub fn handle<C: AuthenticatorCallbacks>(
             user_id: user.id.clone(),
             user_name: user.name.clone(),
             user_display_name: user.display_name.clone(),
-            private_key: crate::SecBytes::from_array(private_key),
+            private_key: SecBytes::from_array(private_key),
             algorithm: alg.alg,
             sign_count: 0,
             created: current_timestamp(),

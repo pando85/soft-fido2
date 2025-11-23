@@ -31,14 +31,15 @@ use soft_fido2::{
     GetAssertionRequest, MakeCredentialRequest, RelyingParty, TransportList, User,
 };
 
-use common::VerboseTestCallbacks;
-use serial_test::serial;
-use sha2::{Digest, Sha256};
+use soft_fido2_transport::{CommandHandler, CtapHidHandler, Packet, UhidDevice};
+
 use std::sync::{Arc, Mutex};
 use std::thread;
 use std::time::Duration;
 
-use soft_fido2_transport::{CommandHandler, CtapHidHandler, Packet, UhidDevice};
+use common::VerboseTestCallbacks;
+use serial_test::serial;
+use sha2::{Digest, Sha256};
 
 const TEST_RP_ID: &str = "transport-test.example.com";
 const TEST_ORIGIN: &str = "https://transport-test.example.com";

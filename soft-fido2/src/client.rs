@@ -509,6 +509,7 @@ impl Client {
 #[cfg(test)]
 mod tests {
     use super::*;
+
     use crate::request::ClientDataHash;
     use crate::types::{RelyingParty, User};
 

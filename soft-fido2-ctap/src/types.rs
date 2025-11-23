@@ -462,7 +462,7 @@ mod tests {
             Some("user@example.com".to_string()),
             Some("User Name".to_string()),
             -7,
-            crate::SecBytes::new(vec![0u8; 32]),
+            SecBytes::new(vec![0u8; 32]),
             true,
         );
 

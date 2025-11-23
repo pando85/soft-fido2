@@ -17,7 +17,6 @@ use crate::{
 };
 
 use alloc::{string::String, vec::Vec};
-
 use rand::RngCore;
 use subtle::ConstantTimeEq;
 

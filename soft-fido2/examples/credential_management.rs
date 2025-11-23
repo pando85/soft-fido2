@@ -20,7 +20,6 @@
 //! ```
 
 use soft_fido2::{Client, PinProtocol, PinUvAuthEncapsulation, Result, TransportList};
-
 use soft_fido2_ctap::cbor::Value;
 
 const PIN: &str = "123456";

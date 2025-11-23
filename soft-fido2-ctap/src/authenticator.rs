@@ -10,6 +10,7 @@ use crate::{
 };
 
 use soft_fido2_crypto::pin_protocol::{self, v2};
+
 use zeroize::Zeroizing;
 
 use alloc::{

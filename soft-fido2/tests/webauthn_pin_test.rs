@@ -16,9 +16,8 @@ mod common;
 
 use soft_fido2::{Authenticator, AuthenticatorConfig, AuthenticatorOptions, Result};
 
-use common::TestCallbacks;
-
 use base64::prelude::*;
+use common::TestCallbacks;
 use serial_test::serial;
 use sha2::{Digest, Sha256};
 
