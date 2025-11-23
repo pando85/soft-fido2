@@ -60,8 +60,8 @@ mod tests {
                 id: "example.com".to_string(),
                 name: Some("Example Corp".to_string()),
             },
-            private_key: vec![0x01; 32], // Private key for ES256
-            alg: -7,                     // ES256
+            private_key: soft_fido2_ctap::SecBytes::new(vec![0x01; 32]), // Private key for ES256
+            alg: -7,                                                     // ES256
             sign_count: 0,
             created: 1234567890,
             discoverable: true,
@@ -175,7 +175,7 @@ mod tests {
                     id: "example.com".to_string(),
                     name: Some("Example".to_string()),
                 },
-                private_key: vec![0x01; 32],
+                private_key: soft_fido2_ctap::SecBytes::new(vec![0x01; 32]),
                 alg: -7,
                 sign_count: 0,
                 created: 1000,
@@ -193,7 +193,7 @@ mod tests {
                     id: "another.com".to_string(),
                     name: Some("Another".to_string()),
                 },
-                private_key: vec![0x02; 32],
+                private_key: soft_fido2_ctap::SecBytes::new(vec![0x02; 32]),
                 alg: -7,
                 sign_count: 0,
                 created: 2000,
@@ -211,7 +211,7 @@ mod tests {
                     id: "example.com".to_string(),
                     name: Some("Example".to_string()),
                 },
-                private_key: vec![0x03; 32],
+                private_key: soft_fido2_ctap::SecBytes::new(vec![0x03; 32]),
                 alg: -7,
                 sign_count: 0,
                 created: 3000,

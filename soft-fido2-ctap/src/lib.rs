@@ -18,6 +18,7 @@ pub mod commands;
 pub mod dispatcher;
 pub mod extensions;
 pub mod pin_token;
+pub mod sec_bytes;
 pub mod status;
 pub mod types;
 
@@ -31,6 +32,7 @@ pub use callbacks::{
 };
 pub use dispatcher::CommandDispatcher;
 pub use pin_token::{Permission, PinToken, PinTokenManager};
+pub use sec_bytes::SecBytes;
 pub use status::{Result, StatusCode};
 pub use types::{
     CoseAlgorithm, CredProtect, Credential, PublicKeyCredentialDescriptor,

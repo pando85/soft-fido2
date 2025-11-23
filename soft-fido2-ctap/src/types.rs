@@ -3,6 +3,8 @@
 //! Core data structures used in CTAP protocol messages.
 //! All types support CBOR serialization as required by the FIDO2 spec.
 
+use crate::sec_bytes::SecBytes;
+
 use alloc::string::{String, ToString};
 use alloc::vec::Vec;
 
@@ -256,7 +258,7 @@ impl CredProtect {
 /// Credential data stored by authenticator
 ///
 /// Internal representation of a credential with all metadata.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Credential {
     /// Credential ID
     pub id: Vec<u8>,
@@ -283,7 +285,12 @@ pub struct Credential {
     pub algorithm: i32,
 
     /// Private key (32 bytes for P-256)
-    pub private_key: Vec<u8>,
+    ///
+    /// Protected using `SecBytes` which:
+    /// - Zeros memory on drop (prevents heap retention attacks)
+    /// - Uses mlock in std builds (prevents swapping to disk)
+    /// - Provides constant-time equality
+    pub private_key: SecBytes,
 
     /// Creation timestamp (Unix timestamp)
     pub created: i64,
@@ -306,7 +313,7 @@ impl Credential {
         user_name: Option<String>,
         user_display_name: Option<String>,
         algorithm: i32,
-        private_key: Vec<u8>,
+        private_key: SecBytes,
         discoverable: bool,
     ) -> Self {
         Self {
@@ -455,7 +462,7 @@ mod tests {
             Some("user@example.com".to_string()),
             Some("User Name".to_string()),
             -7,
-            vec![0u8; 32],
+            crate::SecBytes::new(vec![0u8; 32]),
             true,
         );
 

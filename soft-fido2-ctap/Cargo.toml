@@ -22,6 +22,10 @@ serde_bytes.workspace = true
 sha2.workspace = true
 subtle.workspace = true
 rand.workspace = true
+zeroize.workspace = true
+
+# Security (std-only)
+secstr = { version = "0.5", optional = true }
 
 # Error handling (optional for std only)
 thiserror = { workspace = true, optional = true }
@@ -38,5 +42,5 @@ soft-fido2-transport = { path = "../soft-fido2-transport" }
 
 [features]
 default = ["std"]
-std = ["soft-fido2-crypto/std", "dep:thiserror", "cbor4ii/use_std"]
+std = ["soft-fido2-crypto/std", "dep:thiserror", "cbor4ii/use_std", "dep:secstr"]
 transport = ["dep:soft-fido2-transport", "std"]

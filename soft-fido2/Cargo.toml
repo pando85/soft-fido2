@@ -12,7 +12,7 @@ version.workspace = true
 [features]
 default = ["std", "usb"]
 # Enable standard library (required for transport layers)
-std = ["soft-fido2-crypto/std", "soft-fido2-ctap/std", "soft-fido2-transport"]
+std = ["soft-fido2-crypto/std", "soft-fido2-ctap/std", "soft-fido2-transport", "dep:secstr"]
 # Enable USB HID transport (requires std and libudev on Linux)
 usb = ["std", "soft-fido2-transport/usb"]
 
@@ -32,6 +32,7 @@ hmac.workspace = true
 hkdf.workspace = true
 hex.workspace = true
 smallvec.workspace = true
+secstr = { version = "0.5", optional = true }
 
 # no_std synchronization primitives
 spin.workspace = true

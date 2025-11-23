@@ -4,7 +4,6 @@
 
 use crate::error::{Error, Result};
 use crate::types::{Credential, CredentialRef};
-
 use soft_fido2_ctap::authenticator::{
     Authenticator as CtapAuthenticator, AuthenticatorConfig as CtapConfig,
 };
@@ -302,12 +301,12 @@ impl<C: AuthenticatorCallbacks> CredentialStorageCallbacks for CallbackAdapter<C
             user_id: &credential.user_id,
             user_name: credential.user_name.as_deref(),
             user_display_name: credential.user_display_name.as_deref(),
-            sign_count: credential.sign_count,
-            alg: credential.algorithm,
+            sign_count: &credential.sign_count,
+            alg: &credential.algorithm,
             private_key: &credential.private_key,
-            created: credential.created,
-            discoverable: credential.discoverable,
-            cred_protect: Some(credential.cred_protect),
+            created: &credential.created,
+            discoverable: &credential.discoverable,
+            cred_protect: Some(&credential.cred_protect),
         };
 
         self.callbacks
