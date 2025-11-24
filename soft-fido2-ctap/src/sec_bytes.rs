@@ -4,7 +4,10 @@
 //! with automatic memory zeroing and optional memory locking.
 
 use alloc::vec::Vec;
-use serde::{Deserialize, Deserializer, Serialize, Serializer};
+use serde::{
+    Deserialize, Deserializer, Serialize, Serializer,
+    de::{self, Visitor},
+};
 use zeroize::{Zeroize, Zeroizing};
 
 #[cfg(feature = "std")]
@@ -213,8 +216,24 @@ impl<'de> Deserialize<'de> for SecBytes {
     where
         D: Deserializer<'de>,
     {
-        let data: Vec<u8> = Deserialize::deserialize(deserializer)?;
-        Ok(SecBytes::new(data))
+        struct SecBytesVisitor;
+
+        impl<'de> Visitor<'de> for SecBytesVisitor {
+            type Value = SecBytes;
+
+            fn expecting(&self, formatter: &mut core::fmt::Formatter) -> core::fmt::Result {
+                formatter.write_str("bytes")
+            }
+
+            fn visit_bytes<E>(self, v: &[u8]) -> Result<Self::Value, E>
+            where
+                E: de::Error,
+            {
+                Ok(SecBytes::new(v.to_vec()))
+            }
+        }
+
+        deserializer.deserialize_bytes(SecBytesVisitor)
     }
 }
 
