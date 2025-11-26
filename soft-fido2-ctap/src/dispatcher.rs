@@ -39,6 +39,12 @@ impl<C: AuthenticatorCallbacks> CommandDispatcher<C> {
             return Err(StatusCode::InvalidParameter);
         }
 
+        if let Some(max_msg_size) = self.authenticator.config().max_msg_size
+            && data.len() > max_msg_size
+        {
+            return Err(StatusCode::RequestTooLarge);
+        };
+
         let command_code = data[0];
         let command_data = &data[1..];
 

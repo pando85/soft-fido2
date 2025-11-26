@@ -11,6 +11,7 @@ use soft_fido2_ctap::callbacks::{
     CredentialStorageCallbacks, UpResult as CtapUpResult, UserInteractionCallbacks,
     UvResult as CtapUvResult,
 };
+use soft_fido2_ctap::cbor::MAX_CTAP_MESSAGE_SIZE;
 use soft_fido2_ctap::types::Credential as CtapCredential;
 use soft_fido2_ctap::{CommandDispatcher, StatusCode};
 
@@ -386,6 +387,7 @@ pub struct AuthenticatorConfig {
     pub force_resident_keys: bool,
     pub firmware_version: Option<u32>,
     pub constant_sign_count: bool,
+    pub max_msg_size: usize,
 }
 
 impl Default for AuthenticatorConfig {
@@ -399,6 +401,7 @@ impl Default for AuthenticatorConfig {
             force_resident_keys: true, // Default to true for testing use cases
             firmware_version: None,
             constant_sign_count: false, // Default: counter increments normally
+            max_msg_size: MAX_CTAP_MESSAGE_SIZE,
         }
     }
 }
@@ -419,6 +422,7 @@ pub struct AuthenticatorConfigBuilder {
     force_resident_keys: bool,
     firmware_version: Option<u32>,
     constant_sign_count: bool,
+    max_msg_size: usize,
 }
 
 impl Default for AuthenticatorConfigBuilder {
@@ -432,6 +436,7 @@ impl Default for AuthenticatorConfigBuilder {
             force_resident_keys: true, // Default to true for testing use cases
             firmware_version: None,
             constant_sign_count: false, // Default: counter increments normally
+            max_msg_size: MAX_CTAP_MESSAGE_SIZE,
         }
     }
 }
@@ -481,6 +486,11 @@ impl AuthenticatorConfigBuilder {
         self
     }
 
+    pub fn max_msg_size(mut self, size: usize) -> Self {
+        self.max_msg_size = size;
+        self
+    }
+
     pub fn build(self) -> AuthenticatorConfig {
         AuthenticatorConfig {
             aaguid: self.aaguid,
@@ -499,6 +509,7 @@ impl AuthenticatorConfigBuilder {
             force_resident_keys: self.force_resident_keys,
             firmware_version: self.firmware_version,
             constant_sign_count: self.constant_sign_count,
+            max_msg_size: self.max_msg_size,
         }
     }
 }
@@ -565,7 +576,8 @@ impl<C: AuthenticatorCallbacks> Authenticator<C> {
             .with_max_credentials(config.max_credentials)
             .with_extensions(config.extensions)
             .with_force_resident_keys(config.force_resident_keys)
-            .with_constant_sign_count(config.constant_sign_count);
+            .with_constant_sign_count(config.constant_sign_count)
+            .with_max_msg_size(config.max_msg_size);
 
         if let Some(fw_version) = config.firmware_version {
             ctap_config = ctap_config.with_firmware_version(fw_version);

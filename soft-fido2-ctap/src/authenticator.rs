@@ -6,6 +6,7 @@
 use crate::{
     CoseAlgorithm, SecBytes, StatusCode,
     callbacks::AuthenticatorCallbacks,
+    cbor::MAX_CTAP_MESSAGE_SIZE,
     pin_token::{Permission, PinToken, PinTokenManager},
 };
 
@@ -110,8 +111,8 @@ impl AuthenticatorConfig {
             max_credentials: 100,
             extensions: vec![],
             firmware_version: None,
-            max_msg_size: Some(7609),       // CTAP max message size
-            pin_uv_auth_protocols: vec![2], // Only V2 (V1 is associated with U2F)
+            max_msg_size: Some(MAX_CTAP_MESSAGE_SIZE), // CTAP max message size
+            pin_uv_auth_protocols: vec![2],            // Only V2 (V1 is associated with U2F)
             max_credential_id_length: Some(128),
             transports: vec!["usb".to_string()], // Only USB (NFC might trigger U2F probing)
             max_cred_blob_length: Some(32),
@@ -176,6 +177,20 @@ impl AuthenticatorConfig {
     /// This enhances privacy by preventing cross-site tracking via counter correlation.
     pub fn with_constant_sign_count(mut self, constant: bool) -> Self {
         self.constant_sign_count = constant;
+        self
+    }
+
+    /// Set maximum message size
+    pub fn with_max_msg_size(mut self, size: usize) -> Self {
+        assert!(
+            size >= 1024,
+            "maxMsgSize must be at least 1024 bytes per CTAP spec"
+        );
+        assert!(
+            size <= MAX_CTAP_MESSAGE_SIZE,
+            "maxMsgSize cannot exceed 7609 bytes (CTAP HID limit)"
+        );
+        self.max_msg_size = Some(size);
         self
     }
 }
@@ -665,6 +680,13 @@ impl<C: AuthenticatorCallbacks> Authenticator<C> {
 
         // Note: Credential deletion should be handled by the caller
         // via callbacks, as we don't want to store credentials here
+        // TODO: delete all credentials via callbacks, we need to implement a method for listing
+        // all credentials
+        //self.callbacks.enumerate_rps().map(|rps| {
+        //    rps.into_iter().for_each(|(id, _, _)| {
+        //        self.callbacks.delete_credential(id);
+        //    })
+        //});
 
         Ok(())
     }
