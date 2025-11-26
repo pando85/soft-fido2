@@ -7,6 +7,14 @@ use crate::channel::ChannelManager;
 use crate::ctaphid::{Cmd, ErrorCode, Message, Packet};
 use crate::error::Result;
 
+use lazy_static::lazy_static;
+
+lazy_static! {
+    static ref MAJOR_VERSION: u8 = env!("CARGO_PKG_VERSION_MAJOR").parse().unwrap_or(0);
+    static ref MINOR_VERSION: u8 = env!("CARGO_PKG_VERSION_MINOR").parse().unwrap_or(0);
+    static ref PATCH_VERSION: u8 = env!("CARGO_PKG_VERSION_PATCH").parse().unwrap_or(0);
+}
+
 /// Trait for handling CTAP commands
 ///
 /// Implement this trait to process CTAP messages and generate responses.
@@ -110,12 +118,12 @@ impl<H: CommandHandler> CtapHidHandler<H> {
                 response_data.push(2);
 
                 // Device version (major.minor.build = 1.0.0)
-                response_data.push(1); // Major
-                response_data.push(0); // Minor
-                response_data.push(0); // Build
+                response_data.push(*MAJOR_VERSION); // Major
+                response_data.push(*MINOR_VERSION); // Minor
+                response_data.push(*PATCH_VERSION); // Build
 
-                // Capabilities: CBOR (0x04) + WINK (0x01) = 0x05
-                response_data.push(0x05);
+                // Capabilities: CBOR (0x04)
+                response_data.push(0x04);
 
                 let response = Message::new(message.cid, Cmd::Init, response_data, None);
                 response.to_packets()

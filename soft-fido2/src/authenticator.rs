@@ -599,7 +599,7 @@ impl<C: AuthenticatorCallbacks> Authenticator<C> {
                 large_blobs: hl_options.large_blobs,
                 pin_uv_auth_token: hl_options.pin_uv_auth_token.unwrap_or(true),
                 set_min_pin_length: false,
-                make_cred_uv_not_required: hl_options.make_cred_uv_not_required.unwrap_or(false),
+                make_cred_uv_not_rqd: hl_options.make_cred_uv_not_required.unwrap_or(false),
             };
             ctap_config = ctap_config.with_options(ctap_options);
         }

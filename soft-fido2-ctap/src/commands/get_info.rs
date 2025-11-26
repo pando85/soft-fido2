@@ -70,43 +70,73 @@ pub fn handle<C: AuthenticatorCallbacks>(auth: &Authenticator<C>) -> Result<Vec<
     builder = builder.insert_bytes(keys::AAGUID, &config.aaguid)?;
 
     // Options (0x04) - optional but recommended
+    // NOTE: Fields MUST be in canonical CBOR order (by length, then lexicographically)
+    // to ensure libfido2 compatibility
     #[derive(Serialize)]
     #[serde(rename_all = "camelCase")]
     struct Options {
+        // Length 2
+        #[serde(skip_serializing_if = "Option::is_none")]
+        ep: Option<bool>,
         #[serde(skip_serializing_if = "Option::is_none")]
         rk: Option<bool>,
         #[serde(skip_serializing_if = "Option::is_none")]
         up: Option<bool>,
         #[serde(skip_serializing_if = "Option::is_none")]
         uv: Option<bool>,
+        // Length 4
         #[serde(skip_serializing_if = "Option::is_none")]
         plat: Option<bool>,
+        // Length 8
         #[serde(skip_serializing_if = "Option::is_none")]
-        client_pin: Option<bool>,
-        #[serde(skip_serializing_if = "Option::is_none")]
-        credential_mgmt_preview: Option<bool>,
+        always_uv: Option<bool>,
         #[serde(skip_serializing_if = "Option::is_none")]
         cred_mgmt: Option<bool>,
-        #[serde(rename = "makeCredUvNotRqd", skip_serializing_if = "Option::is_none")]
-        make_cred_uv_not_required: Option<bool>,
+        // Length 9
+        #[serde(skip_serializing_if = "Option::is_none")]
+        bio_enroll: Option<bool>,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        client_pin: Option<bool>,
+        // Length 14
+        #[serde(skip_serializing_if = "Option::is_none")]
+        pin_uv_auth_token: Option<bool>,
+        // Length 16
+        #[serde(skip_serializing_if = "Option::is_none")]
+        make_cred_uv_not_rqd: Option<bool>,
+        // Length 21
+        #[serde(skip_serializing_if = "Option::is_none")]
+        credential_mgmt_preview: Option<bool>,
+        // Length 30
+        #[serde(skip_serializing_if = "Option::is_none")]
+        no_mc_ga_permissions_with_client_pin: Option<bool>,
+        // Length 32
+        #[serde(skip_serializing_if = "Option::is_none")]
+        user_verification_mgmt_preview: Option<bool>,
     }
 
     let client_pin_value = config.options.client_pin.map(|_| auth.is_pin_set());
 
     let options = Options {
+        ep: config.options.ep,
         rk: Some(config.options.rk),
         up: Some(config.options.up),
         uv: config.options.uv,
         plat: Some(config.options.plat),
-        client_pin: client_pin_value,
-        credential_mgmt_preview: Some(config.options.cred_mgmt),
+        always_uv: Some(config.options.always_uv),
         cred_mgmt: Some(config.options.cred_mgmt),
-        make_cred_uv_not_required: if config.options.make_cred_uv_not_required {
+        bio_enroll: config.options.bio_enroll,
+        client_pin: client_pin_value,
+        pin_uv_auth_token: Some(config.options.pin_uv_auth_token),
+        make_cred_uv_not_rqd: if !config.options.always_uv && config.options.make_cred_uv_not_rqd {
             Some(true)
         } else {
-            None
+            Some(false)
         },
+        credential_mgmt_preview: Some(config.options.cred_mgmt),
+        no_mc_ga_permissions_with_client_pin: Some(false),
+        user_verification_mgmt_preview: None,
     };
+
     builder = builder.insert(keys::OPTIONS, options)?;
 
     // Max message size (0x05) - Optional, not required by spec
@@ -115,17 +145,17 @@ pub fn handle<C: AuthenticatorCallbacks>(auth: &Authenticator<C>) -> Result<Vec<
     }
 
     // PIN/UV auth protocols (0x06) - required if clientPin option is present
-    if client_pin_value.is_some() {
+    if !config.pin_uv_auth_protocols.is_empty() {
         builder = builder.insert(keys::PIN_UV_AUTH_PROTOCOLS, &config.pin_uv_auth_protocols)?;
     }
 
     // Max credential count in list (0x07) - Optional, not commonly used
-    // builder = builder.insert(keys::MAX_CREDENTIAL_COUNT_IN_LIST, config.max_credentials)?;
+    builder = builder.insert(keys::MAX_CREDENTIAL_COUNT_IN_LIST, config.max_credentials)?;
 
     // Max credential ID length (0x08) - Optional, not commonly used
-    // if let Some(max_cred_id_len) = config.max_credential_id_length {
-    //     builder = builder.insert(keys::MAX_CREDENTIAL_ID_LENGTH, max_cred_id_len)?;
-    // }
+    if let Some(max_cred_id_len) = config.max_credential_id_length {
+        builder = builder.insert(keys::MAX_CREDENTIAL_ID_LENGTH, max_cred_id_len)?;
+    }
 
     // Transports (0x09) - optional
     if !config.transports.is_empty() {
@@ -133,19 +163,19 @@ pub fn handle<C: AuthenticatorCallbacks>(auth: &Authenticator<C>) -> Result<Vec<
     }
 
     // Algorithms (0x0A) - optional but recommended
+    // NOTE: Fields MUST be in canonical CBOR order (by length, then lexicographically)
     #[derive(Serialize)]
     struct AlgEntry {
-        #[serde(rename = "type")]
-        typ: String,
-        alg: i32,
+        alg: i32,       // Length 3 - comes first
+        r#type: String, // Length 4 - comes second
     }
 
     let algorithms: Vec<AlgEntry> = config
         .algorithms
         .iter()
         .map(|&alg| AlgEntry {
-            typ: "public-key".to_string(),
             alg,
+            r#type: "public-key".to_string(),
         })
         .collect();
 

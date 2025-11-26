@@ -14,6 +14,7 @@ readme.workspace = true
 hidapi = { workspace = true, optional = true }
 hex = { workspace = true }
 smallvec = { workspace = true }
+lazy_static = { workspace = true }
 
 # Linux UHID support (Linux only)
 [target.'cfg(target_os = "linux")'.dependencies]

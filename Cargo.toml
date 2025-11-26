@@ -41,6 +41,7 @@ thiserror = "1.0"
 hex = "0.4"
 smallvec = { version = "1.13", features = ["serde"] }
 spin = "0.9"
+lazy_static = "1.5"
 
 # Transport
 hidapi = "2.6"
@@ -50,7 +51,6 @@ nix = { version = "0.29", features = ["fs", "ioctl"] }
 
 # Dev dependencies
 base64 = "0.22"
-lazy_static = "1.4"
 serial_test = "3.0"
 serde_cbor = "0.11"
 ciborium = "0.2"
