@@ -71,6 +71,7 @@ pub fn handle<C: AuthenticatorCallbacks>(auth: &Authenticator<C>) -> Result<Vec<
 
     // Options (0x04) - optional but recommended
     #[derive(Serialize)]
+    #[serde(rename_all = "camelCase")]
     struct Options {
         #[serde(skip_serializing_if = "Option::is_none")]
         rk: Option<bool>,
@@ -80,31 +81,24 @@ pub fn handle<C: AuthenticatorCallbacks>(auth: &Authenticator<C>) -> Result<Vec<
         uv: Option<bool>,
         #[serde(skip_serializing_if = "Option::is_none")]
         plat: Option<bool>,
-        #[serde(rename = "clientPin", skip_serializing_if = "Option::is_none")]
+        #[serde(skip_serializing_if = "Option::is_none")]
         client_pin: Option<bool>,
-        #[serde(
-            rename = "credentialMgmtPreview",
-            skip_serializing_if = "Option::is_none"
-        )]
+        #[serde(skip_serializing_if = "Option::is_none")]
         credential_mgmt_preview: Option<bool>,
-        #[serde(rename = "credMgmt", skip_serializing_if = "Option::is_none")]
+        #[serde(skip_serializing_if = "Option::is_none")]
         cred_mgmt: Option<bool>,
         #[serde(rename = "makeCredUvNotRqd", skip_serializing_if = "Option::is_none")]
         make_cred_uv_not_required: Option<bool>,
     }
 
-    // Determine clientPin value: use configured option if set, otherwise check actual PIN state
-    let client_pin_value = config
-        .options
-        .client_pin
-        .unwrap_or_else(|| auth.is_pin_set());
+    let client_pin_value = config.options.client_pin.map(|_| auth.is_pin_set());
 
     let options = Options {
         rk: Some(config.options.rk),
         up: Some(config.options.up),
         uv: config.options.uv,
         plat: Some(config.options.plat),
-        client_pin: Some(client_pin_value),
+        client_pin: client_pin_value,
         credential_mgmt_preview: Some(config.options.cred_mgmt),
         cred_mgmt: Some(config.options.cred_mgmt),
         make_cred_uv_not_required: if config.options.make_cred_uv_not_required {
