@@ -246,7 +246,7 @@ pub struct AuthenticatorOptions {
     pub set_min_pin_length: bool,
 
     /// Make credential with UV optional supported
-    pub make_cred_uv_not_required: bool,
+    pub make_cred_uv_not_rqd: bool,
 }
 
 impl AuthenticatorOptions {
@@ -264,9 +264,9 @@ impl AuthenticatorOptions {
             bio_enroll: Some(false),
             ep: None,
             large_blobs: None,
-            pin_uv_auth_token: true,
+            pin_uv_auth_token: false,
             set_min_pin_length: false,
-            make_cred_uv_not_required: false,
+            make_cred_uv_not_rqd: false,
         }
     }
 }
@@ -696,8 +696,6 @@ impl<C: AuthenticatorCallbacks> Authenticator<C> {
     /// Returns the number of additional discoverable credentials that can be stored,
     /// or None if the authenticator doesn't track this information.
     pub fn remaining_discoverable_credentials(&self) -> Option<usize> {
-        // For now, return a simple calculation based on max_credentials
-        // In a real implementation, this would query the credential storage
         Some(self.config.max_credentials)
     }
 
