@@ -263,7 +263,7 @@ fn process_message<C: AuthenticatorCallbacks>(
     response_buffer: &mut Vec<u8>,
     next_channel_id: &mut u32,
 ) -> Result<()> {
-    let message = Message::from_packets(packets).map_err(|_e| {
+    let message = Message::from_packets(packets, None).map_err(|_e| {
         eprintln!("[ERROR] Failed to assemble message from packets");
         soft_fido2::Error::Other
     })?;
@@ -281,12 +281,12 @@ fn process_message<C: AuthenticatorCallbacks>(
                         // Show full response for makeCredential to debug issues
                         if !message.data.is_empty() && message.data[0] == 0x01 {}
                     }
-                    let response_msg = Message::new(cid, Cmd::Cbor, response_buffer.clone());
+                    let response_msg = Message::new(cid, Cmd::Cbor, response_buffer.clone(), None);
                     send_message(uhid, &response_msg)?;
                 }
                 Err(e) => {
                     eprintln!("[ERROR] CTAP command failed: {:?}", e);
-                    let response_msg = Message::new(cid, Cmd::Cbor, vec![0x01]); // CTAP2_ERR_INVALID_COMMAND
+                    let response_msg = Message::new(cid, Cmd::Cbor, vec![0x01], None); // CTAP2_ERR_INVALID_COMMAND
                     send_message(uhid, &response_msg)?;
                 }
             }
@@ -310,25 +310,25 @@ fn process_message<C: AuthenticatorCallbacks>(
                 response_data.push(capabilities);
 
                 // Respond on broadcast channel with new CID in payload
-                let response_msg = Message::new(0xffffffff, Cmd::Init, response_data);
+                let response_msg = Message::new(0xffffffff, Cmd::Init, response_data, None);
                 send_message(uhid, &response_msg)?;
             }
         }
         Cmd::Ping => {
             // Echo ping data
-            let response_msg = Message::new(cid, Cmd::Ping, message.data);
+            let response_msg = Message::new(cid, Cmd::Ping, message.data, None);
             send_message(uhid, &response_msg)?;
         }
         Cmd::Msg => {
             // U2F/CTAP1 not supported - return error
             let error_data = vec![0x01]; // ERR_INVALID_CMD
-            let response_msg = Message::new(cid, Cmd::Error, error_data);
+            let response_msg = Message::new(cid, Cmd::Error, error_data, None);
             send_message(uhid, &response_msg)?;
         }
         _ => {
             // Unknown command - return error
             let error_data = vec![0x01]; // ERR_INVALID_CMD
-            let response_msg = Message::new(cid, Cmd::Error, error_data);
+            let response_msg = Message::new(cid, Cmd::Error, error_data, None);
             send_message(uhid, &response_msg)?;
         }
     }

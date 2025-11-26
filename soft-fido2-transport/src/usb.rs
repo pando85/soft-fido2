@@ -246,7 +246,7 @@ mod tests {
 
         // Send INIT command
         let nonce = vec![0x11, 0x22, 0x33, 0x44, 0x55, 0x66, 0x77, 0x88];
-        let message = Message::new(0xFFFFFFFF, Cmd::Init, nonce);
+        let message = Message::new(0xFFFFFFFF, Cmd::Init, nonce, None);
         let packets = message.to_packets().unwrap();
 
         // Write packet

@@ -76,7 +76,7 @@ impl<H: CommandHandler> CtapHidHandler<H> {
         match message.cmd {
             Cmd::Ping => {
                 // Echo the data back
-                let response = Message::new(message.cid, Cmd::Ping, message.data);
+                let response = Message::new(message.cid, Cmd::Ping, message.data, None);
                 response.to_packets()
             }
             Cmd::Init => {
@@ -117,12 +117,12 @@ impl<H: CommandHandler> CtapHidHandler<H> {
                 // Capabilities: CBOR (0x04) + WINK (0x01) = 0x05
                 response_data.push(0x05);
 
-                let response = Message::new(message.cid, Cmd::Init, response_data);
+                let response = Message::new(message.cid, Cmd::Init, response_data, None);
                 response.to_packets()
             }
             Cmd::Wink => {
                 // Simple wink acknowledgment (no data)
-                let response = Message::new(message.cid, Cmd::Wink, vec![]);
+                let response = Message::new(message.cid, Cmd::Wink, vec![], None);
                 response.to_packets()
             }
             Cmd::Cancel => {
@@ -138,7 +138,7 @@ impl<H: CommandHandler> CtapHidHandler<H> {
                     .handle_command(message.cmd, &message.data)
                 {
                     Ok(response_data) => {
-                        let response = Message::new(message.cid, message.cmd, response_data);
+                        let response = Message::new(message.cid, message.cmd, response_data, None);
                         response.to_packets()
                     }
                     Err(_e) => {
@@ -195,7 +195,7 @@ mod tests {
         let mut ctap_handler = CtapHidHandler::new(handler);
 
         let data = vec![1, 2, 3, 4, 5];
-        let message = Message::new(0x12345678, Cmd::Ping, data.clone());
+        let message = Message::new(0x12345678, Cmd::Ping, data.clone(), None);
         let packets = message.to_packets().unwrap();
 
         // Process the packet
@@ -204,7 +204,7 @@ mod tests {
         assert!(!response_packets.is_empty());
 
         // Reassemble response
-        let response = Message::from_packets(&response_packets).unwrap();
+        let response = Message::from_packets(&response_packets, None).unwrap();
         assert_eq!(response.cmd, Cmd::Ping);
         assert_eq!(response.data, data);
     }
@@ -216,7 +216,7 @@ mod tests {
 
         // INIT with 8-byte nonce
         let nonce = vec![0x11, 0x22, 0x33, 0x44, 0x55, 0x66, 0x77, 0x88];
-        let message = Message::new(0xFFFFFFFF, Cmd::Init, nonce.clone());
+        let message = Message::new(0xFFFFFFFF, Cmd::Init, nonce.clone(), None);
         let packets = message.to_packets().unwrap();
 
         // Process the packet
@@ -225,7 +225,7 @@ mod tests {
         assert!(!response_packets.is_empty());
 
         // Reassemble response
-        let response = Message::from_packets(&response_packets).unwrap();
+        let response = Message::from_packets(&response_packets, None).unwrap();
         assert_eq!(response.cmd, Cmd::Init);
 
         // Check response format
@@ -239,7 +239,7 @@ mod tests {
         let mut ctap_handler = CtapHidHandler::new(handler);
 
         let data = vec![0xA1, 0x01, 0x02]; // Some CBOR data
-        let message = Message::new(0x99999999, Cmd::Cbor, data.clone());
+        let message = Message::new(0x99999999, Cmd::Cbor, data.clone(), None);
         let packets = message.to_packets().unwrap();
 
         // Process the packet
@@ -248,7 +248,7 @@ mod tests {
         assert!(!response_packets.is_empty());
 
         // Reassemble response
-        let response = Message::from_packets(&response_packets).unwrap();
+        let response = Message::from_packets(&response_packets, None).unwrap();
         assert_eq!(response.cmd, Cmd::Cbor);
         assert_eq!(response.data, data); // MockHandler echoes data
     }
@@ -260,7 +260,7 @@ mod tests {
 
         // Large message requiring multiple packets
         let data = vec![0x42; 100];
-        let message = Message::new(0xABCDEF01, Cmd::Cbor, data.clone());
+        let message = Message::new(0xABCDEF01, Cmd::Cbor, data.clone(), None);
         let packets = message.to_packets().unwrap();
 
         assert!(packets.len() > 1); // Should be fragmented
@@ -274,7 +274,7 @@ mod tests {
         assert!(!response2.is_empty());
 
         // Reassemble response
-        let response = Message::from_packets(&response2).unwrap();
+        let response = Message::from_packets(&response2, None).unwrap();
         assert_eq!(response.data, data);
     }
 
@@ -283,7 +283,7 @@ mod tests {
         let handler = MockHandler;
         let mut ctap_handler = CtapHidHandler::new(handler);
 
-        let message = Message::new(0x77777777, Cmd::Wink, vec![]);
+        let message = Message::new(0x77777777, Cmd::Wink, vec![], None);
         let packets = message.to_packets().unwrap();
 
         // Process the packet
@@ -292,7 +292,7 @@ mod tests {
         assert!(!response_packets.is_empty());
 
         // Reassemble response
-        let response = Message::from_packets(&response_packets).unwrap();
+        let response = Message::from_packets(&response_packets, None).unwrap();
         assert_eq!(response.cmd, Cmd::Wink);
         assert!(response.data.is_empty());
     }
@@ -304,14 +304,14 @@ mod tests {
 
         // Start a multi-packet transaction
         let data = vec![0x55; 100];
-        let message = Message::new(0x88888888, Cmd::Cbor, data);
+        let message = Message::new(0x88888888, Cmd::Cbor, data, None);
         let packets = message.to_packets().unwrap();
 
         // Process first packet
         let _ = ctap_handler.process_packet(packets[0].clone()).unwrap();
 
         // Send cancel
-        let cancel = Message::new(0x88888888, Cmd::Cancel, vec![]);
+        let cancel = Message::new(0x88888888, Cmd::Cancel, vec![], None);
         let cancel_packets = cancel.to_packets().unwrap();
         let response = ctap_handler
             .process_packet(cancel_packets[0].clone())

@@ -86,7 +86,7 @@ impl ChannelState {
 
     /// Assemble the complete message
     fn assemble(self) -> Result<Message> {
-        Message::from_packets(&self.packets)
+        Message::from_packets(&self.packets, None)
     }
 }
 
@@ -145,7 +145,7 @@ impl ChannelManager {
             // Check if this is a single-packet message
             if payload_len as usize <= 57 {
                 // Complete message in one packet
-                return Ok(Some(Message::from_packets(&[packet])?));
+                return Ok(Some(Message::from_packets(&[packet], None)?));
             }
 
             // Start multi-packet transaction
@@ -222,7 +222,7 @@ mod tests {
         let mut manager = ChannelManager::new();
 
         let data = vec![1, 2, 3, 4, 5];
-        let packets = Packet::new_init(0x12345678, Cmd::Ping, &data).unwrap();
+        let packets = Packet::new_init(0x12345678, Cmd::Ping, &data, None).unwrap();
 
         let result = manager.process_packet(packets[0].clone()).unwrap();
         assert!(result.is_some());
@@ -238,7 +238,7 @@ mod tests {
         let mut manager = ChannelManager::new();
 
         let data = vec![0x42; 100];
-        let packets = Packet::new_init(0xABCDEF01, Cmd::Cbor, &data).unwrap();
+        let packets = Packet::new_init(0xABCDEF01, Cmd::Cbor, &data, None).unwrap();
 
         // Process init packet
         let result1 = manager.process_packet(packets[0].clone()).unwrap();
@@ -261,8 +261,8 @@ mod tests {
         let data1 = vec![0x11; 100];
         let data2 = vec![0x22; 100];
 
-        let packets1 = Packet::new_init(0x11111111, Cmd::Cbor, &data1).unwrap();
-        let packets2 = Packet::new_init(0x22222222, Cmd::Cbor, &data2).unwrap();
+        let packets1 = Packet::new_init(0x11111111, Cmd::Cbor, &data1, None).unwrap();
+        let packets2 = Packet::new_init(0x22222222, Cmd::Cbor, &data2, None).unwrap();
 
         // Start both transactions
         let r1 = manager.process_packet(packets1[0].clone()).unwrap();
@@ -289,7 +289,7 @@ mod tests {
         let mut manager = ChannelManager::new();
 
         let data = vec![0x33; 100];
-        let packets = Packet::new_init(0x33333333, crate::ctaphid::Cmd::Cbor, &data).unwrap();
+        let packets = Packet::new_init(0x33333333, crate::ctaphid::Cmd::Cbor, &data, None).unwrap();
 
         // Process init packet
         let _ = manager.process_packet(packets[0].clone()).unwrap();
@@ -311,7 +311,7 @@ mod tests {
         let mut manager = ChannelManager::new();
 
         let data = vec![0x44; 100];
-        let packets = Packet::new_init(0x44444444, Cmd::Cbor, &data).unwrap();
+        let packets = Packet::new_init(0x44444444, Cmd::Cbor, &data, None).unwrap();
 
         // Start transaction
         let _ = manager.process_packet(packets[0].clone()).unwrap();
@@ -333,8 +333,8 @@ mod tests {
         let data1 = vec![0x55; 100];
         let data2 = vec![0x66; 10];
 
-        let packets1 = Packet::new_init(0x55555555, Cmd::Cbor, &data1).unwrap();
-        let packets2 = Packet::new_init(0x55555555, Cmd::Ping, &data2).unwrap();
+        let packets1 = Packet::new_init(0x55555555, Cmd::Cbor, &data1, None).unwrap();
+        let packets2 = Packet::new_init(0x55555555, Cmd::Ping, &data2, None).unwrap();
 
         // Start first transaction
         let _ = manager.process_packet(packets1[0].clone()).unwrap();

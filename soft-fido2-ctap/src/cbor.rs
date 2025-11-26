@@ -28,6 +28,13 @@ pub type Value = cbor4ii::core::Value;
 ///
 /// This is defined by the CTAP specification as the maximum size of a CTAP HID packet
 /// payload after fragmentation reassembly.
+///
+/// CTAP HID transport limits:
+/// - USB HID report size: 64 bytes
+/// - INIT frame payload: 57 bytes (64 − 7-byte header)
+/// - CONT frame payload: 59 bytes (64 − 5-byte header)
+/// - Up to 128 continuation frames (seq 0x00..0x7F)
+///   => Maximum CTAP HID message payload: 57 + 128 * 59 = 7609 bytes
 pub const MAX_CTAP_MESSAGE_SIZE: usize = 7609;
 
 /// Request-specific buffer sizes optimized for embedded systems

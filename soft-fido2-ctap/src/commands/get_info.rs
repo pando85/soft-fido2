@@ -110,12 +110,14 @@ pub fn handle<C: AuthenticatorCallbacks>(auth: &Authenticator<C>) -> Result<Vec<
     builder = builder.insert(keys::OPTIONS, options)?;
 
     // Max message size (0x05) - Optional, not required by spec
-    // if let Some(max_msg_size) = config.max_msg_size {
-    //     builder = builder.insert(keys::MAX_MSG_SIZE, max_msg_size)?;
-    // }
+    if let Some(max_msg_size) = config.max_msg_size {
+        builder = builder.insert(keys::MAX_MSG_SIZE, max_msg_size)?;
+    }
 
     // PIN/UV auth protocols (0x06) - required if clientPin option is present
-    builder = builder.insert(keys::PIN_UV_AUTH_PROTOCOLS, &config.pin_uv_auth_protocols)?;
+    if client_pin_value.is_some() {
+        builder = builder.insert(keys::PIN_UV_AUTH_PROTOCOLS, &config.pin_uv_auth_protocols)?;
+    }
 
     // Max credential count in list (0x07) - Optional, not commonly used
     // builder = builder.insert(keys::MAX_CREDENTIAL_COUNT_IN_LIST, config.max_credentials)?;

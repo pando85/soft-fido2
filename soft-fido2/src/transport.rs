@@ -197,7 +197,7 @@ impl Transport {
         let nonce: [u8; 8] = rand::random();
 
         // Build INIT message on broadcast channel
-        let init_message = Message::new(0xffffffff, Cmd::Init, nonce.to_vec());
+        let init_message = Message::new(0xffffffff, Cmd::Init, nonce.to_vec(), None);
 
         // Fragment into packets
         let packets = init_message.to_packets().map_err(|_| Error::Other)?;
@@ -244,7 +244,7 @@ impl Transport {
 
         // Parse INIT response
         let response_message =
-            Message::from_packets(&response_packets).map_err(|_| Error::Other)?;
+            Message::from_packets(&response_packets, None).map_err(|_| Error::Other)?;
 
         // INIT response format:
         // - 8 bytes: nonce (echo)
@@ -372,7 +372,7 @@ impl Transport {
         };
 
         // Build CTAP HID message (convert SmallVec to Vec for Message API)
-        let message = Message::new(channel_id, cmd_enum, payload.to_vec());
+        let message = Message::new(channel_id, cmd_enum, payload.to_vec(), None);
 
         // Fragment into packets
         let packets = message.to_packets().map_err(|_| Error::Other)?;
@@ -434,7 +434,7 @@ impl Transport {
 
         // Reassemble message directly into response buffer
         let response_message =
-            Message::from_packets(&response_packets).map_err(|_| Error::Other)?;
+            Message::from_packets(&response_packets, None).map_err(|_| Error::Other)?;
 
         let response_len = response_message.data.len();
         if response_len > response.len() {

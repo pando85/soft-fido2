@@ -13,9 +13,6 @@ use crate::error::{Error, Result};
 /// HID packet size (fixed at 64 bytes for USB HID)
 pub const PACKET_SIZE: usize = 64;
 
-/// Maximum CTAP message size (7609 bytes)
-pub const MAX_MESSAGE_SIZE: usize = 7609;
-
 /// Broadcast channel ID (used for INIT command)
 pub const BROADCAST_CID: u32 = 0xFFFFFFFF;
 
@@ -196,8 +193,15 @@ impl Packet {
     }
 
     /// Create an initialization packet
-    pub fn new_init(cid: u32, cmd: Cmd, data: &[u8]) -> Result<Vec<Self>> {
-        if data.len() > MAX_MESSAGE_SIZE {
+    pub fn new_init(
+        cid: u32,
+        cmd: Cmd,
+        data: &[u8],
+        max_msg_size: Option<usize>,
+    ) -> Result<Vec<Self>> {
+        if let Some(max_msg_size) = max_msg_size
+            && data.len() > max_msg_size
+        {
             return Err(Error::MessageTooLarge);
         }
 
@@ -264,21 +268,29 @@ pub struct Message {
 
     /// Payload data
     pub data: Vec<u8>,
+
+    /// Maximum message size (optional)
+    pub max_msg_size: Option<usize>,
 }
 
 impl Message {
     /// Create a new message
-    pub fn new(cid: u32, cmd: Cmd, data: Vec<u8>) -> Self {
-        Self { cid, cmd, data }
+    pub fn new(cid: u32, cmd: Cmd, data: Vec<u8>, max_msg_size: Option<usize>) -> Self {
+        Self {
+            cid,
+            cmd,
+            data,
+            max_msg_size,
+        }
     }
 
     /// Fragment this message into HID packets
     pub fn to_packets(&self) -> Result<Vec<Packet>> {
-        Packet::new_init(self.cid, self.cmd, &self.data)
+        Packet::new_init(self.cid, self.cmd, &self.data, self.max_msg_size)
     }
 
     /// Reassemble a message from HID packets
-    pub fn from_packets(packets: &[Packet]) -> Result<Self> {
+    pub fn from_packets(packets: &[Packet], max_msg_size: Option<usize>) -> Result<Self> {
         if packets.is_empty() {
             return Err(Error::InvalidPacket);
         }
@@ -292,7 +304,9 @@ impl Message {
         let cmd = init_packet.cmd().ok_or(Error::InvalidCommand)?;
         let total_len = init_packet.payload_len().ok_or(Error::InvalidPacket)? as usize;
 
-        if total_len > MAX_MESSAGE_SIZE {
+        if let Some(max_msg_size) = max_msg_size
+            && total_len > max_msg_size
+        {
             return Err(Error::MessageTooLarge);
         }
 
@@ -334,7 +348,12 @@ impl Message {
             return Err(Error::FragmentationError);
         }
 
-        Ok(Message { cid, cmd, data })
+        Ok(Message {
+            cid,
+            cmd,
+            data,
+            max_msg_size,
+        })
     }
 }
 
@@ -356,7 +375,7 @@ mod tests {
     #[test]
     fn test_single_packet_message() {
         let data = vec![1, 2, 3, 4, 5];
-        let packets = Packet::new_init(0x12345678, Cmd::Ping, &data).unwrap();
+        let packets = Packet::new_init(0x12345678, Cmd::Ping, &data, None).unwrap();
 
         assert_eq!(packets.len(), 1);
         assert_eq!(packets[0].cid(), 0x12345678);
@@ -369,7 +388,7 @@ mod tests {
     fn test_multi_packet_message() {
         // Create a message that requires continuation packets
         let data = vec![0x42; 100]; // 100 bytes > 57 (init packet size)
-        let packets = Packet::new_init(0xABCDEF01, Cmd::Cbor, &data).unwrap();
+        let packets = Packet::new_init(0xABCDEF01, Cmd::Cbor, &data, None).unwrap();
 
         // Should need 2 packets: init (57 bytes) + cont (43 bytes)
         assert_eq!(packets.len(), 2);
@@ -389,9 +408,9 @@ mod tests {
     #[test]
     fn test_message_reassembly() {
         let data = vec![0x55; 150];
-        let packets = Packet::new_init(0x11111111, Cmd::Cbor, &data).unwrap();
+        let packets = Packet::new_init(0x11111111, Cmd::Cbor, &data, None).unwrap();
 
-        let message = Message::from_packets(&packets).unwrap();
+        let message = Message::from_packets(&packets, None).unwrap();
         assert_eq!(message.cid, 0x11111111);
         assert_eq!(message.cmd, Cmd::Cbor);
         assert_eq!(message.data, data);
@@ -399,10 +418,15 @@ mod tests {
 
     #[test]
     fn test_message_round_trip() {
-        let original = Message::new(0x99999999, Cmd::Ping, vec![1, 2, 3, 4, 5, 6, 7, 8, 9, 10]);
+        let original = Message::new(
+            0x99999999,
+            Cmd::Ping,
+            vec![1, 2, 3, 4, 5, 6, 7, 8, 9, 10],
+            None,
+        );
 
         let packets = original.to_packets().unwrap();
-        let reassembled = Message::from_packets(&packets).unwrap();
+        let reassembled = Message::from_packets(&packets, None).unwrap();
 
         assert_eq!(original, reassembled);
     }
@@ -420,7 +444,7 @@ mod tests {
     #[test]
     fn test_invalid_sequence() {
         let data = vec![0x33; 100];
-        let mut packets = Packet::new_init(0x22222222, Cmd::Cbor, &data).unwrap();
+        let mut packets = Packet::new_init(0x22222222, Cmd::Cbor, &data, None).unwrap();
 
         // Corrupt the sequence number
         if packets.len() > 1 {
@@ -428,15 +452,16 @@ mod tests {
             corrupted.data[4] = 99; // Invalid sequence
             packets[1] = corrupted;
 
-            let result = Message::from_packets(&packets);
+            let result = Message::from_packets(&packets, None);
             assert!(result.is_err());
         }
     }
 
     #[test]
     fn test_message_too_large() {
-        let data = vec![0x00; MAX_MESSAGE_SIZE + 1];
-        let result = Packet::new_init(0x12345678, Cmd::Cbor, &data);
+        let max_msg_size = 6000;
+        let data = vec![0x00; max_msg_size + 1];
+        let result = Packet::new_init(0x12345678, Cmd::Cbor, &data, Some(max_msg_size));
         assert!(result.is_err());
     }
 
