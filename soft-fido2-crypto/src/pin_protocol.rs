@@ -218,18 +218,19 @@ pub mod v1 {
 pub mod v2 {
     use super::*;
 
-    /// Compute HMAC-SHA-256 and return first 16 bytes
+    /// Compute HMAC-SHA-256 and return full 32 bytes
     ///
-    /// Identical to V1 for authentication purposes.
+    /// Per CTAP 2.1 spec section 6.5.7, PIN protocol v2 returns the FULL HMAC-SHA-256 (32 bytes),
+    /// unlike v1 which returns only the first 16 bytes.
     ///
     /// # Arguments
     ///
-    /// * `key` - 32-byte HMAC key (derived from ECDH)
+    /// * `key` - 32-byte HMAC key (derived from ECDH or pinUvAuthToken)
     /// * `data` - Data to authenticate
     ///
     /// # Returns
     ///
-    /// First 16 bytes of HMAC-SHA-256
+    /// Full 32 bytes of HMAC-SHA-256
     ///
     /// # Examples
     ///
@@ -240,20 +241,32 @@ pub mod v2 {
     /// let data = b"client_data_hash";
     ///
     /// let mac = v2::authenticate(&key, data);
-    /// assert_eq!(mac.len(), 16);
+    /// assert_eq!(mac.len(), 32);
     /// ```
-    pub fn authenticate(key: &[u8; 32], data: &[u8]) -> [u8; 16] {
-        // Same as V1
-        v1::authenticate(key, data)
+    pub fn authenticate(key: &[u8; 32], data: &[u8]) -> [u8; 32] {
+        use hmac::{Hmac, Mac};
+        use sha2::Sha256;
+
+        let mut mac = Hmac::<Sha256>::new_from_slice(key).expect("HMAC can accept key of any size");
+        mac.update(data);
+
+        let result = mac.finalize();
+        let bytes = result.into_bytes();
+
+        let mut output = [0u8; 32];
+        output.copy_from_slice(&bytes);
+        output
     }
 
     /// Verify HMAC-SHA-256 using constant-time comparison
+    ///
+    /// Per CTAP 2.1 spec section 6.5.7, PIN protocol v2 uses full 32-byte HMAC.
     ///
     /// # Arguments
     ///
     /// * `key` - 32-byte HMAC key
     /// * `data` - Data to authenticate
-    /// * `expected` - Expected MAC value (16 bytes)
+    /// * `expected` - Expected MAC value (32 bytes)
     ///
     /// # Returns
     ///
@@ -270,7 +283,7 @@ pub mod v2 {
     /// let mac = v2::authenticate(&key, data);
     /// assert!(v2::verify(&key, data, &mac));
     /// ```
-    pub fn verify(key: &[u8; 32], data: &[u8], expected: &[u8; 16]) -> bool {
+    pub fn verify(key: &[u8; 32], data: &[u8], expected: &[u8; 32]) -> bool {
         let computed = authenticate(key, data);
         computed.ct_eq(expected).into()
     }
@@ -531,7 +544,7 @@ mod tests {
         let data = b"client_data_hash";
 
         let mac = v2::authenticate(&key, data);
-        assert_eq!(mac.len(), 16);
+        assert_eq!(mac.len(), 32); // V2 returns full 32-byte HMAC
 
         assert!(v2::verify(&key, data, &mac));
         assert!(!v2::verify(&key, b"wrong_data", &mac));
@@ -564,15 +577,17 @@ mod tests {
 
     #[test]
     fn test_v1_v2_compatibility() {
-        // V1 and V2 should produce same authentication result
-        // when using the same key
+        // V1 returns 16 bytes (truncated HMAC), V2 returns 32 bytes (full HMAC)
+        // The first 16 bytes of V2 should match V1
         let key = [0x42u8; 32];
         let data = b"client_data_hash";
 
         let mac_v1 = v1::authenticate(&key, data);
         let mac_v2 = v2::authenticate(&key, data);
 
-        assert_eq!(mac_v1, mac_v2);
+        assert_eq!(mac_v1.len(), 16);
+        assert_eq!(mac_v2.len(), 32);
+        assert_eq!(mac_v1, &mac_v2[..16]);
     }
 
     #[test]

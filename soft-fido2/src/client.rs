@@ -51,31 +51,7 @@ impl Client {
             .map_err(|_| Error::Other)?;
 
         // 0x03: user (required)
-        let user_id_bytes = request.user().id.as_slice();
-        let user_name = request.user().name.as_deref();
-        let user_display_name = request.user().display_name.as_deref();
-
-        // Build user map manually to handle optional fields and byte array
-        let user_cbor = {
-            #[derive(Serialize)]
-            struct UserEntity<'a> {
-                #[serde(with = "serde_bytes")]
-                id: &'a [u8],
-                #[serde(skip_serializing_if = "Option::is_none")]
-                name: Option<&'a str>,
-                #[serde(skip_serializing_if = "Option::is_none")]
-                #[serde(rename = "displayName")]
-                display_name: Option<&'a str>,
-            }
-
-            let user_entity = UserEntity {
-                id: user_id_bytes,
-                name: user_name,
-                display_name: user_display_name,
-            };
-
-            soft_fido2_ctap::cbor::encode(&user_entity).map_err(|_| Error::Other)?
-        };
+        let user_cbor = soft_fido2_ctap::cbor::encode(&request.user()).map_err(|_| Error::Other)?;
         builder = builder
             .insert(
                 3,
@@ -293,31 +269,8 @@ impl Client {
             .map_err(|_| Error::Other)?;
 
         // 0x03: user (required)
-        let user_id_bytes = request.user().id.as_slice();
-        let user_name = request.user().name.as_deref();
-        let user_display_name = request.user().display_name.as_deref();
+        let user_cbor = soft_fido2_ctap::cbor::encode(&request.user()).map_err(|_| Error::Other)?;
 
-        // Build user map manually to handle optional fields and byte array
-        let user_cbor = {
-            #[derive(Serialize)]
-            struct UserEntity<'a> {
-                #[serde(with = "serde_bytes")]
-                id: &'a [u8],
-                #[serde(skip_serializing_if = "Option::is_none")]
-                name: Option<&'a str>,
-                #[serde(skip_serializing_if = "Option::is_none")]
-                #[serde(rename = "displayName")]
-                display_name: Option<&'a str>,
-            }
-
-            let user_entity = UserEntity {
-                id: user_id_bytes,
-                name: user_name,
-                display_name: user_display_name,
-            };
-
-            soft_fido2_ctap::cbor::encode(&user_entity).map_err(|_| Error::Other)?
-        };
         builder = builder
             .insert(
                 3,

@@ -19,8 +19,10 @@ pub struct RelyingParty {
 
 /// User information
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
 pub struct User {
     /// User handle (max 64 bytes)
+    #[serde(with = "serde_bytes")]
     pub id: Vec<u8>,
     /// User name (email or username)
     pub name: Option<String>,

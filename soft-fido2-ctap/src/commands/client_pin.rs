@@ -76,6 +76,7 @@ pub fn handle<C: AuthenticatorCallbacks>(
         0x03 => handle_set_pin(auth, &parser),
         0x04 => handle_change_pin(auth, &parser),
         0x05 => handle_get_pin_token(auth, &parser),
+        0x06 => handle_get_pin_uv_auth_token_using_uv_with_permissions(auth, &parser),
         0x09 => handle_get_pin_uv_auth_token_using_pin_with_permissions(auth, &parser),
         _ => Err(StatusCode::InvalidSubcommand),
     }
@@ -158,17 +159,28 @@ fn handle_set_pin<C: AuthenticatorCallbacks>(
     };
 
     // Verify pinUvAuthParam = HMAC(hmac_key, new_pin_enc)
-    if pin_uv_auth_param.len() != 16 {
-        return Err(StatusCode::PinAuthInvalid);
-    }
-    let expected_mac: [u8; 16] = pin_uv_auth_param
-        .as_slice()
-        .try_into()
-        .map_err(|_| StatusCode::PinAuthInvalid)?;
-
+    // Protocol v1 uses 16 bytes, v2 uses 32 bytes
     let valid = match protocol {
-        1 => soft_fido2_crypto::pin_protocol::v1::verify(&hmac_key, &new_pin_enc, &expected_mac),
-        2 => soft_fido2_crypto::pin_protocol::v2::verify(&hmac_key, &new_pin_enc, &expected_mac),
+        1 => {
+            if pin_uv_auth_param.len() != 16 {
+                return Err(StatusCode::PinAuthInvalid);
+            }
+            let expected_mac: [u8; 16] = pin_uv_auth_param
+                .as_slice()
+                .try_into()
+                .map_err(|_| StatusCode::PinAuthInvalid)?;
+            soft_fido2_crypto::pin_protocol::v1::verify(&hmac_key, &new_pin_enc, &expected_mac)
+        }
+        2 => {
+            if pin_uv_auth_param.len() != 32 {
+                return Err(StatusCode::PinAuthInvalid);
+            }
+            let expected_mac: [u8; 32] = pin_uv_auth_param
+                .as_slice()
+                .try_into()
+                .map_err(|_| StatusCode::PinAuthInvalid)?;
+            soft_fido2_crypto::pin_protocol::v2::verify(&hmac_key, &new_pin_enc, &expected_mac)
+        }
         _ => return Err(StatusCode::InvalidParameter),
     };
 
@@ -235,21 +247,31 @@ fn handle_change_pin<C: AuthenticatorCallbacks>(
     };
 
     // Verify pinUvAuthParam = HMAC(hmac_key, new_pin_enc || pin_hash_enc)
-    if pin_uv_auth_param.len() != 16 {
-        return Err(StatusCode::PinAuthInvalid);
-    }
-
+    // Protocol v1 uses 16 bytes, v2 uses 32 bytes
     let mut verify_data = new_pin_enc.clone();
     verify_data.extend_from_slice(&pin_hash_enc);
 
-    let expected_mac: [u8; 16] = pin_uv_auth_param
-        .as_slice()
-        .try_into()
-        .map_err(|_| StatusCode::PinAuthInvalid)?;
-
     let valid = match protocol {
-        1 => soft_fido2_crypto::pin_protocol::v1::verify(&hmac_key, &verify_data, &expected_mac),
-        2 => soft_fido2_crypto::pin_protocol::v2::verify(&hmac_key, &verify_data, &expected_mac),
+        1 => {
+            if pin_uv_auth_param.len() != 16 {
+                return Err(StatusCode::PinAuthInvalid);
+            }
+            let expected_mac: [u8; 16] = pin_uv_auth_param
+                .as_slice()
+                .try_into()
+                .map_err(|_| StatusCode::PinAuthInvalid)?;
+            soft_fido2_crypto::pin_protocol::v1::verify(&hmac_key, &verify_data, &expected_mac)
+        }
+        2 => {
+            if pin_uv_auth_param.len() != 32 {
+                return Err(StatusCode::PinAuthInvalid);
+            }
+            let expected_mac: [u8; 32] = pin_uv_auth_param
+                .as_slice()
+                .try_into()
+                .map_err(|_| StatusCode::PinAuthInvalid)?;
+            soft_fido2_crypto::pin_protocol::v2::verify(&hmac_key, &verify_data, &expected_mac)
+        }
         _ => return Err(StatusCode::InvalidParameter),
     };
 
@@ -436,6 +458,142 @@ fn handle_get_pin_uv_auth_token_using_pin_with_permissions<C: AuthenticatorCallb
 
     // PIN verified - get PIN token with permissions
     let token = auth.get_pin_token_after_verification(permissions, rp_id)?;
+
+    // Encrypt the token
+    let encrypted_token = match protocol {
+        1 => soft_fido2_crypto::pin_protocol::v1::encrypt(&enc_key, &token)?,
+        2 => soft_fido2_crypto::pin_protocol::v2::encrypt(&enc_key, &token)?,
+        _ => return Err(StatusCode::InvalidParameter),
+    };
+
+    MapBuilder::new()
+        .insert_bytes(resp_keys::PIN_UV_AUTH_TOKEN, &encrypted_token)?
+        .build()
+}
+
+/// Handle getPinUvAuthTokenUsingUvWithPermissions subcommand (0x06)
+///
+/// Gets a PIN/UV auth token using built-in user verification.
+/// Spec: https://fidoalliance.org/specs/fido-v2.2-rd-20230321/fido-client-to-authenticator-protocol-v2.2-rd-20230321.html#getPinUvAuthTokenUsingUvWithPermissions
+fn handle_get_pin_uv_auth_token_using_uv_with_permissions<C: AuthenticatorCallbacks>(
+    auth: &mut Authenticator<C>,
+    parser: &MapParser,
+) -> Result<Vec<u8>> {
+    // Check mandatory parameters
+    let protocol: u8 = parser
+        .get(req_keys::PIN_UV_AUTH_PROTOCOL)
+        .map_err(|_| StatusCode::MissingParameter)?;
+    let key_agreement: crate::cbor::Value = parser
+        .get(req_keys::KEY_AGREEMENT)
+        .map_err(|_| StatusCode::MissingParameter)?;
+    let permissions: u8 = parser
+        .get(req_keys::PERMISSIONS)
+        .map_err(|_| StatusCode::MissingParameter)?;
+    let rp_id: Option<String> = parser.get_opt(req_keys::RP_ID)?;
+
+    // Validate pinUvAuthProtocol
+    if protocol != 1 && protocol != 2 {
+        return Err(StatusCode::InvalidParameter);
+    }
+
+    // Validate permissions (must not be 0)
+    if permissions == 0 {
+        return Err(StatusCode::InvalidParameter);
+    }
+
+    // Check permission authorization based on authenticator options
+    // Permission bits: mc=0x01, ga=0x02, cm=0x04, be=0x08, lbw=0x10, acfg=0x20
+    let config = auth.config();
+
+    // cm (0x04) requires credMgmt to be true
+    if (permissions & 0x04) != 0 && !config.options.cred_mgmt {
+        return Err(StatusCode::UnauthorizedPermission);
+    }
+
+    // be (0x08) requires uvBioEnroll to be true
+    if (permissions & 0x08) != 0 {
+        if let Some(bio_enroll) = config.options.bio_enroll {
+            if !bio_enroll {
+                return Err(StatusCode::UnauthorizedPermission);
+            }
+        } else {
+            return Err(StatusCode::UnauthorizedPermission);
+        }
+    }
+
+    // lbw (0x10) requires largeBlobs to be true
+    if (permissions & 0x10) != 0 {
+        if let Some(large_blobs) = config.options.large_blobs {
+            if !large_blobs {
+                return Err(StatusCode::UnauthorizedPermission);
+            }
+        } else {
+            return Err(StatusCode::UnauthorizedPermission);
+        }
+    }
+
+    // Check if built-in UV is configured
+    // For our implementation, UV is always available via callbacks
+    if config.options.uv.is_none() || !config.options.uv.unwrap() {
+        return Err(StatusCode::NotAllowed);
+    }
+
+    // TODO: Check uvRetries counter (not yet implemented)
+    // If uvRetries == 0, return CTAP2_ERR_UV_BLOCKED
+
+    // Parse platform key agreement key
+    let platform_public_key = parse_cose_key(&key_agreement)?;
+
+    // Get stored keypair for this protocol
+    let keypair = match auth.get_pin_protocol_keypair(protocol) {
+        Some(kp) => kp,
+        None => {
+            return Err(StatusCode::PinAuthInvalid);
+        }
+    };
+
+    // Compute shared secret
+    let shared_secret = keypair.shared_secret(&platform_public_key)?;
+
+    // Derive encryption key
+    let enc_key = match protocol {
+        1 => {
+            let (enc, _) = soft_fido2_crypto::pin_protocol::v1::derive_keys(&shared_secret);
+            enc
+        }
+        2 => soft_fido2_crypto::pin_protocol::v2::derive_encryption_key(&shared_secret),
+        _ => return Err(StatusCode::InvalidParameter),
+    };
+
+    // Request user consent for the permissions if authenticator has display
+    // For virtual authenticator, we skip this step
+
+    // Perform built-in user verification
+    let uv_result = auth.callbacks().request_uv(
+        "Credential Management",
+        None,
+        rp_id.as_deref().unwrap_or("*"),
+    )?;
+
+    match uv_result {
+        crate::UvResult::AcceptedWithUp => true,
+        crate::UvResult::Accepted => false,
+        crate::UvResult::Denied => {
+            // TODO: Decrement uvRetries counter
+            return Err(StatusCode::OperationDenied);
+        }
+        crate::UvResult::Timeout => {
+            return Err(StatusCode::UserActionTimeout);
+        }
+    };
+
+    // Get PIN/UV auth token with the requested permissions
+    let token = auth.get_pin_token_after_verification(permissions, rp_id)?;
+
+    // Note: In a full implementation, we would call:
+    // - resetPinUvAuthToken() to invalidate existing tokens
+    // - beginUsingPinUvAuthToken(userIsPresent) to set the UP flag
+    // These are handled internally by get_pin_token_after_verification
 
     // Encrypt the token
     let encrypted_token = match protocol {

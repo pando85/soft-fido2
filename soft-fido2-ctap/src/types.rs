@@ -45,8 +45,10 @@ impl RelyingParty {
 ///
 /// Represents the user account being registered or authenticated.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct User {
     /// User handle - opaque identifier for the user
+    #[serde(with = "serde_bytes")]
     pub id: Vec<u8>,
 
     /// Human-readable username (optional in some contexts)
@@ -55,7 +57,6 @@ pub struct User {
 
     /// Human-readable display name (optional)
     #[serde(skip_serializing_if = "Option::is_none")]
-    #[serde(rename = "displayName")]
     pub display_name: Option<String>,
 }
 

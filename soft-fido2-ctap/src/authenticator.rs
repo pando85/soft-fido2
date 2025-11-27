@@ -307,6 +307,19 @@ pub struct Authenticator<C: AuthenticatorCallbacks> {
     /// Credential wrapping key for non-resident credentials
     /// Generated at runtime if not provided in config
     credential_wrapping_key: [u8; 32],
+
+    /// RP enumeration state (for enumerateRPsBegin/GetNext)
+    /// Format: Vec<(rp_id, rp_name, credential_count)>
+    rp_enumeration_state: Option<Vec<(String, Option<String>, usize)>>,
+
+    /// Current index in RP enumeration
+    rp_enumeration_index: usize,
+
+    /// Credential enumeration state (for enumerateCredentialsBegin/GetNext)
+    credential_enumeration_state: Option<Vec<crate::types::Credential>>,
+
+    /// Current index in credential enumeration
+    credential_enumeration_index: usize,
 }
 
 impl<C: AuthenticatorCallbacks> Authenticator<C> {
@@ -335,6 +348,10 @@ impl<C: AuthenticatorCallbacks> Authenticator<C> {
             custom_commands: BTreeMap::new(),
             pin_protocol_keypairs: BTreeMap::new(),
             credential_wrapping_key,
+            rp_enumeration_state: None,
+            rp_enumeration_index: 0,
+            credential_enumeration_state: None,
+            credential_enumeration_index: 0,
         }
     }
 
@@ -558,22 +575,33 @@ impl<C: AuthenticatorCallbacks> Authenticator<C> {
         pin_uv_auth_param: &[u8],
         client_data_hash: &[u8],
     ) -> Result<(), StatusCode> {
-        if pin_uv_auth_param.len() != 16 {
-            return Err(StatusCode::PinAuthInvalid);
-        }
-
         // Get current PIN token
         let token = self.pin_tokens.get_token().ok_or(StatusCode::PinRequired)?;
 
         // Verify based on protocol version
-        let expected: [u8; 16] = pin_uv_auth_param
-            .try_into()
-            .map_err(|_| StatusCode::PinAuthInvalid)?;
-
+        // Protocol v1 uses 16-byte HMAC, v2 uses 32-byte HMAC
         let valid = match pin_uv_auth_protocol {
-            1 => pin_protocol::v1::verify(token.value(), client_data_hash, &expected),
-            2 => pin_protocol::v2::verify(token.value(), client_data_hash, &expected),
-            _ => return Err(StatusCode::InvalidParameter),
+            1 => {
+                if pin_uv_auth_param.len() != 16 {
+                    return Err(StatusCode::PinAuthInvalid);
+                }
+                let expected: [u8; 16] = pin_uv_auth_param
+                    .try_into()
+                    .map_err(|_| StatusCode::PinAuthInvalid)?;
+                pin_protocol::v1::verify(token.value(), client_data_hash, &expected)
+            }
+            2 => {
+                if pin_uv_auth_param.len() != 32 {
+                    return Err(StatusCode::PinAuthInvalid);
+                }
+                let expected: [u8; 32] = pin_uv_auth_param
+                    .try_into()
+                    .map_err(|_| StatusCode::PinAuthInvalid)?;
+                pin_protocol::v2::verify(token.value(), client_data_hash, &expected)
+            }
+            _ => {
+                return Err(StatusCode::InvalidParameter);
+            }
         };
 
         if valid {
@@ -595,6 +623,97 @@ impl<C: AuthenticatorCallbacks> Authenticator<C> {
         }
         self.min_pin_length = length;
         Ok(())
+    }
+
+    /// Clear PIN/UV auth token permissions except large blob write
+    ///
+    /// Per FIDO2 spec section 6.1.2 step 14.3, after makeCredential or getAssertion
+    /// completes, all permissions except lbw should be cleared.
+    pub fn clear_pin_uv_auth_token_permissions_except_lbw(&mut self) {
+        self.pin_tokens.clear_permissions_except_lbw();
+    }
+
+    /// Start RP enumeration and return the first RP
+    ///
+    /// Returns (rp_id, rp_name, total_rps)
+    // TODO: simplify return type
+    #[allow(clippy::type_complexity)]
+    pub fn start_rp_enumeration(
+        &mut self,
+    ) -> Result<((String, Option<String>, usize), usize), StatusCode> {
+        let rps = self.callbacks.enumerate_rps()?;
+        if rps.is_empty() {
+            return Err(StatusCode::NoCredentials);
+        }
+
+        let total = rps.len();
+        let first_rp = rps[0].clone();
+        self.rp_enumeration_state = Some(rps);
+        self.rp_enumeration_index = 1; // Next index to return
+
+        Ok((first_rp, total))
+    }
+
+    /// Get next RP in enumeration
+    ///
+    /// Returns (rp_id, rp_name, credential_count)
+    pub fn get_next_rp(&mut self) -> Result<(String, Option<String>, usize), StatusCode> {
+        let rps = self
+            .rp_enumeration_state
+            .as_ref()
+            .ok_or(StatusCode::NotAllowed)?; // No enumeration in progress
+
+        if self.rp_enumeration_index >= rps.len() {
+            // Clear state when enumeration is complete
+            self.rp_enumeration_state = None;
+            self.rp_enumeration_index = 0;
+            return Err(StatusCode::NotAllowed);
+        }
+
+        let rp = rps[self.rp_enumeration_index].clone();
+        self.rp_enumeration_index += 1;
+
+        Ok(rp)
+    }
+
+    /// Start credential enumeration for an RP and return the first credential
+    ///
+    /// Returns (credential, total_credentials)
+    pub fn start_credential_enumeration(
+        &mut self,
+        rp_id: &str,
+    ) -> Result<(crate::types::Credential, usize), StatusCode> {
+        let credentials = self.callbacks.read_credentials(rp_id, None)?;
+        if credentials.is_empty() {
+            return Err(StatusCode::NoCredentials);
+        }
+
+        let total = credentials.len();
+        let first_cred = credentials[0].clone();
+        self.credential_enumeration_state = Some(credentials);
+        self.credential_enumeration_index = 1; // Next index to return
+
+        Ok((first_cred, total))
+    }
+
+    /// Get next credential in enumeration
+    pub fn get_next_credential(&mut self) -> Result<crate::types::Credential, StatusCode> {
+        let credentials = self
+            .credential_enumeration_state
+            .as_ref()
+            .ok_or(StatusCode::NotAllowed)?; // No enumeration in progress
+
+        if self.credential_enumeration_index >= credentials.len() {
+            // Clear state when enumeration is complete
+            self.credential_enumeration_state = None;
+            self.credential_enumeration_index = 0;
+            return Err(StatusCode::NotAllowed);
+        }
+
+        let cred = credentials[self.credential_enumeration_index].clone();
+        self.credential_enumeration_index += 1;
+
+        Ok(cred)
     }
 
     /// Register a custom command handler
