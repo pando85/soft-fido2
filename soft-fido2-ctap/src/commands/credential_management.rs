@@ -93,14 +93,41 @@ pub fn handle<C: AuthenticatorCallbacks>(
     let subcommand_byte: u8 = parser.get(req_keys::SUBCOMMAND)?;
     let subcommand = SubCommand::try_from(subcommand_byte)?;
 
-    // All subcommands require PIN/UV auth
-    let _pin_protocol: Option<u8> = parser.get_opt(req_keys::PIN_UV_AUTH_PROTOCOL)?;
-    let _pin_auth: Option<Vec<u8>> = parser.get_opt(req_keys::PIN_UV_AUTH_PARAM)?;
+    if subcommand != SubCommand::EnumerateCredentialsGetNextCredential {
+        // All subcommands require PIN/UV auth except EnumerateCredentialsGetNextCredential
+        let pin_uv_auth_protocol: Option<u8> = parser.get_opt(req_keys::PIN_UV_AUTH_PROTOCOL)?;
+        let pin_uv_auth_param: Option<Vec<u8>> =
+            if parser.get_raw(req_keys::PIN_UV_AUTH_PARAM).is_some() {
+                Some(parser.get_bytes(req_keys::PIN_UV_AUTH_PARAM)?)
+            } else {
+                None
+            };
 
-    // TODO: Verify PIN/UV auth token has CredentialManagement permission (0x04)
-    // For now, just check if PIN is set
-    if !auth.is_pin_set() {
-        return Err(StatusCode::PinRequired);
+        // Verify PIN/UV auth token has CredentialManagement permission (0x04)
+        if let Some(ref pin_auth) = pin_uv_auth_param {
+            // Build the message to verify
+            // For subcommands with params: subcommand || subCommandParams (CBOR bytes)
+            // For subcommands without params: just subcommand
+            let mut message = vec![subcommand_byte];
+            let protocol = pin_uv_auth_protocol.ok_or(StatusCode::MissingParameter)?;
+            // Check if subCommandParams is present (key 0x02)
+            if let Some(params_raw) = parser.get_raw(req_keys::SUBCOMMAND_PARAMS) {
+                // Encode the params as CBOR and append to message
+                let params_bytes = crate::cbor::encode(&params_raw)?;
+                message.extend_from_slice(&params_bytes);
+            }
+
+            // Verify the pinUvAuthParam
+            auth.verify_pin_uv_auth_param(protocol, pin_auth, &message)?;
+
+            // Verify the token has CredentialManagement permission (0x04)
+            auth.verify_pin_uv_auth_token(
+                crate::pin_token::Permission::CredentialManagement,
+                None,
+            )?;
+        } else if !auth.is_pin_set() {
+            return Err(StatusCode::PinRequired);
+        }
     }
 
     match subcommand {
@@ -139,80 +166,96 @@ fn handle_get_creds_metadata<C: AuthenticatorCallbacks>(
 
 /// Handle enumerateRPsBegin subcommand
 fn handle_enumerate_rps_begin<C: AuthenticatorCallbacks>(
-    auth: &Authenticator<C>,
+    auth: &mut Authenticator<C>,
 ) -> Result<Vec<u8>> {
-    // Get all RPs
-    let rps = auth.callbacks().enumerate_rps()?;
+    // Start RP enumeration and get first RP
+    let ((rp_id, rp_name, _cred_count), total_rps) = auth.start_rp_enumeration()?;
 
-    if rps.is_empty() {
-        return Err(StatusCode::NoCredentials);
+    // Build RP structure (publicKeyCredentialRpEntity)
+    // According to WebAuthn spec, uses TEXT keys: "id" and "name"
+    // Must be in canonical CBOR order: "id" (len 2) before "name" (len 4)
+
+    // Build the Value directly to ensure correct CBOR encoding
+    let mut rp_map = vec![(
+        crate::cbor::Value::Text("id".to_string()),
+        crate::cbor::Value::Text(rp_id.clone()),
+    )];
+
+    if let Some(name) = &rp_name {
+        rp_map.push((
+            crate::cbor::Value::Text("name".to_string()),
+            crate::cbor::Value::Text(name.clone()),
+        ));
     }
 
-    // TODO: Store RP enumeration state for getNextRP
-    // For now, just return the first RP
+    let rp_value = crate::cbor::Value::Map(rp_map);
 
-    let (rp_id, rp_name, _cred_count) = &rps[0];
-
-    // Build RP structure
-    let mut rp_builder = MapBuilder::new();
-
-    rp_builder = rp_builder.insert(1, rp_id.clone())?;
-    if let Some(name) = rp_name {
-        rp_builder = rp_builder.insert(2, name.clone())?;
-    }
-
-    let rp_value = rp_builder.build_value()?;
+    let rp_id_hash = compute_rp_id_hash(&rp_id);
 
     MapBuilder::new()
         .insert(resp_keys::RP, rp_value)?
-        .insert_bytes(resp_keys::RP_ID_HASH, &compute_rp_id_hash(rp_id))?
-        .insert(resp_keys::TOTAL_RPS, rps.len() as i32)?
+        .insert_bytes(resp_keys::RP_ID_HASH, &rp_id_hash)?
+        .insert(resp_keys::TOTAL_RPS, total_rps as i32)?
         .build()
 }
 
 /// Handle enumerateRPsGetNextRP subcommand
 fn handle_enumerate_rps_get_next<C: AuthenticatorCallbacks>(
-    _auth: &Authenticator<C>,
+    auth: &mut Authenticator<C>,
 ) -> Result<Vec<u8>> {
-    // TODO: Implement RP enumeration state management
-    // For now, return NoCredentials to indicate no more RPs
-    Err(StatusCode::NoCredentials)
+    // Get next RP from enumeration state
+    let (rp_id, rp_name, _cred_count) = auth.get_next_rp()?;
+
+    // Build RP structure (same as enumerateRPsBegin) - build Value directly
+    let mut rp_map = vec![(
+        crate::cbor::Value::Text("id".to_string()),
+        crate::cbor::Value::Text(rp_id.clone()),
+    )];
+
+    if let Some(name) = &rp_name {
+        rp_map.push((
+            crate::cbor::Value::Text("name".to_string()),
+            crate::cbor::Value::Text(name.clone()),
+        ));
+    }
+
+    let rp_value = crate::cbor::Value::Map(rp_map);
+    let rp_id_hash = compute_rp_id_hash(&rp_id);
+
+    MapBuilder::new()
+        .insert(resp_keys::RP, rp_value)?
+        .insert_bytes(resp_keys::RP_ID_HASH, &rp_id_hash)?
+        .build()
 }
 
 /// Handle enumerateCredentialsBegin subcommand
 fn handle_enumerate_credentials_begin<C: AuthenticatorCallbacks>(
-    auth: &Authenticator<C>,
+    auth: &mut Authenticator<C>,
     parser: &MapParser,
 ) -> Result<Vec<u8>> {
     // Get subcommand parameters
     let params: crate::cbor::Value = parser.get(req_keys::SUBCOMMAND_PARAMS)?;
+
     let params_parser = MapParser::from_value(params)?;
 
     // Extract RP ID hash
-    let rp_id_hash: Vec<u8> = params_parser.get(subparam_keys::RP_ID_HASH)?;
+    let rp_id_hash: Vec<u8> = params_parser.get_bytes(subparam_keys::RP_ID_HASH)?;
 
-    // TODO: Map RP ID hash to RP ID (requires storing hash->id mapping)
-    // For now, enumerate all credentials and filter by trying to match
-    // This is inefficient but works for the implementation
-
-    // Get all RPs and find matching RP
+    // Map RP ID hash to RP ID by enumerating all RPs
     let rps = auth.callbacks().enumerate_rps()?;
+
     let matching_rp = rps
         .iter()
-        .find(|(rp_id, _, _)| compute_rp_id_hash(rp_id) == rp_id_hash.as_slice())
+        .find(|(rp_id, _, _)| {
+            let computed = compute_rp_id_hash(rp_id);
+            computed == rp_id_hash.as_slice()
+        })
         .ok_or(StatusCode::NoCredentials)?;
 
     let (rp_id, _, _) = matching_rp;
 
-    // Get credentials for this RP
-    let credentials = auth.callbacks().read_credentials(rp_id, None)?;
-
-    if credentials.is_empty() {
-        return Err(StatusCode::NoCredentials);
-    }
-
-    // Return first credential
-    let cred = &credentials[0];
+    // Start credential enumeration and get first credential
+    let (cred, total_credentials) = auth.start_credential_enumeration(rp_id)?;
 
     // Build user structure
     let user = User {
@@ -221,26 +264,57 @@ fn handle_enumerate_credentials_begin<C: AuthenticatorCallbacks>(
         display_name: cred.user_display_name.clone(),
     };
 
-    // Build credential ID descriptor
-    let cred_id = crate::cbor::Value::Map(vec![(
-        crate::cbor::Value::Text("id".to_string()),
-        crate::cbor::Value::Bytes(cred.id.clone()),
-    )]);
+    // Build credential ID descriptor (PublicKeyCredentialDescriptor)
+    // Must have "id" and "type" in canonical CBOR order (by length, then alphabetically)
+    let cred_id = crate::cbor::Value::Map(vec![
+        (
+            crate::cbor::Value::Text("id".to_string()), // len 2
+            crate::cbor::Value::Bytes(cred.id.clone()),
+        ),
+        (
+            crate::cbor::Value::Text("type".to_string()), // len 4
+            crate::cbor::Value::Text("public-key".to_string()),
+        ),
+    ]);
 
     MapBuilder::new()
         .insert(resp_keys::USER, user)?
         .insert(resp_keys::CREDENTIAL_ID, cred_id)?
-        .insert(resp_keys::TOTAL_CREDENTIALS, credentials.len() as i32)?
+        .insert(resp_keys::TOTAL_CREDENTIALS, total_credentials as i32)?
         .build()
 }
 
 /// Handle enumerateCredentialsGetNextCredential subcommand
 fn handle_enumerate_credentials_get_next<C: AuthenticatorCallbacks>(
-    _auth: &Authenticator<C>,
+    auth: &mut Authenticator<C>,
 ) -> Result<Vec<u8>> {
-    // TODO: Implement credential enumeration state management
-    // For now, return NoCredentials to indicate no more credentials
-    Err(StatusCode::NoCredentials)
+    // Get next credential from enumeration state
+    let cred = auth.get_next_credential()?;
+
+    // Build user structure
+    let user = User {
+        id: cred.user_id.clone(),
+        name: cred.user_name.clone(),
+        display_name: cred.user_display_name.clone(),
+    };
+
+    // Build credential ID descriptor (PublicKeyCredentialDescriptor)
+    // Must have "id" and "type" in canonical CBOR order
+    let cred_id = crate::cbor::Value::Map(vec![
+        (
+            crate::cbor::Value::Text("id".to_string()), // len 2
+            crate::cbor::Value::Bytes(cred.id.clone()),
+        ),
+        (
+            crate::cbor::Value::Text("type".to_string()), // len 4
+            crate::cbor::Value::Text("public-key".to_string()),
+        ),
+    ]);
+
+    MapBuilder::new()
+        .insert(resp_keys::USER, user)?
+        .insert(resp_keys::CREDENTIAL_ID, cred_id)?
+        .build()
 }
 
 /// Handle deleteCredential subcommand

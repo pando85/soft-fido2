@@ -292,6 +292,17 @@ impl PinTokenManager {
     pub fn has_valid_token(&self) -> bool {
         self.get_token().is_some()
     }
+
+    /// Clear PIN/UV auth token permissions except large blob write (lbw)
+    ///
+    /// Per FIDO2 spec section 6.1.2 step 14.3, after makeCredential completes,
+    /// all permissions except lbw should be cleared.
+    pub fn clear_permissions_except_lbw(&mut self) {
+        if let Some(token) = &mut self.current_token {
+            // Keep only LargeBlobWrite permission (0x10)
+            token.permissions &= Permission::LargeBlobWrite.to_u8();
+        }
+    }
 }
 
 impl Default for PinTokenManager {
