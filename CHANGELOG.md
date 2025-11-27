@@ -5,6 +5,17 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/), and this project
 adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [v0.3.2](https://github.com/pando85/soft-fido2/tree/v0.3.2) - 2025-11-27
+
+### Added
+
+- Implement support for `maxMsgSize` option ([b1ed04c](https://github.com/pando85/soft-fido2/commit/b1ed04c4b46b531bed84425f9034a3e3a040720c))
+
+### Fixed
+
+- Return none if client_pin option is not configured ([f48a161](https://github.com/pando85/soft-fido2/commit/f48a1610bb8f8a49ce49d31938af6af7fa9d0fc2))
+- CBOR serialization at get_info CTAP command ([7c73038](https://github.com/pando85/soft-fido2/commit/7c73038197676d43e7c4a91d8bcd82e0298bbc51))
+
 ## [v0.3.1](https://github.com/pando85/soft-fido2/tree/v0.3.1) - 2025-11-24
 
 ### Fixed
