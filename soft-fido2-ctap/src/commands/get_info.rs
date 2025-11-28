@@ -58,7 +58,11 @@ pub fn handle<C: AuthenticatorCallbacks>(auth: &Authenticator<C>) -> Result<Vec<
     let mut builder = MapBuilder::new();
 
     // Versions (0x01) - required
-    let versions = vec!["FIDO_2_0".to_string(), "FIDO_2_1".to_string()];
+    let versions = vec![
+        "FIDO_2_0".to_string(),
+        "FIDO_2_1".to_string(),
+        "FIDO_2_2".to_string(),
+    ];
     builder = builder.insert(keys::VERSIONS, versions)?;
 
     // Extensions (0x02) - optional
