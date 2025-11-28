@@ -76,7 +76,10 @@ impl<C: AuthenticatorCallbacks> CommandDispatcher<C> {
             CommandCode::Selection => {
                 crate::commands::selection::handle(&mut self.authenticator, command_data)
             }
-            CommandCode::LargeBlobs | CommandCode::Config => {
+            CommandCode::Config => {
+                crate::commands::config::handle(&mut self.authenticator, command_data)
+            }
+            CommandCode::LargeBlobs => {
                 // Not yet implemented
                 Err(StatusCode::InvalidCommand)
             }
