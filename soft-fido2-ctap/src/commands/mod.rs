@@ -1,11 +1,12 @@
 //! CTAP command handlers
 //!
-//! This module contains the implementations of all CTAP 2.0/2.1 commands.
+//! This module contains the implementations of all CTAP 2.0/2.1/2.2 commands.
 //!
 //! See FIDO2 spec section 6 for command definitions:
 //! <https://fidoalliance.org/specs/fido-v2.2-rd-20230321/fido-client-to-authenticator-protocol-v2.2-rd-20230321.html#commands>
 
 pub mod client_pin;
+pub mod config;
 pub mod credential_management;
 pub mod get_assertion;
 pub mod get_info;
