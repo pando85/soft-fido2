@@ -5,6 +5,24 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/), and this project
 adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [v0.4.0](https://github.com/pando85/soft-fido2/tree/v0.4.0) - 2025-11-29
+
+### Added
+
+- Add getPinUvAuthTokenUsingUvWithPermissions and enhance PIN protocol v2 support ([dcd529c](https://github.com/pando85/soft-fido2/commit/dcd529cbb30312bc59744943117a54092336ab18))
+- Reimplement getAssertion command for FIDO 2.2 spec compliance ([304c2af](https://github.com/pando85/soft-fido2/commit/304c2affa7d1a6104f1b63c1f30d0ef4ebdaa411))
+- Add FIDO 2.2 to get_info supported versions ([f4452a8](https://github.com/pando85/soft-fido2/commit/f4452a896f3117b84c36ede384f7f80dd7fdcdfb))
+- Handle config CTAP commands as UnsupportedOption ([476d85f](https://github.com/pando85/soft-fido2/commit/476d85fce01073650da0c0e3d1eb8a4a9a0d9811))
+- Implement delete credentials in reset command ([dd01329](https://github.com/pando85/soft-fido2/commit/dd013297374297f4c7e8f8e8569dd9dfc4eae57d))
+
+### Refactor
+
+- Reorganize .gitignore into standard sections ([a8f28c5](https://github.com/pando85/soft-fido2/commit/a8f28c54a6c956ed58780e00eb55ae6be3b3bc03))
+
+### Testing
+
+- Add Mozilla authenticator crate compatibility tests ([ffc5329](https://github.com/pando85/soft-fido2/commit/ffc5329dccea6ed71da933ca72cf24711dbf11c2))
+
 ## [v0.3.2](https://github.com/pando85/soft-fido2/tree/v0.3.2) - 2025-11-27
 
 ### Added
