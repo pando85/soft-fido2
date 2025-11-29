@@ -221,6 +221,12 @@ The repository uses Python `pre-commit` tool (NOT shell scripts) with the follow
 Install hooks with: `make pre-commit-install`
 Run manually with: `make pre-commit`
 
+### Commit Message Conventions
+- Use conventional commit format: `type: Description`
+- Start the description with an uppercase letter
+- Keep messages concise (1-2 sentences) focusing on "why" rather than "what"
+- Common types: `feat`, `fix`, `refactor`, `docs`, `test`, `chore`
+
 ## Testing Architecture
 
 ### Test Organization
