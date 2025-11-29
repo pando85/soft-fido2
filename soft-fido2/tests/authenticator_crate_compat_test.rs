@@ -1903,3 +1903,170 @@ fn test_mozilla_authenticator_crate_compat_credential_management() {
     eprintln!("  • Retrieved credentials metadata");
     eprintln!("  • Enumerated RPs");
 }
+
+#[test]
+fn test_reset_deletes_all_credentials() {
+    eprintln!("\n╔════════════════════════════════════════════════╗");
+    eprintln!("║       Authenticator Reset Behavior Test       ║");
+    eprintln!("╚════════════════════════════════════════════════╝\n");
+
+    // Setup authenticator
+    let callbacks = TestCallbacks::new();
+
+    let config = AuthenticatorConfig::builder()
+        .aaguid([
+            0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08, 0x09, 0x0a, 0x0b, 0x0c, 0x0d, 0x0e,
+            0x0f, 0x10,
+        ])
+        .options(
+            AuthenticatorOptions::new()
+                .with_resident_keys(true)
+                .with_user_presence(true)
+                .with_user_verification(Some(false))
+                .with_platform_device(false)
+                .with_client_pin(Some(false))
+                .with_credential_management(Some(false)),
+        )
+        .build();
+
+    let mut auth =
+        Authenticator::with_config(callbacks.clone(), config).expect("Failed to create auth");
+
+    // ========================================
+    // PHASE 1: CREATE MULTIPLE CREDENTIALS
+    // ========================================
+    eprintln!("[Test] ═══ CREATING CREDENTIALS ═══\n");
+
+    let test_cases = [
+        (
+            "example.com",
+            "Example Corp",
+            &[1u8, 2, 3, 4][..],
+            "alice@example.com",
+            "Alice",
+        ),
+        (
+            "test.org",
+            "Test Organization",
+            &[9u8, 10, 11, 12][..],
+            "charlie@test.org",
+            "Charlie",
+        ),
+        (
+            "demo.net",
+            "Demo Inc",
+            &[13u8, 14, 15, 16][..],
+            "diana@demo.net",
+            "Diana",
+        ),
+    ];
+
+    for (idx, (rp_id, rp_name, user_id, user_name, user_display_name)) in
+        test_cases.iter().enumerate()
+    {
+        let challenge = format!("challenge-{}", idx).into_bytes();
+        let client_data_hash = compute_client_data_hash(&challenge, "webauthn.create");
+
+        let make_cred_cbor = build_make_credential_request(
+            &client_data_hash,
+            rp_id,
+            rp_name,
+            user_id,
+            user_name,
+            user_display_name,
+        );
+
+        let mut ctap_request = vec![0x01]; // makeCredential
+        ctap_request.extend_from_slice(&make_cred_cbor);
+
+        let mut response = Vec::new();
+        auth.handle(&ctap_request, &mut response)
+            .expect("makeCredential failed");
+
+        assert_eq!(
+            response[0], 0x00,
+            "makeCredential failed with status: 0x{:02x}",
+            response[0]
+        );
+
+        eprintln!("  ✓ Created credential for {} ({})", user_name, rp_id);
+    }
+
+    eprintln!();
+
+    // Verify credentials were created
+    let cred_count_before = callbacks.credential_count();
+    eprintln!("[Test] Credentials before reset: {}", cred_count_before);
+    assert_eq!(
+        cred_count_before,
+        test_cases.len(),
+        "Expected {} credentials to be stored",
+        test_cases.len()
+    );
+
+    // ========================================
+    // PHASE 2: RESET AUTHENTICATOR
+    // ========================================
+    eprintln!("\n[Test] ═══ RESETTING AUTHENTICATOR ═══\n");
+
+    // Build reset CTAP request (0x07)
+    let ctap_request = vec![0x07];
+
+    let mut response = Vec::new();
+    auth.handle(&ctap_request, &mut response)
+        .expect("reset failed");
+
+    assert_eq!(
+        response[0], 0x00,
+        "reset failed with status: 0x{:02x}",
+        response[0]
+    );
+
+    eprintln!("[Test] ✓ Authenticator reset successful");
+
+    // ========================================
+    // PHASE 3: VERIFY ALL CREDENTIALS DELETED
+    // ========================================
+    eprintln!("\n[Test] ═══ VERIFYING CREDENTIALS DELETED ═══\n");
+
+    let cred_count_after = callbacks.credential_count();
+    eprintln!("[Test] Credentials after reset: {}", cred_count_after);
+
+    assert_eq!(
+        cred_count_after, 0,
+        "Expected all credentials to be deleted after reset"
+    );
+
+    eprintln!("[Test] ✓ All credentials deleted\n");
+
+    // Verify we cannot authenticate with old credentials
+    eprintln!("[Test] ═══ VERIFYING OLD CREDENTIALS INVALID ═══\n");
+
+    // Try to use the reset authenticator with a get info command
+    // This should succeed but show no credentials
+    let ctap_request = vec![0x04]; // getInfo
+    let mut response = Vec::new();
+    auth.handle(&ctap_request, &mut response)
+        .expect("getInfo failed");
+
+    assert_eq!(
+        response[0], 0x00,
+        "getInfo failed with status: 0x{:02x}",
+        response[0]
+    );
+
+    eprintln!("[Test] ✓ Authenticator functional after reset");
+
+    // ========================================
+    // VERIFICATION
+    // ========================================
+    eprintln!("\n╔════════════════════════════════════════════════╗");
+    eprintln!("║              ✓ Test Passed!                    ║");
+    eprintln!("╚════════════════════════════════════════════════╝\n");
+
+    eprintln!("Summary:");
+    eprintln!("  • Created {} credentials", test_cases.len());
+    eprintln!("  • Reset authenticator successfully");
+    eprintln!("  • Verified all credentials were deleted");
+    eprintln!("  • Verified authenticator remains functional");
+}

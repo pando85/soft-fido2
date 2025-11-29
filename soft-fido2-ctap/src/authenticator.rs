@@ -785,6 +785,27 @@ impl<C: AuthenticatorCallbacks> Authenticator<C> {
         self.pin_protocol_keypairs.clear();
     }
 
+    /// Delete all credentials via callbacks
+    ///
+    /// This will enumerate all RPs and delete all credentials for each RP.
+    pub fn delete_all_credentials(&self) -> Result<(), StatusCode> {
+        // Enumerate all RPs to get all credentials
+        let rps = self.callbacks.enumerate_rps()?;
+
+        // For each RP, read all credentials and delete them
+        for (rp_id, _, _) in rps {
+            // Read all credentials for this RP
+            let credentials = self.callbacks.read_credentials(&rp_id, None)?;
+
+            // Delete each credential
+            for credential in credentials {
+                self.callbacks.delete_credential(&credential.id)?;
+            }
+        }
+
+        Ok(())
+    }
+
     /// Reset authenticator to factory defaults
     ///
     /// This will clear all credentials, reset PIN, and clear tokens.
@@ -797,15 +818,8 @@ impl<C: AuthenticatorCallbacks> Authenticator<C> {
         self.min_pin_length = 4;
         self.pin_protocol_keypairs.clear();
 
-        // Note: Credential deletion should be handled by the caller
-        // via callbacks, as we don't want to store credentials here
-        // TODO: delete all credentials via callbacks, we need to implement a method for listing
-        // all credentials
-        //self.callbacks.enumerate_rps().map(|rps| {
-        //    rps.into_iter().for_each(|(id, _, _)| {
-        //        self.callbacks.delete_credential(id);
-        //    })
-        //});
+        // Delete all credentials via callbacks
+        self.delete_all_credentials()?;
 
         Ok(())
     }
@@ -1145,6 +1159,422 @@ mod tests {
         auth.reset().unwrap();
         assert!(!auth.is_pin_set());
         assert_eq!(auth.pin_retries(), MAX_PIN_RETRIES);
+    }
+
+    #[test]
+    fn test_delete_all_credentials() {
+        use alloc::collections::BTreeMap;
+        use alloc::sync::Arc;
+        use core::sync::atomic::{AtomicUsize, Ordering};
+
+        #[cfg(feature = "std")]
+        use std::sync::Mutex;
+
+        #[cfg(not(feature = "std"))]
+        use spin::Mutex;
+
+        // Mock callbacks that track deletion calls
+        struct TrackingCallbacks {
+            credentials: Arc<Mutex<BTreeMap<Vec<u8>, Credential>>>,
+            delete_count: Arc<AtomicUsize>,
+        }
+
+        impl UserInteractionCallbacks for TrackingCallbacks {
+            fn request_up(
+                &self,
+                _info: &str,
+                _user_name: Option<&str>,
+                _rp_id: &str,
+            ) -> Result<UpResult, StatusCode> {
+                Ok(UpResult::Accepted)
+            }
+
+            fn request_uv(
+                &self,
+                _info: &str,
+                _user_name: Option<&str>,
+                _rp_id: &str,
+            ) -> Result<UvResult, StatusCode> {
+                Ok(UvResult::Accepted)
+            }
+
+            fn select_credential(
+                &self,
+                _rp_id: &str,
+                _user_names: &[String],
+            ) -> Result<usize, StatusCode> {
+                Ok(0)
+            }
+        }
+
+        impl CredentialStorageCallbacks for TrackingCallbacks {
+            fn write_credential(&self, credential: &Credential) -> Result<(), StatusCode> {
+                #[cfg(feature = "std")]
+                let mut creds = self.credentials.lock().unwrap();
+
+                #[cfg(not(feature = "std"))]
+                let mut creds = self.credentials.lock();
+
+                creds.insert(credential.id.clone(), credential.clone());
+                Ok(())
+            }
+
+            fn delete_credential(&self, credential_id: &[u8]) -> Result<(), StatusCode> {
+                #[cfg(feature = "std")]
+                let mut creds = self.credentials.lock().unwrap();
+
+                #[cfg(not(feature = "std"))]
+                let mut creds = self.credentials.lock();
+
+                creds.remove(credential_id);
+                self.delete_count.fetch_add(1, Ordering::SeqCst);
+                Ok(())
+            }
+
+            fn read_credentials(
+                &self,
+                rp_id: &str,
+                _user_id: Option<&[u8]>,
+            ) -> Result<Vec<Credential>, StatusCode> {
+                #[cfg(feature = "std")]
+                let creds = self.credentials.lock().unwrap();
+
+                #[cfg(not(feature = "std"))]
+                let creds = self.credentials.lock();
+
+                let filtered: Vec<Credential> = creds
+                    .values()
+                    .filter(|c| c.rp_id == rp_id)
+                    .cloned()
+                    .collect();
+                Ok(filtered)
+            }
+
+            fn credential_exists(&self, credential_id: &[u8]) -> Result<bool, StatusCode> {
+                #[cfg(feature = "std")]
+                let creds = self.credentials.lock().unwrap();
+
+                #[cfg(not(feature = "std"))]
+                let creds = self.credentials.lock();
+
+                Ok(creds.contains_key(credential_id))
+            }
+
+            fn get_credential(&self, credential_id: &[u8]) -> Result<Credential, StatusCode> {
+                #[cfg(feature = "std")]
+                let creds = self.credentials.lock().unwrap();
+
+                #[cfg(not(feature = "std"))]
+                let creds = self.credentials.lock();
+
+                creds
+                    .get(credential_id)
+                    .cloned()
+                    .ok_or(StatusCode::NoCredentials)
+            }
+
+            fn update_credential(&self, credential: &Credential) -> Result<(), StatusCode> {
+                #[cfg(feature = "std")]
+                let mut creds = self.credentials.lock().unwrap();
+
+                #[cfg(not(feature = "std"))]
+                let mut creds = self.credentials.lock();
+
+                creds.insert(credential.id.clone(), credential.clone());
+                Ok(())
+            }
+
+            fn enumerate_rps(&self) -> Result<Vec<(String, Option<String>, usize)>, StatusCode> {
+                #[cfg(feature = "std")]
+                let creds = self.credentials.lock().unwrap();
+
+                #[cfg(not(feature = "std"))]
+                let creds = self.credentials.lock();
+
+                let mut rp_map: BTreeMap<String, (Option<String>, usize)> = BTreeMap::new();
+
+                for cred in creds.values() {
+                    let entry = rp_map
+                        .entry(cred.rp_id.clone())
+                        .or_insert((Some(cred.rp_id.clone()), 0));
+                    entry.1 += 1;
+                }
+
+                let result: Vec<(String, Option<String>, usize)> = rp_map
+                    .into_iter()
+                    .map(|(rp_id, (rp_name, count))| (rp_id, rp_name, count))
+                    .collect();
+
+                Ok(result)
+            }
+
+            fn credential_count(&self) -> Result<usize, StatusCode> {
+                #[cfg(feature = "std")]
+                let creds = self.credentials.lock().unwrap();
+
+                #[cfg(not(feature = "std"))]
+                let creds = self.credentials.lock();
+
+                Ok(creds.len())
+            }
+        }
+
+        // Create test credentials
+        let credentials = Arc::new(Mutex::new(BTreeMap::new()));
+        let delete_count = Arc::new(AtomicUsize::new(0));
+
+        let callbacks = TrackingCallbacks {
+            credentials: credentials.clone(),
+            delete_count: delete_count.clone(),
+        };
+
+        // Add some test credentials
+        let cred1 = Credential {
+            id: vec![1, 2, 3],
+            rp_id: "example.com".to_string(),
+            rp_name: Some("Example".to_string()),
+            user_id: vec![1],
+            user_name: Some("user1".to_string()),
+            user_display_name: None,
+            private_key: crate::SecBytes::from_slice(&[0u8; 32]),
+            algorithm: CoseAlgorithm::ES256.to_i32(),
+            sign_count: 0,
+            created: 0,
+            discoverable: true,
+            cred_protect: 0,
+        };
+
+        let cred2 = Credential {
+            id: vec![4, 5, 6],
+            rp_id: "example.org".to_string(),
+            rp_name: Some("Example Org".to_string()),
+            user_id: vec![2],
+            user_name: Some("user2".to_string()),
+            user_display_name: None,
+            private_key: crate::SecBytes::from_slice(&[0u8; 32]),
+            algorithm: CoseAlgorithm::ES256.to_i32(),
+            sign_count: 0,
+            created: 0,
+            discoverable: true,
+            cred_protect: 0,
+        };
+
+        callbacks.write_credential(&cred1).unwrap();
+        callbacks.write_credential(&cred2).unwrap();
+
+        // Verify credentials were added
+        assert_eq!(callbacks.credential_count().unwrap(), 2);
+
+        // Create authenticator and call delete_all_credentials
+        let config = AuthenticatorConfig::new();
+        let auth = Authenticator::new(config, callbacks);
+
+        auth.delete_all_credentials().unwrap();
+
+        // Verify all credentials were deleted
+        assert_eq!(delete_count.load(Ordering::SeqCst), 2);
+
+        #[cfg(feature = "std")]
+        assert_eq!(credentials.lock().unwrap().len(), 0);
+
+        #[cfg(not(feature = "std"))]
+        assert_eq!(credentials.lock().len(), 0);
+    }
+
+    #[test]
+    fn test_reset_deletes_credentials() {
+        use alloc::collections::BTreeMap;
+        use alloc::sync::Arc;
+
+        #[cfg(feature = "std")]
+        use std::sync::Mutex;
+
+        #[cfg(not(feature = "std"))]
+        use spin::Mutex;
+
+        // Mock callbacks with credential storage
+        struct StorageCallbacks {
+            credentials: Arc<Mutex<BTreeMap<Vec<u8>, Credential>>>,
+        }
+
+        impl UserInteractionCallbacks for StorageCallbacks {
+            fn request_up(
+                &self,
+                _info: &str,
+                _user_name: Option<&str>,
+                _rp_id: &str,
+            ) -> Result<UpResult, StatusCode> {
+                Ok(UpResult::Accepted)
+            }
+
+            fn request_uv(
+                &self,
+                _info: &str,
+                _user_name: Option<&str>,
+                _rp_id: &str,
+            ) -> Result<UvResult, StatusCode> {
+                Ok(UvResult::Accepted)
+            }
+
+            fn select_credential(
+                &self,
+                _rp_id: &str,
+                _user_names: &[String],
+            ) -> Result<usize, StatusCode> {
+                Ok(0)
+            }
+        }
+
+        impl CredentialStorageCallbacks for StorageCallbacks {
+            fn write_credential(&self, credential: &Credential) -> Result<(), StatusCode> {
+                #[cfg(feature = "std")]
+                let mut creds = self.credentials.lock().unwrap();
+
+                #[cfg(not(feature = "std"))]
+                let mut creds = self.credentials.lock();
+
+                creds.insert(credential.id.clone(), credential.clone());
+                Ok(())
+            }
+
+            fn delete_credential(&self, credential_id: &[u8]) -> Result<(), StatusCode> {
+                #[cfg(feature = "std")]
+                let mut creds = self.credentials.lock().unwrap();
+
+                #[cfg(not(feature = "std"))]
+                let mut creds = self.credentials.lock();
+
+                creds.remove(credential_id);
+                Ok(())
+            }
+
+            fn read_credentials(
+                &self,
+                rp_id: &str,
+                _user_id: Option<&[u8]>,
+            ) -> Result<Vec<Credential>, StatusCode> {
+                #[cfg(feature = "std")]
+                let creds = self.credentials.lock().unwrap();
+
+                #[cfg(not(feature = "std"))]
+                let creds = self.credentials.lock();
+
+                let filtered: Vec<Credential> = creds
+                    .values()
+                    .filter(|c| c.rp_id == rp_id)
+                    .cloned()
+                    .collect();
+                Ok(filtered)
+            }
+
+            fn credential_exists(&self, credential_id: &[u8]) -> Result<bool, StatusCode> {
+                #[cfg(feature = "std")]
+                let creds = self.credentials.lock().unwrap();
+
+                #[cfg(not(feature = "std"))]
+                let creds = self.credentials.lock();
+
+                Ok(creds.contains_key(credential_id))
+            }
+
+            fn get_credential(&self, credential_id: &[u8]) -> Result<Credential, StatusCode> {
+                #[cfg(feature = "std")]
+                let creds = self.credentials.lock().unwrap();
+
+                #[cfg(not(feature = "std"))]
+                let creds = self.credentials.lock();
+
+                creds
+                    .get(credential_id)
+                    .cloned()
+                    .ok_or(StatusCode::NoCredentials)
+            }
+
+            fn update_credential(&self, credential: &Credential) -> Result<(), StatusCode> {
+                #[cfg(feature = "std")]
+                let mut creds = self.credentials.lock().unwrap();
+
+                #[cfg(not(feature = "std"))]
+                let mut creds = self.credentials.lock();
+
+                creds.insert(credential.id.clone(), credential.clone());
+                Ok(())
+            }
+
+            fn enumerate_rps(&self) -> Result<Vec<(String, Option<String>, usize)>, StatusCode> {
+                #[cfg(feature = "std")]
+                let creds = self.credentials.lock().unwrap();
+
+                #[cfg(not(feature = "std"))]
+                let creds = self.credentials.lock();
+
+                let mut rp_map: BTreeMap<String, (Option<String>, usize)> = BTreeMap::new();
+
+                for cred in creds.values() {
+                    let entry = rp_map
+                        .entry(cred.rp_id.clone())
+                        .or_insert((Some(cred.rp_id.clone()), 0));
+                    entry.1 += 1;
+                }
+
+                let result: Vec<(String, Option<String>, usize)> = rp_map
+                    .into_iter()
+                    .map(|(rp_id, (rp_name, count))| (rp_id, rp_name, count))
+                    .collect();
+
+                Ok(result)
+            }
+
+            fn credential_count(&self) -> Result<usize, StatusCode> {
+                #[cfg(feature = "std")]
+                let creds = self.credentials.lock().unwrap();
+
+                #[cfg(not(feature = "std"))]
+                let creds = self.credentials.lock();
+
+                Ok(creds.len())
+            }
+        }
+
+        let credentials = Arc::new(Mutex::new(BTreeMap::new()));
+        let callbacks = StorageCallbacks {
+            credentials: credentials.clone(),
+        };
+
+        // Add test credentials
+        let cred = Credential {
+            id: vec![1, 2, 3],
+            rp_id: "example.com".to_string(),
+            rp_name: Some("Example".to_string()),
+            user_id: vec![1],
+            user_name: Some("user1".to_string()),
+            user_display_name: None,
+            private_key: crate::SecBytes::from_slice(&[0u8; 32]),
+            algorithm: CoseAlgorithm::ES256.to_i32(),
+            sign_count: 0,
+            created: 0,
+            discoverable: true,
+            cred_protect: 0,
+        };
+
+        callbacks.write_credential(&cred).unwrap();
+        assert_eq!(callbacks.credential_count().unwrap(), 1);
+
+        // Create authenticator and reset
+        let config = AuthenticatorConfig::new();
+        let mut auth = Authenticator::new(config, callbacks);
+        auth.set_pin("1234").unwrap();
+        auth.reset().unwrap();
+
+        // Verify reset cleared PIN and deleted credentials
+        assert!(!auth.is_pin_set());
+        assert_eq!(auth.pin_retries(), MAX_PIN_RETRIES);
+
+        #[cfg(feature = "std")]
+        assert_eq!(credentials.lock().unwrap().len(), 0);
+
+        #[cfg(not(feature = "std"))]
+        assert_eq!(credentials.lock().len(), 0);
     }
 
     #[test]
