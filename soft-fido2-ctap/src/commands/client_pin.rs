@@ -70,7 +70,6 @@ pub fn handle<C: AuthenticatorCallbacks>(
 
     let subcommand: u8 = parser.get(req_keys::SUBCOMMAND)?;
 
-    dbg!(subcommand);
     match subcommand {
         0x01 => handle_get_pin_retries(auth),
         0x02 => handle_get_key_agreement(auth, &parser),
