@@ -262,28 +262,30 @@ impl CredProtect {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Credential {
     /// Credential ID
+    #[serde(with = "serde_bytes")]
     pub id: Vec<u8>,
 
     /// Relying party identifier
     pub rp_id: String,
 
+    /// Creation timestamp (Unix timestamp)
+    pub created: i64,
+
     /// Relying party name
     pub rp_name: Option<String>,
 
     /// User handle
+    #[serde(with = "serde_bytes")]
     pub user_id: Vec<u8>,
+
+    /// COSE algorithm identifier
+    pub algorithm: i32,
 
     /// User name
     pub user_name: Option<String>,
 
-    /// User display name
-    pub user_display_name: Option<String>,
-
     /// Signature counter
     pub sign_count: u32,
-
-    /// COSE algorithm identifier
-    pub algorithm: i32,
 
     /// Private key (32 bytes for P-256)
     ///
@@ -293,14 +295,14 @@ pub struct Credential {
     /// - Provides constant-time equality
     pub private_key: SecBytes,
 
-    /// Creation timestamp (Unix timestamp)
-    pub created: i64,
+    /// Credential protection level
+    pub cred_protect: u8,
 
     /// Whether this is a discoverable credential
     pub discoverable: bool,
 
-    /// Credential protection level
-    pub cred_protect: u8,
+    /// User display name
+    pub user_display_name: Option<String>,
 }
 
 impl Credential {
@@ -320,16 +322,16 @@ impl Credential {
         Self {
             id,
             rp_id,
+            created: current_timestamp(),
             rp_name,
             user_id,
-            user_name,
-            user_display_name,
-            sign_count: 0,
             algorithm,
+            user_name,
+            sign_count: 0,
             private_key,
-            created: current_timestamp(),
-            discoverable,
             cred_protect: CredProtect::UserVerificationOptional.to_u8(),
+            discoverable,
+            user_display_name,
         }
     }
 }
