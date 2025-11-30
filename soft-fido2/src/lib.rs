@@ -51,6 +51,7 @@ pub mod ctap;
 pub mod error;
 pub mod options;
 pub mod request;
+pub mod response;
 pub mod types;
 
 // Modules that require std
@@ -73,16 +74,22 @@ pub use ctap::CtapCommand;
 pub use error::{Error, Result};
 pub use options::AuthenticatorOptions;
 pub use request::{
-    ClientDataHash, CredentialDescriptor, CredentialType, GetAssertionRequest,
-    MakeCredentialRequest, PinUvAuth, PinUvAuthProtocol,
+    ClientDataHash, CredentialDescriptor, CredentialManagementRequest, CredentialType,
+    DeleteCredentialRequest, EnumerateCredentialsRequest, GetAssertionRequest,
+    MakeCredentialRequest, PinUvAuth, PinUvAuthProtocol, UpdateUserRequest,
 };
 pub use soft_fido2_ctap::StatusCode;
 
 pub use types::{Credential, CredentialRef, Extensions, RelyingParty, User};
 
+// Re-export response types
+pub use response::{
+    CredentialEnumerationBeginResponse, CredentialEnumerationNextResponse, CredentialInfo,
+    CredentialsMetadata, RpEnumerationBeginResponse, RpEnumerationNextResponse, RpInfo,
+};
+
 // std-only re-exports
-#[cfg(feature = "std")]
-pub use client::Client;
+pub use client::{Client, compute_rp_id_hash};
 #[cfg(feature = "std")]
 pub use pin::{PinProtocol, PinUvAuthEncapsulation};
 #[cfg(feature = "std")]

@@ -329,3 +329,164 @@ impl GetAssertionRequest {
         self.timeout_ms
     }
 }
+
+/// PIN/UV auth token permissions
+///
+/// These correspond to the permission bits defined in FIDO 2.2 spec.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[repr(u8)]
+pub enum Permission {
+    /// Make credential permission (0x01)
+    MakeCredential = 0x01,
+    /// Get assertion permission (0x02)
+    GetAssertion = 0x02,
+    /// Credential management permission (0x04)
+    CredentialManagement = 0x04,
+    /// Bio enrollment permission (0x08)
+    BioEnrollment = 0x08,
+    /// Large blob write permission (0x10)
+    LargeBlobWrite = 0x10,
+    /// Authenticator configuration permission (0x20)
+    AuthenticatorConfiguration = 0x20,
+}
+
+impl Permission {
+    /// Convert to u8 bitmask value
+    pub fn to_u8(self) -> u8 {
+        self as u8
+    }
+}
+
+/// Request for credential management operations
+#[derive(Debug, Clone)]
+pub struct CredentialManagementRequest {
+    pin_uv_auth: Option<PinUvAuth>,
+}
+
+impl CredentialManagementRequest {
+    /// Create new credential management request
+    ///
+    /// # Arguments
+    /// * `pin_uv_auth` - Optional PIN/UV auth token with CredentialManagement permission
+    ///
+    /// # Important
+    /// For getCredsMetadata and enumerate RPs, the PIN/UV auth token MUST NOT
+    /// have a permissions RP ID parameter when obtained from clientPIN.
+    pub fn new(pin_uv_auth: Option<PinUvAuth>) -> Self {
+        Self { pin_uv_auth }
+    }
+
+    /// Get the PIN/UV auth bundle
+    pub fn pin_uv_auth(&self) -> Option<&PinUvAuth> {
+        self.pin_uv_auth.as_ref()
+    }
+}
+
+/// Request to enumerate credentials for a specific RP
+#[derive(Debug, Clone)]
+pub struct EnumerateCredentialsRequest {
+    pin_uv_auth: Option<PinUvAuth>,
+    rp_id_hash: [u8; 32],
+}
+
+impl EnumerateCredentialsRequest {
+    /// Create new enumerate credentials request
+    ///
+    /// # Arguments
+    /// * `pin_uv_auth` - Optional PIN/UV auth token with CredentialManagement permission
+    /// * `rp_id_hash` - SHA-256 hash of RP ID
+    pub fn new(pin_uv_auth: Option<PinUvAuth>, rp_id_hash: [u8; 32]) -> Self {
+        Self {
+            pin_uv_auth,
+            rp_id_hash,
+        }
+    }
+
+    /// Get the PIN/UV auth bundle
+    pub fn pin_uv_auth(&self) -> Option<&PinUvAuth> {
+        self.pin_uv_auth.as_ref()
+    }
+
+    /// Get the RP ID hash
+    pub fn rp_id_hash(&self) -> &[u8; 32] {
+        &self.rp_id_hash
+    }
+}
+
+/// Request to delete a credential
+#[derive(Debug, Clone)]
+pub struct DeleteCredentialRequest {
+    pin_uv_auth: Option<PinUvAuth>,
+    credential_id: Vec<u8>,
+}
+
+impl DeleteCredentialRequest {
+    /// Create new delete credential request
+    ///
+    /// # Arguments
+    /// * `pin_uv_auth` - Optional PIN/UV auth token with CredentialManagement permission
+    /// * `credential_id` - ID of credential to delete
+    ///
+    /// # Note
+    /// Platforms SHOULD also delete any associated large blobs after successful deletion.
+    pub fn new(pin_uv_auth: Option<PinUvAuth>, credential_id: Vec<u8>) -> Self {
+        Self {
+            pin_uv_auth,
+            credential_id,
+        }
+    }
+
+    /// Get the PIN/UV auth bundle
+    pub fn pin_uv_auth(&self) -> Option<&PinUvAuth> {
+        self.pin_uv_auth.as_ref()
+    }
+
+    /// Get the credential ID
+    pub fn credential_id(&self) -> &[u8] {
+        &self.credential_id
+    }
+}
+
+/// Request to update user information
+#[derive(Debug, Clone)]
+pub struct UpdateUserRequest {
+    pin_uv_auth: Option<PinUvAuth>,
+    credential_id: Vec<u8>,
+    user: User,
+}
+
+impl UpdateUserRequest {
+    /// Create new update user information request
+    ///
+    /// # Arguments
+    /// * `pin_uv_auth` - Optional PIN/UV auth token with CredentialManagement permission
+    /// * `credential_id` - ID of credential to update
+    /// * `user` - New user information
+    ///
+    /// # Important
+    /// - The user.id field MUST match the existing credential's user ID
+    /// - Empty fields in user parameter are removed from the credential
+    /// - Only name and displayName are updated (id is not changed)
+    pub fn new(pin_uv_auth: Option<PinUvAuth>, credential_id: Vec<u8>, user: User) -> Self {
+        Self {
+            pin_uv_auth,
+            credential_id,
+            user,
+        }
+    }
+
+    /// Get the PIN/UV auth bundle
+    pub fn pin_uv_auth(&self) -> Option<&PinUvAuth> {
+        self.pin_uv_auth.as_ref()
+    }
+
+    /// Get the credential ID
+    pub fn credential_id(&self) -> &[u8] {
+        &self.credential_id
+    }
+
+    /// Get the user information
+    pub fn user(&self) -> &User {
+        &self.user
+    }
+}

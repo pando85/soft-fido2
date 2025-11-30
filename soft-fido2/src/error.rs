@@ -27,6 +27,27 @@ pub enum Error {
     CborCommandFailed(i32),
     /// Invalid client data hash (must be 32 bytes)
     InvalidClientDataHash,
+    /// No credentials exist for the requested operation
+    ///
+    /// Returned when:
+    /// - Attempting to enumerate credentials for an RP with no credentials
+    /// - Attempting to delete a non-existent credential
+    NoCredentials,
+    /// PIN/UV authentication required but not provided
+    PinAuthRequired,
+    /// PIN/UV auth token has insufficient permissions
+    ///
+    /// The token may not have the required permission bit set,
+    /// or may have the wrong permissions RP ID.
+    UnauthorizedPermission,
+    /// Invalid RP ID hash
+    ///
+    /// RP ID hash must be exactly 32 bytes (SHA-256 output).
+    InvalidRpIdHash,
+    /// PIN/UV auth token has expired
+    PinTokenExpired,
+    /// Invalid subcommand for credential management
+    InvalidSubcommand,
     /// CTAP error with status code
     CtapError(u8),
     /// IO error (from transport operations)
@@ -51,6 +72,12 @@ impl fmt::Display for Error {
             Error::InvalidClientDataHash => {
                 write!(f, "Invalid client data hash (must be 32 bytes)")
             }
+            Error::NoCredentials => write!(f, "No credentials found"),
+            Error::PinAuthRequired => write!(f, "PIN/UV authentication required"),
+            Error::UnauthorizedPermission => write!(f, "Insufficient permissions"),
+            Error::InvalidRpIdHash => write!(f, "Invalid RP ID hash (must be 32 bytes)"),
+            Error::PinTokenExpired => write!(f, "PIN/UV auth token expired"),
+            Error::InvalidSubcommand => write!(f, "Invalid subcommand"),
             Error::CtapError(code) => write!(f, "CTAP error: 0x{:02X}", code),
             Error::IoError(msg) => write!(f, "IO error: {}", msg),
         }
@@ -107,7 +134,7 @@ impl From<soft_fido2_ctap::StatusCode> for Error {
             StatusCode::UnsupportedOption => Error::CtapError(0x2B),
             StatusCode::InvalidOption => Error::CtapError(0x2C),
             StatusCode::KeepaliveCancel => Error::CtapError(0x2D),
-            StatusCode::NoCredentials => Error::DoesNotExist,
+            StatusCode::NoCredentials => Error::NoCredentials,
             StatusCode::UserActionTimeout => Error::Timeout,
             StatusCode::NotAllowed => Error::CtapError(0x30),
             StatusCode::PinInvalid => Error::CtapError(0x31),
@@ -172,6 +199,30 @@ impl From<Error> for soft_fido2_ctap::StatusCode {
 impl From<std::io::Error> for Error {
     fn from(error: std::io::Error) -> Self {
         Error::IoError(error.to_string())
+    }
+}
+
+impl Error {
+    /// Parse CTAP response and extract CBOR data
+    ///
+    /// CTAP responses follow the format: `[status_byte, ...cbor_data]`
+    /// - `0x00` = success, returns the CBOR data
+    /// - `!0x00` = error, converts status byte to Error
+    ///
+    /// This is the single source of truth for CTAP status code handling.
+    pub fn parse_ctap_response(data: &[u8]) -> Result<&[u8]> {
+        if data.is_empty() {
+            return Err(Error::Other);
+        }
+
+        let status_byte = data[0];
+        if status_byte == 0x00 {
+            // Success - return CBOR data (skip status byte)
+            Ok(&data[1..])
+        } else {
+            // Error - convert status byte to StatusCode, then to Error
+            Err(soft_fido2_ctap::StatusCode::from(status_byte).into())
+        }
     }
 }
 
