@@ -310,14 +310,8 @@ fn test_transport_registration_and_authentication() -> Result<(), Box<dyn std::e
     );
 
     // Parse attestation to verify it's valid CBOR
-    // First byte is status code (0x00 = success)
-    assert_eq!(
-        attestation[0], 0x00,
-        "Registration failed with status: 0x{:02x}",
-        attestation[0]
-    );
-
-    match ciborium::from_reader::<ciborium::value::Value, _>(&attestation[1..]) {
+    // Transport strips status byte for successful responses
+    match ciborium::from_reader::<ciborium::value::Value, _>(&attestation[..]) {
         Ok(ciborium::value::Value::Map(map)) => {
             eprintln!("[Test] ✓ Valid CBOR map with {} fields", map.len());
         }
@@ -349,14 +343,8 @@ fn test_transport_registration_and_authentication() -> Result<(), Box<dyn std::e
     );
 
     // Parse assertion to verify it's valid CBOR
-    // First byte is status code (0x00 = success)
-    assert_eq!(
-        assertion[0], 0x00,
-        "Authentication failed with status: 0x{:02x}",
-        assertion[0]
-    );
-
-    match ciborium::from_reader::<ciborium::value::Value, _>(&assertion[1..]) {
+    // Transport strips status byte for successful responses
+    match ciborium::from_reader::<ciborium::value::Value, _>(&assertion[..]) {
         Ok(ciborium::value::Value::Map(map)) => {
             eprintln!("[Test] ✓ Valid CBOR map with {} fields", map.len());
 

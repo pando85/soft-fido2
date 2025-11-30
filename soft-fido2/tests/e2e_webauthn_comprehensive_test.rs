@@ -179,7 +179,10 @@ fn create_uv_authenticator(
             AuthenticatorOptions::new()
                 .with_resident_keys(true)
                 .with_user_verification(Some(true))
-                .with_client_pin(Some(false)),
+                .with_client_pin(None)
+                .with_pin_uv_auth_token(Some(true))
+                .with_always_uv(Some(true))
+                .with_make_cred_uv_not_required(Some(true)),
         )
         .build();
 
@@ -285,8 +288,11 @@ fn create_up_only_authenticator() -> SoftFido2Result<Authenticator<UpOnlyTestCal
         .options(
             AuthenticatorOptions::new()
                 .with_resident_keys(false)
-                .with_user_verification(Some(false))
-                .with_client_pin(Some(false)),
+                .with_user_verification(Some(true))
+                .with_client_pin(None)
+                .with_pin_uv_auth_token(Some(true))
+                .with_always_uv(Some(true))
+                .with_make_cred_uv_not_required(Some(true)),
         )
         .build();
 

@@ -83,6 +83,7 @@ mod subparam_keys {
 /// Handle authenticatorCredentialManagement command
 ///
 /// Requires PIN/UV auth token with CredentialManagement permission (0x04).
+/// Each subcommand has its own auth validation per FIDO 2.2 spec.
 pub fn handle<C: AuthenticatorCallbacks>(
     auth: &mut Authenticator<C>,
     data: &[u8],
@@ -93,46 +94,10 @@ pub fn handle<C: AuthenticatorCallbacks>(
     let subcommand_byte: u8 = parser.get(req_keys::SUBCOMMAND)?;
     let subcommand = SubCommand::try_from(subcommand_byte)?;
 
-    if subcommand != SubCommand::EnumerateCredentialsGetNextCredential {
-        // All subcommands require PIN/UV auth except EnumerateCredentialsGetNextCredential
-        let pin_uv_auth_protocol: Option<u8> = parser.get_opt(req_keys::PIN_UV_AUTH_PROTOCOL)?;
-        let pin_uv_auth_param: Option<Vec<u8>> =
-            if parser.get_raw(req_keys::PIN_UV_AUTH_PARAM).is_some() {
-                Some(parser.get_bytes(req_keys::PIN_UV_AUTH_PARAM)?)
-            } else {
-                None
-            };
-
-        // Verify PIN/UV auth token has CredentialManagement permission (0x04)
-        if let Some(ref pin_auth) = pin_uv_auth_param {
-            // Build the message to verify
-            // For subcommands with params: subcommand || subCommandParams (CBOR bytes)
-            // For subcommands without params: just subcommand
-            let mut message = vec![subcommand_byte];
-            let protocol = pin_uv_auth_protocol.ok_or(StatusCode::MissingParameter)?;
-            // Check if subCommandParams is present (key 0x02)
-            if let Some(params_raw) = parser.get_raw(req_keys::SUBCOMMAND_PARAMS) {
-                // Encode the params as CBOR and append to message
-                let params_bytes = crate::cbor::encode(&params_raw)?;
-                message.extend_from_slice(&params_bytes);
-            }
-
-            // Verify the pinUvAuthParam
-            auth.verify_pin_uv_auth_param(protocol, pin_auth, &message)?;
-
-            // Verify the token has CredentialManagement permission (0x04)
-            auth.verify_pin_uv_auth_token(
-                crate::pin_token::Permission::CredentialManagement,
-                None,
-            )?;
-        } else if !auth.is_pin_set() {
-            return Err(StatusCode::PinRequired);
-        }
-    }
-
+    // Dispatch to subcommand handlers - each performs its own auth validation
     match subcommand {
-        SubCommand::GetCredsMetadata => handle_get_creds_metadata(auth),
-        SubCommand::EnumerateRPsBegin => handle_enumerate_rps_begin(auth),
+        SubCommand::GetCredsMetadata => handle_get_creds_metadata(auth, &parser),
+        SubCommand::EnumerateRPsBegin => handle_enumerate_rps_begin(auth, &parser),
         SubCommand::EnumerateRPsGetNextRP => handle_enumerate_rps_get_next(auth),
         SubCommand::EnumerateCredentialsBegin => handle_enumerate_credentials_begin(auth, &parser),
         SubCommand::EnumerateCredentialsGetNextCredential => {
@@ -143,10 +108,98 @@ pub fn handle<C: AuthenticatorCallbacks>(
     }
 }
 
+/// Verify credential management authentication per FIDO 2.2 spec
+///
+/// Performs the standard auth validation steps required by all CM subcommands:
+/// 1. Check pinUvAuthParam presence
+/// 2. Check mandatory parameters
+/// 3. Validate pinUvAuthProtocol support
+/// 4. Verify pinUvAuthParam
+/// 5. Verify cm permission and RP ID scope
+///
+/// # Arguments
+/// * `auth` - Authenticator instance
+/// * `parser` - Request parser
+/// * `subcommand_byte` - Subcommand code
+/// * `subcommand_params` - Optional params to include in auth data (for verify())
+/// * `request_rp_id` - Optional RP ID for permission scope checking
+/// * `require_no_rp_id` - If true, token MUST NOT have permissions RP ID
+fn verify_credential_management_auth<C: AuthenticatorCallbacks>(
+    auth: &mut Authenticator<C>,
+    parser: &MapParser,
+    subcommand_byte: u8,
+    subcommand_params: Option<&[u8]>,
+    request_rp_id: Option<&str>,
+    require_no_rp_id: bool,
+) -> Result<()> {
+    // Step 1: If pinUvAuthParam is missing, return PUAT_REQUIRED
+    let pin_uv_auth_param: Option<Vec<u8>> =
+        if parser.get_raw(req_keys::PIN_UV_AUTH_PARAM).is_some() {
+            Some(parser.get_bytes(req_keys::PIN_UV_AUTH_PARAM)?)
+        } else {
+            None
+        };
+
+    if pin_uv_auth_param.is_none() {
+        return Err(StatusCode::PuatRequired);
+    }
+
+    // Step 2: Check mandatory parameters (pinUvAuthProtocol must be present)
+    let pin_uv_auth_protocol: Option<u8> = parser.get_opt(req_keys::PIN_UV_AUTH_PROTOCOL)?;
+    if pin_uv_auth_protocol.is_none() {
+        return Err(StatusCode::MissingParameter);
+    }
+
+    // Step 3: Validate pinUvAuthProtocol support
+    let protocol = pin_uv_auth_protocol.unwrap();
+    if !auth.config().pin_uv_auth_protocols.contains(&protocol) {
+        return Err(StatusCode::InvalidParameter);
+    }
+
+    // Step 4: Build auth data and verify pinUvAuthParam
+    // Auth data = subcommand byte || subcommand params (if present)
+    let mut auth_data = vec![subcommand_byte];
+    if let Some(params) = subcommand_params {
+        auth_data.extend_from_slice(params);
+    }
+
+    let pin_auth = pin_uv_auth_param.unwrap();
+    auth.verify_pin_uv_auth_param(protocol, &pin_auth, &auth_data)?;
+
+    // Step 5: Verify cm permission and RP ID scope
+    if require_no_rp_id {
+        // Token MUST NOT have an associated permissions RP ID
+        // This is checked by passing None - if token has RP ID, it will fail
+        auth.verify_pin_uv_auth_token(crate::pin_token::Permission::CredentialManagement, None)?;
+    } else if let Some(rp_id) = request_rp_id {
+        // Token must have NO associated RP ID OR match the request's RP ID
+        // Try with the RP ID first
+        auth.verify_pin_uv_auth_token(
+            crate::pin_token::Permission::CredentialManagement,
+            Some(rp_id),
+        )?;
+    } else {
+        // No RP ID requirement - just verify cm permission
+        auth.verify_pin_uv_auth_token(crate::pin_token::Permission::CredentialManagement, None)?;
+    }
+
+    Ok(())
+}
+
 /// Handle getCredsMetadata subcommand
 fn handle_get_creds_metadata<C: AuthenticatorCallbacks>(
-    auth: &Authenticator<C>,
+    auth: &mut Authenticator<C>,
+    parser: &MapParser,
 ) -> Result<Vec<u8>> {
+    // Auth validation per FIDO 2.2 spec section 6.8.2
+    verify_credential_management_auth(
+        auth,
+        parser,
+        SubCommand::GetCredsMetadata as u8,
+        None, // No subcommand params
+        None, // No RP ID
+        true, // MUST NOT have permissions RP ID
+    )?;
     // Get current credential count
     let count = auth.callbacks().credential_count()?;
 
@@ -167,7 +220,17 @@ fn handle_get_creds_metadata<C: AuthenticatorCallbacks>(
 /// Handle enumerateRPsBegin subcommand
 fn handle_enumerate_rps_begin<C: AuthenticatorCallbacks>(
     auth: &mut Authenticator<C>,
+    parser: &MapParser,
 ) -> Result<Vec<u8>> {
+    // Auth validation per FIDO 2.2 spec section 6.8.3
+    verify_credential_management_auth(
+        auth,
+        parser,
+        SubCommand::EnumerateRPsBegin as u8,
+        None, // No subcommand params
+        None, // No RP ID
+        true, // MUST NOT have permissions RP ID
+    )?;
     // Start RP enumeration and get first RP
     let ((rp_id, rp_name, _cred_count), total_rps) = auth.start_rp_enumeration()?;
 
@@ -233,17 +296,19 @@ fn handle_enumerate_credentials_begin<C: AuthenticatorCallbacks>(
     auth: &mut Authenticator<C>,
     parser: &MapParser,
 ) -> Result<Vec<u8>> {
-    // Get subcommand parameters
-    let params: crate::cbor::Value = parser.get(req_keys::SUBCOMMAND_PARAMS)?;
+    // Get subcommand parameters (needed for auth)
+    let params_value: crate::cbor::Value = parser.get(req_keys::SUBCOMMAND_PARAMS)?;
 
-    let params_parser = MapParser::from_value(params)?;
+    // Serialize params for auth verification
+    let mut params_bytes = Vec::new();
+    crate::cbor::into_writer(&params_value, &mut params_bytes)
+        .map_err(|_| StatusCode::InvalidCbor)?;
 
-    // Extract RP ID hash
+    // Map RP ID hash to RP ID (needed for permission check)
+    let params_parser = MapParser::from_value(params_value.clone())?;
     let rp_id_hash: Vec<u8> = params_parser.get_bytes(subparam_keys::RP_ID_HASH)?;
 
-    // Map RP ID hash to RP ID by enumerating all RPs
     let rps = auth.callbacks().enumerate_rps()?;
-
     let matching_rp = rps
         .iter()
         .find(|(rp_id, _, _)| {
@@ -251,8 +316,18 @@ fn handle_enumerate_credentials_begin<C: AuthenticatorCallbacks>(
             computed == rp_id_hash.as_slice()
         })
         .ok_or(StatusCode::NoCredentials)?;
-
     let (rp_id, _, _) = matching_rp;
+
+    // Auth validation per FIDO 2.2 spec section 6.8.4
+    // Auth data = enumerateCredentialsBegin (0x04) || subCommandParams
+    verify_credential_management_auth(
+        auth,
+        parser,
+        SubCommand::EnumerateCredentialsBegin as u8,
+        Some(&params_bytes), // Include params in auth
+        Some(rp_id),         // Token must match this RP ID (or have no RP ID)
+        false,               // Can have permissions RP ID
+    )?;
 
     // Start credential enumeration and get first credential
     let (cred, total_credentials) = auth.start_credential_enumeration(rp_id)?;
@@ -319,75 +394,121 @@ fn handle_enumerate_credentials_get_next<C: AuthenticatorCallbacks>(
 
 /// Handle deleteCredential subcommand
 fn handle_delete_credential<C: AuthenticatorCallbacks>(
-    auth: &Authenticator<C>,
+    auth: &mut Authenticator<C>,
     parser: &MapParser,
 ) -> Result<Vec<u8>> {
-    // Get subcommand parameters
-    let params: crate::cbor::Value = parser.get(req_keys::SUBCOMMAND_PARAMS)?;
-    let params_parser = MapParser::from_value(params)?;
+    // Get subcommand parameters (needed for auth)
+    let params_value: crate::cbor::Value = parser.get(req_keys::SUBCOMMAND_PARAMS)?;
 
-    // Extract credential ID
+    // Serialize params for auth verification
+    let mut params_bytes = Vec::new();
+    crate::cbor::into_writer(&params_value, &mut params_bytes)
+        .map_err(|_| StatusCode::InvalidCbor)?;
+
+    // Extract credential ID to get RP ID for permission check
+    let params_parser = MapParser::from_value(params_value)?;
     let cred_id_value: crate::cbor::Value = params_parser.get(subparam_keys::CREDENTIAL_ID)?;
 
     // Parse credential ID from descriptor
-
-    match cred_id_value {
+    let cred_id_bytes = match &cred_id_value {
         crate::cbor::Value::Map(m) => {
+            let mut id = None;
             for (k, v) in m {
-                if let (crate::cbor::Value::Text(key), crate::cbor::Value::Bytes(id)) = (k, v)
+                if let (crate::cbor::Value::Text(key), crate::cbor::Value::Bytes(bytes)) = (k, v)
                     && key == "id"
                 {
-                    return auth
-                        .callbacks()
-                        .delete_credential(&id)
-                        .and_then(|_| MapBuilder::new().build());
+                    id = Some(bytes.clone());
+                    break;
                 }
             }
-            Err(StatusCode::InvalidParameter)
+            id.ok_or(StatusCode::InvalidParameter)?
         }
-        _ => Err(StatusCode::InvalidParameter),
-    }?
+        _ => return Err(StatusCode::InvalidParameter),
+    };
+
+    // Get credential to find RP ID
+    let credential = auth.callbacks().get_credential(&cred_id_bytes)?;
+
+    // Auth validation per FIDO 2.2 spec section 6.8.5
+    // Auth data = deleteCredential (0x06) || subCommandParams
+    verify_credential_management_auth(
+        auth,
+        parser,
+        SubCommand::DeleteCredential as u8,
+        Some(&params_bytes),     // Include params in auth
+        Some(&credential.rp_id), // Token must match credential's RP ID (or have no RP ID)
+        false,                   // Can have permissions RP ID
+    )?;
+
+    // Delete the credential
+    auth.callbacks()
+        .delete_credential(&cred_id_bytes)
+        .and_then(|_| MapBuilder::new().build())
 }
 
 /// Handle updateUserInformation subcommand
 fn handle_update_user_information<C: AuthenticatorCallbacks>(
-    auth: &Authenticator<C>,
+    auth: &mut Authenticator<C>,
     parser: &MapParser,
 ) -> Result<Vec<u8>> {
-    // Get subcommand parameters
-    let params: crate::cbor::Value = parser.get(req_keys::SUBCOMMAND_PARAMS)?;
-    let params_parser = MapParser::from_value(params)?;
+    // Get subcommand parameters (needed for auth)
+    let params_value: crate::cbor::Value = parser.get(req_keys::SUBCOMMAND_PARAMS)?;
+
+    // Serialize params for auth verification
+    let mut params_bytes = Vec::new();
+    crate::cbor::into_writer(&params_value, &mut params_bytes)
+        .map_err(|_| StatusCode::InvalidCbor)?;
 
     // Extract credential ID and new user info
+    let params_parser = MapParser::from_value(params_value)?;
     let cred_id_value: crate::cbor::Value = params_parser.get(subparam_keys::CREDENTIAL_ID)?;
     let new_user: User = params_parser.get(subparam_keys::USER)?;
 
-    // Parse credential ID and update user information
-    match cred_id_value {
+    // Parse credential ID from descriptor
+    let cred_id_bytes = match &cred_id_value {
         crate::cbor::Value::Map(m) => {
+            let mut id = None;
             for (k, v) in m {
-                if let (crate::cbor::Value::Text(key), crate::cbor::Value::Bytes(id)) = (k, v)
+                if let (crate::cbor::Value::Text(key), crate::cbor::Value::Bytes(bytes)) = (k, v)
                     && key == "id"
                 {
-                    // Found the ID, use it
-                    let bytes = id;
-                    // Get existing credential
-                    let mut credential = auth.callbacks().get_credential(&bytes)?;
-
-                    // Update user fields
-                    credential.user_name = new_user.name.clone();
-                    credential.user_display_name = new_user.display_name.clone();
-
-                    // Save updated credential
-                    auth.callbacks().update_credential(&credential)?;
-
-                    return MapBuilder::new().build();
+                    id = Some(bytes.clone());
+                    break;
                 }
             }
-            Err(StatusCode::InvalidParameter)
+            id.ok_or(StatusCode::InvalidParameter)?
         }
-        _ => Err(StatusCode::InvalidParameter),
+        _ => return Err(StatusCode::InvalidParameter),
+    };
+
+    // Get existing credential
+    let mut credential = auth.callbacks().get_credential(&cred_id_bytes)?;
+
+    // Auth validation per FIDO 2.2 spec section 6.8.6
+    // Auth data = updateUserInformation (0x07) || subCommandParams
+    verify_credential_management_auth(
+        auth,
+        parser,
+        SubCommand::UpdateUserInformation as u8,
+        Some(&params_bytes),     // Include params in auth
+        Some(&credential.rp_id), // Token must match credential's RP ID (or have no RP ID)
+        false,                   // Can have permissions RP ID
+    )?;
+
+    // Verify user ID matches (per spec step 8)
+    if credential.user_id != new_user.id {
+        return Err(StatusCode::InvalidParameter);
     }
+
+    // Update user fields (per spec step 9)
+    // If field is present and non-empty, update it; if absent or empty, remove it
+    credential.user_name = new_user.name.clone();
+    credential.user_display_name = new_user.display_name.clone();
+
+    // Save updated credential
+    auth.callbacks().update_credential(&credential)?;
+
+    MapBuilder::new().build()
 }
 
 /// Compute SHA-256 hash of RP ID
@@ -491,9 +612,28 @@ mod tests {
         let mut auth = Authenticator::new(config, MockCallbacks::new(10));
         auth.set_pin("1234").unwrap();
 
+        // Get PIN token with cm permission
+        let token = auth
+            .get_pin_token(
+                "1234",
+                crate::pin_token::Permission::CredentialManagement.to_u8(),
+                None,
+            )
+            .unwrap();
+
+        // Build auth data: just subcommand byte
+        let auth_data = vec![0x01u8]; // getCredsMetadata
+
+        // Create pinUvAuthParam using protocol V2
+        let pin_auth = soft_fido2_crypto::pin_protocol::v2::authenticate(&token, &auth_data);
+
         // Build request
         let request = MapBuilder::new()
             .insert(req_keys::SUBCOMMAND, 0x01u8)
+            .unwrap()
+            .insert(req_keys::PIN_UV_AUTH_PROTOCOL, 2u8)
+            .unwrap()
+            .insert_bytes(req_keys::PIN_UV_AUTH_PARAM, &pin_auth)
             .unwrap()
             .build()
             .unwrap();
@@ -515,9 +655,28 @@ mod tests {
         let mut auth = Authenticator::new(config, MockCallbacks::new(5));
         auth.set_pin("1234").unwrap();
 
+        // Get PIN token with cm permission
+        let token = auth
+            .get_pin_token(
+                "1234",
+                crate::pin_token::Permission::CredentialManagement.to_u8(),
+                None,
+            )
+            .unwrap();
+
+        // Build auth data: just subcommand byte
+        let auth_data = vec![0x02u8]; // enumerateRPsBegin
+
+        // Create pinUvAuthParam using protocol V2
+        let pin_auth = soft_fido2_crypto::pin_protocol::v2::authenticate(&token, &auth_data);
+
         // Build request
         let request = MapBuilder::new()
             .insert(req_keys::SUBCOMMAND, 0x02u8)
+            .unwrap()
+            .insert(req_keys::PIN_UV_AUTH_PROTOCOL, 2u8)
+            .unwrap()
+            .insert_bytes(req_keys::PIN_UV_AUTH_PARAM, &pin_auth)
             .unwrap()
             .build()
             .unwrap();
@@ -535,9 +694,9 @@ mod tests {
     fn test_credential_management_requires_pin() {
         let config = AuthenticatorConfig::new();
         let mut auth = Authenticator::new(config, MockCallbacks::new(0));
-        // Don't set PIN
+        // Don't set PIN - but still need to provide pinUvAuthParam to get past first check
 
-        // Build request
+        // Build request without pinUvAuthParam
         let request = MapBuilder::new()
             .insert(req_keys::SUBCOMMAND, 0x01u8)
             .unwrap()
@@ -545,6 +704,7 @@ mod tests {
             .unwrap();
 
         let result = handle(&mut auth, &request);
-        assert_eq!(result, Err(StatusCode::PinRequired));
+        // Per spec, missing pinUvAuthParam returns PUAT_REQUIRED
+        assert_eq!(result, Err(StatusCode::PuatRequired));
     }
 }

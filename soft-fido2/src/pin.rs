@@ -112,20 +112,14 @@ impl PinUvAuthEncapsulation {
         // Send clientPin command (0x06) with 30s timeout
         let response = transport.send_ctap_command(0x06, &request_bytes, 30000)?;
 
-        // Check CTAP status code (first byte)
+        // Transport layer already checked status byte and returns only CBOR data for success
         if response.is_empty() {
             return Err(Error::Other);
         }
 
-        let status = response[0];
-        if status != 0x00 {
-            // Non-zero status means error
-            return Err(Error::Other);
-        }
-
-        // Parse CBOR response (skip status byte)
+        // Parse CBOR response (entire response is CBOR data)
         let response_value: Value =
-            soft_fido2_ctap::cbor::decode(&response[1..]).map_err(|_| Error::Other)?;
+            soft_fido2_ctap::cbor::decode(&response).map_err(|_| Error::Other)?;
 
         // Extract keyAgreement from response (should be in response[0x01])
         let authenticator_cose_key = match response_value {
@@ -234,20 +228,14 @@ impl PinUvAuthEncapsulation {
         // Send clientPin command (0x06) with 30s timeout
         let response = transport.send_ctap_command(0x06, &request_bytes, 30000)?;
 
-        // Check CTAP status code (first byte)
+        // Transport layer already checked status byte and returns only CBOR data for success
         if response.is_empty() {
             return Err(Error::Other);
         }
 
-        let status = response[0];
-        if status != 0x00 {
-            // Non-zero status means error
-            return Err(Error::Other);
-        }
-
-        // Parse CBOR response (skip status byte)
+        // Parse CBOR response (entire response is CBOR data)
         let response_value: Value =
-            soft_fido2_ctap::cbor::decode(&response[1..]).map_err(|_| Error::Other)?;
+            soft_fido2_ctap::cbor::decode(&response).map_err(|_| Error::Other)?;
 
         let pin_token_enc = match response_value {
             Value::Map(map) => map
@@ -273,6 +261,109 @@ impl PinUvAuthEncapsulation {
             }
             PinProtocol::V2 => {
                 let enc_key = pin_protocol::v2::derive_encryption_key(shared_secret);
+                let decrypted = pin_protocol::v2::decrypt(&enc_key, &pin_token_enc)
+                    .map_err(|_| Error::Other)?;
+                let mut token = [0u8; 32];
+                token.copy_from_slice(&decrypted[..32]);
+                token
+            }
+        };
+
+        // Store PIN token
+        self.pin_token = Some(pin_token);
+
+        Ok(pin_token.to_vec())
+    }
+
+    /// Get PIN/UV auth token using built-in user verification (UV)
+    ///
+    /// This method uses the authenticator's built-in user verification (biometric/fingerprint)
+    /// instead of PIN authentication. This is useful when:
+    /// - No PIN is set on the authenticator
+    /// - The authenticator supports biometric UV
+    /// - UV is preferred over PIN
+    ///
+    /// # Arguments
+    ///
+    /// * `transport` - The transport to communicate with the authenticator
+    /// * `permissions` - Permission flags (0x01 = makeCredential, 0x02 = getAssertion, etc.)
+    /// * `rp_id` - Optional RP ID to scope the permission
+    pub fn get_pin_uv_auth_token_using_uv_with_permissions(
+        &mut self,
+        transport: &mut Transport,
+        permissions: u8,
+        rp_id: Option<&str>,
+    ) -> Result<Vec<u8>> {
+        // Get platform key agreement parameter
+        let platform_key_agreement = self.get_key_agreement_cose()?;
+
+        // Build getPinUvAuthTokenUsingUvWithPermissions request
+        let protocol_version = match self.protocol {
+            PinProtocol::V1 => 1u8,
+            PinProtocol::V2 => 2u8,
+        };
+
+        let mut builder = MapBuilder::new();
+        builder = builder
+            .insert(1, protocol_version) // pinUvAuthProtocol
+            .map_err(|_| Error::Other)?;
+        builder = builder
+            .insert(2, 0x06u8) // subCommand (getPinUvAuthTokenUsingUvWithPermissions = 0x06)
+            .map_err(|_| Error::Other)?;
+        builder = builder
+            .insert(3, &platform_key_agreement) // keyAgreement
+            .map_err(|_| Error::Other)?;
+        builder = builder
+            .insert(9, permissions) // permissions
+            .map_err(|_| Error::Other)?;
+
+        if let Some(rp_id_str) = rp_id {
+            builder = builder
+                .insert(10, rp_id_str) // rpId
+                .map_err(|_| Error::Other)?;
+        }
+
+        let request_bytes = builder.build().map_err(|_| Error::Other)?;
+
+        // Send clientPin command (0x06) with 30s timeout
+        let response = transport.send_ctap_command(0x06, &request_bytes, 30000)?;
+
+        // Transport layer already checked status byte and returns only CBOR data for success
+        if response.is_empty() {
+            return Err(Error::Other);
+        }
+
+        // Parse CBOR response (entire response is CBOR data)
+        let response_value: Value =
+            soft_fido2_ctap::cbor::decode(&response).map_err(|_| Error::Other)?;
+
+        let pin_token_enc = match response_value {
+            Value::Map(map) => map
+                .iter()
+                .find(|(k, _)| matches!(k, Value::Integer(i) if *i == 2.into()))
+                .and_then(|(_, v)| match v {
+                    Value::Bytes(b) => Some(b.clone()),
+                    _ => None,
+                })
+                .ok_or(Error::Other)?,
+            _ => return Err(Error::Other),
+        };
+
+        // Decrypt PIN token
+        let pin_token: [u8; 32] = match self.protocol {
+            PinProtocol::V1 => {
+                let (enc_key, _) =
+                    pin_protocol::v1::derive_keys(self.shared_secret.as_ref().ok_or(Error::Other)?);
+                let decrypted = pin_protocol::v1::decrypt(&enc_key, &pin_token_enc)
+                    .map_err(|_| Error::Other)?;
+                let mut token = [0u8; 32];
+                token.copy_from_slice(&decrypted[..32]);
+                token
+            }
+            PinProtocol::V2 => {
+                let enc_key = pin_protocol::v2::derive_encryption_key(
+                    self.shared_secret.as_ref().ok_or(Error::Other)?,
+                );
                 let decrypted = pin_protocol::v2::decrypt(&enc_key, &pin_token_enc)
                     .map_err(|_| Error::Other)?;
                 let mut token = [0u8; 32];

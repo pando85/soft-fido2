@@ -18,7 +18,7 @@ pub struct RelyingParty {
 }
 
 /// User information
-#[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
 pub struct User {
     /// User handle (max 64 bytes)
     pub id: Vec<u8>,

@@ -1,7 +1,7 @@
 use crate::error::{Error, Result};
 
 #[cfg(target_os = "linux")]
-use soft_fido2_transport::{ChannelManager, Message, Packet, UhidDevice};
+use soft_fido2_transport::{Message, Packet, UhidDevice};
 #[cfg(feature = "usb")]
 use soft_fido2_transport::{UsbTransport as RawUsbTransport, enumerate_devices, init_usb};
 
@@ -19,15 +19,11 @@ enum TransportInner {
     #[cfg(feature = "usb")]
     Usb {
         transport: RawUsbTransport,
-        #[allow(dead_code)]
-        channel_manager: ChannelManager,
         channel_id: Option<u32>,
     },
     #[cfg(target_os = "linux")]
     Uhid {
         device: UhidDevice,
-        #[allow(dead_code)]
-        channel_manager: ChannelManager,
         #[allow(dead_code)]
         opened: bool,
         channel_id: Option<u32>,
@@ -40,7 +36,6 @@ impl Transport {
         Self {
             inner: Arc::new(Mutex::new(TransportInner::Usb {
                 transport,
-                channel_manager: ChannelManager::new(),
                 channel_id: None,
             })),
         }
@@ -52,7 +47,6 @@ impl Transport {
         Self {
             inner: Arc::new(Mutex::new(TransportInner::Uhid {
                 device,
-                channel_manager: ChannelManager::new(),
                 opened: false,
                 channel_id: None,
             })),
@@ -74,6 +68,7 @@ impl Transport {
                 *opened = true;
                 Ok(())
             }
+
             #[cfg(not(any(feature = "usb", target_os = "linux")))]
             _ => Err(Error::Other),
         }
@@ -91,6 +86,7 @@ impl Transport {
             TransportInner::Uhid { opened, .. } => {
                 *opened = false;
             }
+
             #[cfg(not(any(feature = "usb", target_os = "linux")))]
             _ => {}
         }
@@ -337,6 +333,7 @@ impl Transport {
             TransportInner::Usb { channel_id, .. } => channel_id.is_none(),
             #[cfg(target_os = "linux")]
             TransportInner::Uhid { channel_id, .. } => channel_id.is_none(),
+
             #[cfg(not(any(feature = "usb", target_os = "linux")))]
             _ => false,
         };
@@ -356,6 +353,7 @@ impl Transport {
                 TransportInner::Uhid { channel_id, .. } => {
                     *channel_id = Some(allocated_channel);
                 }
+
                 #[cfg(not(any(feature = "usb", target_os = "linux")))]
                 _ => {}
             }
@@ -367,6 +365,7 @@ impl Transport {
             TransportInner::Usb { channel_id, .. } => channel_id.ok_or(Error::Other)?,
             #[cfg(target_os = "linux")]
             TransportInner::Uhid { channel_id, .. } => channel_id.ok_or(Error::Other)?,
+
             #[cfg(not(any(feature = "usb", target_os = "linux")))]
             _ => return Err(Error::Other),
         };
@@ -436,13 +435,16 @@ impl Transport {
         let response_message =
             Message::from_packets(&response_packets, None).map_err(|_| Error::Other)?;
 
-        let response_len = response_message.data.len();
-        if response_len > response.len() {
+        let response_data = response_message.data;
+
+        // Parse CTAP response (status byte + optional CBOR data)
+        let cbor_data = Error::parse_ctap_response(&response_data)?;
+        let cbor_len = cbor_data.len();
+        if cbor_len > response.len() {
             return Err(Error::Other); // Buffer too small
         }
-
-        response[..response_len].copy_from_slice(&response_message.data);
-        Ok(response_len)
+        response[..cbor_len].copy_from_slice(cbor_data);
+        Ok(cbor_len)
     }
 
     /// Get a description of the transport
@@ -453,6 +455,7 @@ impl Transport {
             TransportInner::Usb { .. } => Ok("USB HID Transport".to_string()),
             #[cfg(target_os = "linux")]
             TransportInner::Uhid { .. } => Ok("UHID Virtual Device".to_string()),
+
             #[cfg(not(any(feature = "usb", target_os = "linux")))]
             _ => Ok("Unknown Transport".to_string()),
         }

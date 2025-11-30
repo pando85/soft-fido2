@@ -463,13 +463,13 @@ fn build_get_creds_metadata_request(pin_protocol: u8, pin_uv_auth_param: &[u8]) 
     let request_map = vec![
         (Value::Integer(0x01.into()), Value::Integer(0x01.into())), // subCommand: getCredsMetadata
         (
-            Value::Integer(0x02.into()),
-            Value::Bytes(pin_uv_auth_param.to_vec()),
-        ), // pinUvAuthParam
-        (
             Value::Integer(0x03.into()),
             Value::Integer(pin_protocol.into()),
         ), // pinUvAuthProtocol
+        (
+            Value::Integer(0x04.into()),
+            Value::Bytes(pin_uv_auth_param.to_vec()),
+        ), // pinUvAuthParam
     ];
 
     let mut buffer = Vec::new();
@@ -485,13 +485,13 @@ fn build_enumerate_rps_begin_request(pin_protocol: u8, pin_uv_auth_param: &[u8])
     let request_map = vec![
         (Value::Integer(0x01.into()), Value::Integer(0x02.into())), // subCommand: enumerateRPsBegin
         (
-            Value::Integer(0x02.into()),
-            Value::Bytes(pin_uv_auth_param.to_vec()),
-        ), // pinUvAuthParam
-        (
             Value::Integer(0x03.into()),
             Value::Integer(pin_protocol.into()),
         ), // pinUvAuthProtocol
+        (
+            Value::Integer(0x04.into()),
+            Value::Bytes(pin_uv_auth_param.to_vec()),
+        ), // pinUvAuthParam
     ];
 
     let mut buffer = Vec::new();
@@ -1798,11 +1798,11 @@ fn test_mozilla_authenticator_crate_compat_credential_management() {
         .try_into()
         .expect("Shared secret should be 32 bytes");
 
-    // Derive HMAC key from shared secret
-    let hmac_key = v2::derive_hmac_key(shared_secret_bytes);
+    // Derive encryption key from shared secret for token decryption
+    let enc_key = v2::derive_encryption_key(shared_secret_bytes);
 
     let credmgmt_token =
-        v2::decrypt(&hmac_key, &credmgmt_token_enc).expect("Failed to decrypt PIN UV auth token");
+        v2::decrypt(&enc_key, &credmgmt_token_enc).expect("Failed to decrypt PIN UV auth token");
 
     eprintln!("[Test] ✓ Got PIN UV auth token with credMgmt permission\n");
 
