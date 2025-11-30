@@ -155,7 +155,7 @@ pub fn handle<C: AuthenticatorCallbacks>(
 
                         if let (Some(cred_type), Some(id)) = (cred_type, id) {
                             descriptors.push(PublicKeyCredentialDescriptor {
-                                cred_type,
+                                r#type: cred_type,
                                 id,
                                 transports,
                             });
@@ -561,8 +561,8 @@ pub fn handle<C: AuthenticatorCallbacks>(
 
     // Build credential descriptor
     let credential_desc = PublicKeyCredentialDescriptor {
-        cred_type: "public-key".to_string(),
         id: selected_cred.id.clone(),
+        r#type: "public-key".to_string(),
         transports: None,
     };
 

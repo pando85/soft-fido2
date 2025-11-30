@@ -85,12 +85,12 @@ impl User {
 /// Identifies a credential by its type and ID.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct PublicKeyCredentialDescriptor {
-    /// Credential type (always "public-key" for FIDO2)
-    #[serde(rename = "type")]
-    pub cred_type: String,
-
     /// Credential ID
+    #[serde(with = "serde_bytes")]
     pub id: Vec<u8>,
+
+    /// Credential type (always "public-key" for FIDO2)
+    pub r#type: String,
 
     /// Supported transports (optional)
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -101,7 +101,7 @@ impl PublicKeyCredentialDescriptor {
     /// Create a new public-key credential descriptor
     pub fn new(id: Vec<u8>) -> Self {
         Self {
-            cred_type: "public-key".to_string(),
+            r#type: "public-key".to_string(),
             id,
             transports: None,
         }
@@ -110,7 +110,7 @@ impl PublicKeyCredentialDescriptor {
     /// Create with specific transports
     pub fn with_transports(id: Vec<u8>, transports: Vec<String>) -> Self {
         Self {
-            cred_type: "public-key".to_string(),
+            r#type: "public-key".to_string(),
             id,
             transports: Some(transports),
         }
@@ -419,7 +419,7 @@ mod tests {
     #[test]
     fn test_credential_descriptor() {
         let desc = PublicKeyCredentialDescriptor::new(vec![1, 2, 3]);
-        assert_eq!(desc.cred_type, "public-key");
+        assert_eq!(desc.r#type, "public-key");
         assert_eq!(desc.id, vec![1, 2, 3]);
         assert_eq!(desc.transports, None);
 
