@@ -5,6 +5,13 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/), and this project
 adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [v0.4.2](https://github.com/pando85/soft-fido2/tree/v0.4.2) - 2025-11-30
+
+### Fixed
+
+- Ensure CHANGELOG commit IDs are correct on release process ([5630cf3](https://github.com/pando85/soft-fido2/commit/5630cf36ccb841b9e90d43c1dfae3b78329dc829))
+- Remove dbg statement ([665f9bf](https://github.com/pando85/soft-fido2/commit/665f9bf5de6eeb2504628e1d6620fc96b4528787))
+
 ## [v0.4.1](https://github.com/pando85/soft-fido2/tree/v0.4.1) - 2025-11-30
 
 ### Added
