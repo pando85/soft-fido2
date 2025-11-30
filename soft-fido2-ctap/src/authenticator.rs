@@ -30,6 +30,9 @@ use subtle::ConstantTimeEq;
 /// Maximum PIN retries before blocking
 const MAX_PIN_RETRIES: u8 = 8;
 
+/// Maximum UV retries before blocking
+const MAX_UV_RETRIES: u8 = 3;
+
 /// Type alias for custom command handlers
 type CustomCommandHandler = Box<dyn Fn(&[u8]) -> Result<Vec<u8>, StatusCode> + Send + Sync>;
 
@@ -297,6 +300,9 @@ pub struct Authenticator<C: AuthenticatorCallbacks> {
     /// Minimum PIN length (4-63)
     min_pin_length: usize,
 
+    /// User verification retry counter
+    uv_retries: u8,
+
     /// Custom command handlers (command code -> handler)
     custom_commands: BTreeMap<u8, CustomCommandHandler>,
 
@@ -345,6 +351,7 @@ impl<C: AuthenticatorCallbacks> Authenticator<C> {
             pin_tokens: PinTokenManager::new(),
             force_change_pin: false,
             min_pin_length: 4, // Default minimum PIN length
+            uv_retries: MAX_UV_RETRIES,
             custom_commands: BTreeMap::new(),
             pin_protocol_keypairs: BTreeMap::new(),
             credential_wrapping_key,
@@ -942,6 +949,12 @@ impl<C: AuthenticatorCallbacks> Authenticator<C> {
 
         // plaintext dropped and zeroed here
         Ok((private_key, rp_id, algorithm))
+    }
+
+    /// Get the number of UV retries remaining.
+    pub fn uv_retries(&self) -> u8 {
+        // TODO: implement UV retry tracking
+        self.uv_retries
     }
 }
 
