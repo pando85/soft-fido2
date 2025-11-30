@@ -342,7 +342,8 @@ fn main() -> Result<()> {
                 .with_resident_keys(true) // Support discoverable credentials
                 .with_user_presence(true) // Support UP
                 .with_user_verification(Some(true)) // Support UV capability
-                .with_client_pin(Some(true)) // UV available via PIN
+                .with_client_pin(None) // UV available via PIN
+                .with_pin_uv_auth_token(Some(true)) // Support PIN/UV authentication
                 .with_make_cred_uv_not_required(Some(true)), // Flexible UV (not always required)
         )
         // Note: force_resident_keys defaults to true for WebAuthn test compatibility
@@ -357,7 +358,7 @@ fn main() -> Result<()> {
     println!("  Force Resident Keys: ✓ Enabled by default");
     println!("  User Presence (up): ✓ Supported (auto-approved)");
     println!("  User Verification (uv): ✓ Supported (auto-approved)");
-    println!("  UV Method: PIN-based (clientPin=true)");
+    println!("  UV Token: PIN/UV auth token (pinUvAuthToken=true)");
     println!("  UV Flexibility: makeCredUvNotRqd=true (flexible UV behavior)");
     println!("  Extensions: credProtect, hmac-secret, largeBlobKey");
     println!("  Max Credentials: 100");
