@@ -121,9 +121,10 @@ pub fn handle<C: AuthenticatorCallbacks>(
 
     // Step 2: Check if authenticator is protected by some form of user verification
     // In our implementation, we consider the authenticator protected if:
-    // - PIN is set, OR
+    // - PIN is set AND client_pin is not explicitly disabled, OR
     // - UV (user verification) is supported
-    let is_protected = auth.is_pin_set() || auth.config().options.uv.unwrap_or(false);
+    let is_protected = (auth.is_pin_set() && auth.config().options.client_pin != Some(false))
+        || auth.config().options.uv.unwrap_or(false);
 
     // Step 3: Check if all requested algorithms are supported
     let alg = pub_key_cred_params

@@ -18,7 +18,7 @@ pub struct RelyingParty {
 }
 
 /// User information
-#[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
 pub struct User {
     /// User handle (max 64 bytes)

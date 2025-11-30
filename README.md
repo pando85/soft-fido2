@@ -183,24 +183,47 @@ let response = Client::get_assertion(&mut transport, request)?;
 println!("Authentication successful! Signature: {:?}", response);
 ```
 
-### PIN Protocol
+### Credential Management
 
 ```rust
-use soft_fido2::{PinUvAuthEncapsulation, PinProtocol, PinUvAuthProtocol};
+use soft_fido2::{Client, PinUvAuthEncapsulation, PinProtocol, request::Permission};
 
-// Establish PIN protocol
+// Establish PIN protocol and get credential management token
 let mut pin_encapsulation = PinUvAuthEncapsulation::new(&mut transport, PinProtocol::V2)?;
-
-// Get PIN token for operations
 let pin_token = pin_encapsulation.get_pin_uv_auth_token_using_pin_with_permissions(
     &mut transport,
     "123456",  // User's PIN
-    0x01 | 0x02,  // Permissions: makeCredential | getAssertion
-    Some("example.com"),
+    Permission::CredentialManagement as u8,
+    None,  // No specific RP restriction
 )?;
 
-// Use PIN token for authenticated operations
-let pin_auth = PinUvAuthProtocol::from_pin_token(&pin_token, client_data_hash.as_slice());
+// Create client with PIN token for credential management
+let mut client = Client::new_with_pin_token(&mut transport, pin_token)?;
+
+// Get credential metadata
+let metadata = client.get_credentials_metadata()?;
+println!("Total credentials: {}", metadata.total_credentials);
+
+// Enumerate all relying parties
+let rps = client.enumerate_rps()?;
+for rp in &rps {
+    println!("RP: {} ({})", rp.name.as_deref().unwrap_or("Unknown"), rp.id);
+
+    // Enumerate credentials for this RP
+    let credentials = client.enumerate_credentials(rp.id.clone())?;
+    for cred in &credentials {
+        println!("  User: {}", cred.user.name.as_deref().unwrap_or("Unknown"));
+    }
+}
+
+// Delete a specific credential
+use soft_fido2::request::{CredentialDescriptor, CredentialType};
+let cred_descriptor = CredentialDescriptor {
+    credential_type: CredentialType::PublicKey,
+    id: credential_id.to_vec(),
+    transports: None,
+};
+client.delete_credential(cred_descriptor)?;
 ```
 
 ## no_std Support

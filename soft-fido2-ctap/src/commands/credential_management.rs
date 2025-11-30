@@ -103,31 +103,36 @@ pub fn handle<C: AuthenticatorCallbacks>(
                 None
             };
 
-        // Verify PIN/UV auth token has CredentialManagement permission (0x04)
-        if let Some(ref pin_auth) = pin_uv_auth_param {
-            // Build the message to verify
-            // For subcommands with params: subcommand || subCommandParams (CBOR bytes)
-            // For subcommands without params: just subcommand
-            let mut message = vec![subcommand_byte];
-            let protocol = pin_uv_auth_protocol.ok_or(StatusCode::MissingParameter)?;
-            // Check if subCommandParams is present (key 0x02)
-            if let Some(params_raw) = parser.get_raw(req_keys::SUBCOMMAND_PARAMS) {
-                // Encode the params as CBOR and append to message
-                let params_bytes = crate::cbor::encode(&params_raw)?;
-                message.extend_from_slice(&params_bytes);
+        // Check if PIN verification is required
+        if auth.config().options.client_pin != Some(false) {
+            // PIN verification is required
+            if let Some(ref pin_auth) = pin_uv_auth_param {
+                // Build the message to verify
+                // For subcommands with params: subcommand || subCommandParams (CBOR bytes)
+                // For subcommands without params: just subcommand
+                let mut message = vec![subcommand_byte];
+                let protocol = pin_uv_auth_protocol.ok_or(StatusCode::MissingParameter)?;
+                // Check if subCommandParams is present (key 0x02)
+                if let Some(params_raw) = parser.get_raw(req_keys::SUBCOMMAND_PARAMS) {
+                    // Encode the params as CBOR and append to message
+                    let params_bytes = crate::cbor::encode(&params_raw)?;
+                    message.extend_from_slice(&params_bytes);
+                }
+
+                // Verify the pinUvAuthParam
+                auth.verify_pin_uv_auth_param(protocol, pin_auth, &message)?;
+
+                // Verify the token has CredentialManagement permission (0x04)
+                auth.verify_pin_uv_auth_token(
+                    crate::pin_token::Permission::CredentialManagement,
+                    None,
+                )?;
+            } else {
+                return Err(StatusCode::PinRequired);
             }
-
-            // Verify the pinUvAuthParam
-            auth.verify_pin_uv_auth_param(protocol, pin_auth, &message)?;
-
-            // Verify the token has CredentialManagement permission (0x04)
-            auth.verify_pin_uv_auth_token(
-                crate::pin_token::Permission::CredentialManagement,
-                None,
-            )?;
-        } else if !auth.is_pin_set() {
-            return Err(StatusCode::PinRequired);
         }
+        // If client_pin is Some(false), PIN verification is bypassed entirely
+        // If client_pin is Some(false), PIN verification is bypassed entirely
     }
 
     match subcommand {
@@ -487,7 +492,8 @@ mod tests {
 
     #[test]
     fn test_get_creds_metadata() {
-        let config = AuthenticatorConfig::new();
+        let mut config = AuthenticatorConfig::new();
+        config.options.client_pin = Some(false); // Disable PIN requirement for this test
         let mut auth = Authenticator::new(config, MockCallbacks::new(10));
         auth.set_pin("1234").unwrap();
 
@@ -511,7 +517,8 @@ mod tests {
 
     #[test]
     fn test_enumerate_rps_begin() {
-        let config = AuthenticatorConfig::new();
+        let mut config = AuthenticatorConfig::new();
+        config.options.client_pin = Some(false); // Disable PIN requirement for this test
         let mut auth = Authenticator::new(config, MockCallbacks::new(5));
         auth.set_pin("1234").unwrap();
 

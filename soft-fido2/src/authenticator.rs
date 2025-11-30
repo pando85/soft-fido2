@@ -530,26 +530,23 @@ impl<C: AuthenticatorCallbacks> Authenticator<C> {
     /// # Arguments
     ///
     /// * `pin_hash` - SHA-256 hash of the PIN (32 bytes)
-    #[cfg(feature = "std")]
     pub fn set_pin_hash(pin_hash: &[u8]) {
         if pin_hash.len() == 32 {
             let mut hash = [0u8; 32];
             hash.copy_from_slice(pin_hash);
 
-            let lock = PRESET_PIN_HASH.get_or_init(|| Mutex::new(None));
-            if let Ok(mut guard) = lock.lock() {
-                *guard = Some(hash);
+            #[cfg(feature = "std")]
+            {
+                let lock = PRESET_PIN_HASH.get_or_init(|| Mutex::new(None));
+                if let Ok(mut guard) = lock.lock() {
+                    *guard = Some(hash);
+                }
             }
-        }
-    }
 
-    /// Set the PIN hash for the authenticator (no_std version)
-    #[cfg(not(feature = "std"))]
-    pub fn set_pin_hash(pin_hash: &[u8]) {
-        if pin_hash.len() == 32 {
-            let mut hash = [0u8; 32];
-            hash.copy_from_slice(pin_hash);
-            *PRESET_PIN_HASH.lock() = Some(hash);
+            #[cfg(not(feature = "std"))]
+            {
+                *PRESET_PIN_HASH.lock() = Some(hash);
+            }
         }
     }
 
@@ -704,11 +701,11 @@ impl<C: AuthenticatorCallbacks> Authenticator<C> {
     }
 }
 
-#[cfg(test)]
 mod tests {
     use super::*;
 
     // Simple test implementation of AuthenticatorCallbacks
+    #[allow(dead_code)]
     struct TestCallbacks;
 
     impl AuthenticatorCallbacks for TestCallbacks {

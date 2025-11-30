@@ -56,7 +56,7 @@ test: lint
 
 .PHONY: test-e2e
 test-e2e:	## run E2E WebAuthn tests (requires UHID permissions)
-	cargo test -- --ignored
+	cargo test -- --ignored --test-threads=1
 
 .PHONY: test-all
 test-all:	## run all tests including E2E

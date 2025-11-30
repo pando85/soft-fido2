@@ -22,7 +22,7 @@
 
 use soft_fido2::{
     Authenticator, AuthenticatorCallbacks, AuthenticatorConfig, AuthenticatorOptions, Credential,
-    CredentialRef, Result, Uhid, UpResult, UvResult,
+    CredentialRef, CtapCommand, Result, Uhid, UpResult, UvResult,
 };
 
 use soft_fido2_transport::{Cmd, Message, Packet};
@@ -42,6 +42,7 @@ Run the following commands as root:\n\
   udevadm control --reload-rules && udevadm trigger";
 
 // PIN configuration - "123456" hashed with SHA-256
+#[allow(dead_code)]
 fn get_pin_hash() -> [u8; 32] {
     let mut hasher = Sha256::new();
     hasher.update(b"123456");
@@ -130,8 +131,8 @@ fn main() -> Result<()> {
     println!("╚════════════════════════════════════════════════╝\n");
 
     // Setup PIN
-    Authenticator::<SimpleCallbacks>::set_pin_hash(&get_pin_hash());
-    println!("[Setup] PIN configured: 123456");
+    // Authenticator::<SimpleCallbacks>::set_pin_hash(&get_pin_hash());
+    // println!("[Setup] PIN configured: 123456");
 
     // Create callbacks
     let callbacks = SimpleCallbacks::new();
@@ -142,14 +143,21 @@ fn main() -> Result<()> {
         0x88,
     ];
     let options = AuthenticatorOptions::new()
-        .with_user_verification(Some(false))
-        .with_client_pin(Some(true))
+        .with_user_verification(Some(true)) // Enable UV support
+        .with_client_pin(Some(true)) // Enable PIN for testing
         .with_credential_management(Some(true));
     let extensions = vec!["credProtect".to_string(), "federationId".to_string()];
     let max_creds = 100;
 
     let config = AuthenticatorConfig::builder()
         .aaguid(aaguid)
+        .commands(vec![
+            CtapCommand::MakeCredential,
+            CtapCommand::GetAssertion,
+            CtapCommand::GetInfo,
+            CtapCommand::ClientPin,
+            CtapCommand::CredentialManagement,
+        ])
         .max_credentials(max_creds)
         .extensions(extensions.clone())
         .options(options.clone())

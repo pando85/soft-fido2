@@ -9,6 +9,11 @@ use std::sync::{Arc, Mutex};
 
 use smallvec::SmallVec;
 
+/// Trait for in-memory authenticator interface
+pub trait AuthenticatorInterface: Send + Sync {
+    fn handle(&mut self, request: &[u8], response: &mut Vec<u8>) -> Result<usize>;
+}
+
 /// Safe Rust wrapper for Transport
 pub struct Transport {
     inner: Arc<Mutex<TransportInner>>,
@@ -30,6 +35,11 @@ enum TransportInner {
         channel_manager: ChannelManager,
         #[allow(dead_code)]
         opened: bool,
+        channel_id: Option<u32>,
+    },
+    InMemory {
+        authenticator: Arc<Mutex<dyn AuthenticatorInterface>>,
+        channel_manager: ChannelManager,
         channel_id: Option<u32>,
     },
 }
@@ -59,6 +69,17 @@ impl Transport {
         }
     }
 
+    /// Create an in-memory transport connected to a software authenticator
+    pub fn in_memory<A: AuthenticatorInterface + 'static>(authenticator: A) -> Self {
+        Self {
+            inner: Arc::new(Mutex::new(TransportInner::InMemory {
+                authenticator: Arc::new(Mutex::new(authenticator)),
+                channel_manager: ChannelManager::new(),
+                channel_id: Some(0x12345678), // Fixed channel ID for in-memory
+            })),
+        }
+    }
+
     /// Open the transport for communication
     pub fn open(&mut self) -> Result<()> {
         let mut inner = self.inner.lock().unwrap();
@@ -72,6 +93,10 @@ impl Transport {
             TransportInner::Uhid { opened, .. } => {
                 // UHID devices are always "open" after creation
                 *opened = true;
+                Ok(())
+            }
+            TransportInner::InMemory { .. } => {
+                // In-memory transport is always "open"
                 Ok(())
             }
             #[cfg(not(any(feature = "usb", target_os = "linux")))]
@@ -90,6 +115,9 @@ impl Transport {
             #[cfg(target_os = "linux")]
             TransportInner::Uhid { opened, .. } => {
                 *opened = false;
+            }
+            TransportInner::InMemory { .. } => {
+                // In-memory transport doesn't need explicit closing
             }
             #[cfg(not(any(feature = "usb", target_os = "linux")))]
             _ => {}
@@ -128,6 +156,10 @@ impl Transport {
                     .write_packet(&packet)
                     .map_err(|e| Error::IoError(e.to_string()))?;
                 Ok(())
+            }
+            TransportInner::InMemory { .. } => {
+                // In-memory transport doesn't use raw packet I/O
+                Err(Error::Other)
             }
             #[cfg(not(any(feature = "usb", target_os = "linux")))]
             _ => Err(Error::Other),
@@ -178,6 +210,10 @@ impl Transport {
                 } else {
                     Ok(0)
                 }
+            }
+            TransportInner::InMemory { .. } => {
+                // In-memory transport doesn't use raw packet I/O
+                Err(Error::Other)
             }
             #[cfg(not(any(feature = "usb", target_os = "linux")))]
             _ => Err(Error::Other),
@@ -337,6 +373,7 @@ impl Transport {
             TransportInner::Usb { channel_id, .. } => channel_id.is_none(),
             #[cfg(target_os = "linux")]
             TransportInner::Uhid { channel_id, .. } => channel_id.is_none(),
+            TransportInner::InMemory { .. } => false, // In-memory doesn't need channel initialization
             #[cfg(not(any(feature = "usb", target_os = "linux")))]
             _ => false,
         };
@@ -356,6 +393,7 @@ impl Transport {
                 TransportInner::Uhid { channel_id, .. } => {
                     *channel_id = Some(allocated_channel);
                 }
+                TransportInner::InMemory { .. } => {}
                 #[cfg(not(any(feature = "usb", target_os = "linux")))]
                 _ => {}
             }
@@ -367,9 +405,78 @@ impl Transport {
             TransportInner::Usb { channel_id, .. } => channel_id.ok_or(Error::Other)?,
             #[cfg(target_os = "linux")]
             TransportInner::Uhid { channel_id, .. } => channel_id.ok_or(Error::Other)?,
+            TransportInner::InMemory { channel_id, .. } => channel_id.ok_or(Error::Other)?,
             #[cfg(not(any(feature = "usb", target_os = "linux")))]
             _ => return Err(Error::Other),
         };
+
+        // Handle in-memory transport directly
+        if let TransportInner::InMemory { authenticator, .. } = &*inner {
+            // For in-memory transport, bypass CTAP HID protocol and call authenticator directly
+            let mut auth = authenticator.lock().map_err(|_| Error::Other)?;
+            // Create a temporary Vec for the response
+            let mut temp_response = Vec::new();
+            let response_len = auth.handle(&payload, &mut temp_response)?;
+
+            // Check if this is a CTAP error response (single byte, non-zero)
+            if response_len == 1 && temp_response[0] != 0x00 {
+                // Convert CTAP status code to Error
+                let status_code = temp_response[0] as u16;
+                return Err(match status_code {
+                    0x01 => Error::CtapError(0x01),        // InvalidCommand
+                    0x02 => Error::CtapError(0x02),        // InvalidParameter
+                    0x03 => Error::CtapError(0x03),        // InvalidLength
+                    0x04 => Error::CtapError(0x04),        // InvalidSeq
+                    0x06 => Error::CtapError(0x06),        // ChannelBusy
+                    0x0A => Error::CtapError(0x0A),        // LockRequired
+                    0x0B => Error::CtapError(0x0B),        // InvalidChannel
+                    0x11 => Error::CtapError(0x11),        // CborUnexpectedType
+                    0x12 => Error::CtapError(0x12),        // InvalidCbor
+                    0x14 => Error::CtapError(0x14),        // MissingParameter
+                    0x15 => Error::CtapError(0x15),        // LimitExceeded
+                    0x19 => Error::CtapError(0x19),        // CredentialExcluded
+                    0x21 => Error::CtapError(0x21),        // Processing
+                    0x22 => Error::CtapError(0x22),        // InvalidCredential
+                    0x23 => Error::CtapError(0x23),        // UserActionPending
+                    0x24 => Error::CtapError(0x24),        // OperationPending
+                    0x25 => Error::CtapError(0x25),        // NoOperations
+                    0x26 => Error::CtapError(0x26),        // UnsupportedAlgorithm
+                    0x27 => Error::CtapError(0x27),        // OperationDenied
+                    0x29 => Error::CtapError(0x29),        // NotBusy
+                    0x2A => Error::CtapError(0x2A),        // NoOperationPending
+                    0x2B => Error::CtapError(0x2B),        // UnsupportedOption
+                    0x2C => Error::CtapError(0x2C),        // InvalidOption
+                    0x2D => Error::CtapError(0x2D),        // KeepaliveCancel
+                    0x2E => Error::NoCredentials,          // NoCredentials
+                    0x30 => Error::CtapError(0x30),        // NotAllowed
+                    0x31 => Error::CtapError(0x31),        // PinInvalid
+                    0x32 => Error::CtapError(0x32),        // PinBlocked
+                    0x33 => Error::CtapError(0x33),        // PinAuthInvalid
+                    0x34 => Error::CtapError(0x34),        // PinAuthBlocked
+                    0x35 => Error::CtapError(0x35),        // PinNotSet
+                    0x36 => Error::CtapError(0x36),        // PinRequired
+                    0x37 => Error::CtapError(0x37),        // PinPolicyViolation
+                    0x38 => Error::CtapError(0x38),        // PinTokenExpired
+                    0x39 => Error::CtapError(0x39),        // RequestTooLarge
+                    0x3A => Error::CtapError(0x3A),        // ActionTimeout
+                    0x3C => Error::CtapError(0x3C),        // UvBlocked
+                    0x3D => Error::CtapError(0x3D),        // IntegrityFailure
+                    0x3E => Error::CtapError(0x3E),        // InvalidSubcommand
+                    0x3F => Error::CtapError(0x3F),        // UvInvalid
+                    0x40 => Error::UnauthorizedPermission, // UnauthorizedPermission
+                    _ => Error::Other,
+                });
+            }
+
+            // For successful responses, skip the status byte and return just the CBOR data
+            let cbor_data = &temp_response[1..];
+            let cbor_len = cbor_data.len();
+            if cbor_len > response.len() {
+                return Err(Error::Other); // Buffer too small
+            }
+            response[..cbor_len].copy_from_slice(cbor_data);
+            return Ok(cbor_len);
+        }
 
         // Build CTAP HID message (convert SmallVec to Vec for Message API)
         let message = Message::new(channel_id, cmd_enum, payload.to_vec(), None);
@@ -436,13 +543,70 @@ impl Transport {
         let response_message =
             Message::from_packets(&response_packets, None).map_err(|_| Error::Other)?;
 
-        let response_len = response_message.data.len();
-        if response_len > response.len() {
-            return Err(Error::Other); // Buffer too small
+        let response_data = response_message.data;
+
+        // Check status byte for successful responses
+        if response_data.is_empty() {
+            return Err(Error::Other); // Empty response
         }
 
-        response[..response_len].copy_from_slice(&response_message.data);
-        Ok(response_len)
+        let status_byte = response_data[0];
+        if status_byte != 0x00 {
+            // Error response - convert to appropriate error
+            return match status_byte {
+                0x01 => Err(Error::CtapError(0x01)),        // InvalidCommand
+                0x02 => Err(Error::CtapError(0x02)),        // InvalidParameter
+                0x03 => Err(Error::CtapError(0x03)),        // InvalidLength
+                0x04 => Err(Error::CtapError(0x04)),        // InvalidSeq
+                0x06 => Err(Error::CtapError(0x06)),        // ChannelBusy
+                0x0A => Err(Error::CtapError(0x0A)),        // LockRequired
+                0x0B => Err(Error::CtapError(0x0B)),        // InvalidChannel
+                0x11 => Err(Error::CtapError(0x11)),        // CborUnexpectedType
+                0x12 => Err(Error::CtapError(0x12)),        // InvalidCbor
+                0x14 => Err(Error::CtapError(0x14)),        // MissingParameter
+                0x15 => Err(Error::CtapError(0x15)),        // LimitExceeded
+                0x19 => Err(Error::CtapError(0x19)),        // CredentialExcluded
+                0x21 => Err(Error::CtapError(0x21)),        // Processing
+                0x22 => Err(Error::CtapError(0x22)),        // InvalidCredential
+                0x23 => Err(Error::CtapError(0x23)),        // UserActionPending
+                0x24 => Err(Error::CtapError(0x24)),        // OperationPending
+                0x25 => Err(Error::CtapError(0x25)),        // NoOperations
+                0x26 => Err(Error::CtapError(0x26)),        // UnsupportedAlgorithm
+                0x27 => Err(Error::CtapError(0x27)),        // OperationDenied
+                0x29 => Err(Error::CtapError(0x29)),        // NotBusy
+                0x2A => Err(Error::CtapError(0x2A)),        // NoOperationPending
+                0x2B => Err(Error::CtapError(0x2B)),        // UnsupportedOption
+                0x2C => Err(Error::CtapError(0x2C)),        // InvalidOption
+                0x2D => Err(Error::CtapError(0x2D)),        // KeepaliveCancel
+                0x2E => Err(Error::NoCredentials),          // NoCredentials
+                0x30 => Err(Error::CtapError(0x30)),        // NotAllowed
+                0x31 => Err(Error::CtapError(0x31)),        // PinInvalid
+                0x32 => Err(Error::CtapError(0x32)),        // PinBlocked
+                0x33 => Err(Error::CtapError(0x33)),        // PinAuthInvalid
+                0x34 => Err(Error::CtapError(0x34)),        // PinAuthBlocked
+                0x35 => Err(Error::CtapError(0x35)),        // PinNotSet
+                0x36 => Err(Error::CtapError(0x36)),        // PinRequired
+                0x37 => Err(Error::CtapError(0x37)),        // PinPolicyViolation
+                0x38 => Err(Error::CtapError(0x38)),        // PinTokenExpired
+                0x39 => Err(Error::CtapError(0x39)),        // RequestTooLarge
+                0x3A => Err(Error::CtapError(0x3A)),        // ActionTimeout
+                0x3C => Err(Error::CtapError(0x3C)),        // UvBlocked
+                0x3D => Err(Error::CtapError(0x3D)),        // IntegrityFailure
+                0x3E => Err(Error::CtapError(0x3E)),        // InvalidSubcommand
+                0x3F => Err(Error::CtapError(0x3F)),        // UvInvalid
+                0x40 => Err(Error::UnauthorizedPermission), // UnauthorizedPermission
+                _ => Err(Error::Other),
+            };
+        }
+
+        // For successful responses, skip the status byte and return just the CBOR data
+        let cbor_data = &response_data[1..];
+        let cbor_len = cbor_data.len();
+        if cbor_len > response.len() {
+            return Err(Error::Other); // Buffer too small
+        }
+        response[..cbor_len].copy_from_slice(cbor_data);
+        Ok(cbor_len)
     }
 
     /// Get a description of the transport
@@ -453,6 +617,7 @@ impl Transport {
             TransportInner::Usb { .. } => Ok("USB HID Transport".to_string()),
             #[cfg(target_os = "linux")]
             TransportInner::Uhid { .. } => Ok("UHID Virtual Device".to_string()),
+            TransportInner::InMemory { .. } => Ok("In-Memory Software Authenticator".to_string()),
             #[cfg(not(any(feature = "usb", target_os = "linux")))]
             _ => Ok("Unknown Transport".to_string()),
         }
