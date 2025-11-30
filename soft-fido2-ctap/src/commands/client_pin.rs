@@ -70,6 +70,7 @@ pub fn handle<C: AuthenticatorCallbacks>(
 
     let subcommand: u8 = parser.get(req_keys::SUBCOMMAND)?;
 
+    dbg!(subcommand);
     match subcommand {
         0x01 => handle_get_pin_retries(auth),
         0x02 => handle_get_key_agreement(auth, &parser),
@@ -77,6 +78,7 @@ pub fn handle<C: AuthenticatorCallbacks>(
         0x04 => handle_change_pin(auth, &parser),
         0x05 => handle_get_pin_token(auth, &parser),
         0x06 => handle_get_pin_uv_auth_token_using_uv_with_permissions(auth, &parser),
+        0x07 => handle_get_uv_retries(auth),
         0x09 => handle_get_pin_uv_auth_token_using_pin_with_permissions(auth, &parser),
         _ => Err(StatusCode::InvalidSubcommand),
     }
@@ -468,6 +470,14 @@ fn handle_get_pin_uv_auth_token_using_pin_with_permissions<C: AuthenticatorCallb
 
     MapBuilder::new()
         .insert_bytes(resp_keys::PIN_UV_AUTH_TOKEN, &encrypted_token)?
+        .build()
+}
+
+/// Handle getUvRetries subcommand
+/// // Gets the remaining built-in UV retries counter.
+fn handle_get_uv_retries<C: AuthenticatorCallbacks>(auth: &Authenticator<C>) -> Result<Vec<u8>> {
+    MapBuilder::new()
+        .insert(resp_keys::UV_RETRIES, auth.uv_retries())?
         .build()
 }
 
