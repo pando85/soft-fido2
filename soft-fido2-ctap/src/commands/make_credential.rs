@@ -119,53 +119,19 @@ pub fn handle<C: AuthenticatorCallbacks>(
         }
     }
 
-    // Step 2: Check if authenticator is protected by some form of user verification
-    // In our implementation, we consider the authenticator protected if:
-    // - PIN is set, OR
-    // - UV (user verification) is supported
-    let is_protected = auth.is_pin_set() || auth.config().options.uv.unwrap_or(false);
-
-    // Step 3: Check if all requested algorithms are supported
-    let alg = pub_key_cred_params
-        .iter()
-        .find(|p| auth.config().algorithms.contains(&p.alg))
-        .ok_or(StatusCode::UnsupportedAlgorithm)?;
-
-    // Step 4: Initialize state variables
     let mut user_authenticated = false;
     let mut user_verified_flag_value = false;
 
-    // Steps 5-10: Determine user verification requirements and handle pinUvAuthParam
-
-    // Step 5: Check if alwaysUv is true and options.uv is false
-    if auth.config().options.always_uv && !options.uv {
-        return Err(StatusCode::PinRequired);
-    }
-
-    // Step 6: Check if makeCredUvNotRqd is false and authenticator is protected
-    // If uv option is false and protected, return error
-    if !auth.config().options.make_cred_uv_not_rqd && is_protected && !options.uv {
-        return Err(StatusCode::PinRequired);
-    }
-
-    // Step 7: If pinUvAuthParam is present, verify it
+    // Step 2: If pinUvAuthParam is present, verify it
     if let Some(ref pin_auth) = pin_uv_auth_param {
         let protocol = pin_uv_auth_protocol.ok_or(StatusCode::MissingParameter)?;
 
-        // Step 7.1: Verify pinUvAuthParam
         auth.verify_pin_uv_auth_param(protocol, pin_auth, &client_data_hash)?;
-
-        // Step 7.2: Verify PIN token has mc (MakeCredential) permission
         auth.verify_pin_uv_auth_token(crate::pin_token::Permission::MakeCredential, Some(&rp.id))?;
-
-        // Step 7.3: Set user_authenticated to true
         user_authenticated = true;
-
-        // Step 7.4: Set UV flag based on token's UV state
         user_verified_flag_value = get_user_verified_flag_value(auth);
     }
 
-    // Step 8: If pinUvAuthParam is not present and uv option is true
     if pin_uv_auth_param.is_none() && options.uv {
         // Perform built-in user verification
         let info = format!("Verify for {}", rp.id);
@@ -181,6 +147,12 @@ pub fn handle<C: AuthenticatorCallbacks>(
             UvResult::Timeout => return Err(StatusCode::UserActionTimeout),
         }
     }
+
+    // Step 3: Check if all requested algorithms are supported
+    let alg = pub_key_cred_params
+        .iter()
+        .find(|p| auth.config().algorithms.contains(&p.alg))
+        .ok_or(StatusCode::UnsupportedAlgorithm)?;
 
     // Step 9: Process enterprise attestation
     let _use_enterprise_attestation = if let Some(ep_att) = enterprise_attestation {
