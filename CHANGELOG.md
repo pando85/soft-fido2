@@ -5,6 +5,18 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/), and this project
 adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [v0.4.1](https://github.com/pando85/soft-fido2/tree/v0.4.1) - 2025-11-30
+
+### Added
+
+- Implement getUvRetries subcommand ([24da133](https://github.com/pando85/soft-fido2/commit/24da133a4cbac71c467bb20bb05222fad93db361))
+
+### Fixed
+
+- Remove FIDO_2_2 version ([302c087](https://github.com/pando85/soft-fido2/commit/302c087f5746b0b13dbfe0c92c5de7821644b05b))
+- Use canonical CBOR field order in PublicKeyCredentialDescriptor ([7a72c11](https://github.com/pando85/soft-fido2/commit/7a72c11a1d409244b338bdddba214e7b030392e9))
+- Use canonical CBOR field order in Credential ([f81cdcc](https://github.com/pando85/soft-fido2/commit/f81cdcc8918a810b79b6d5cfaefd8dfffa719983))
+
 ## [v0.4.0](https://github.com/pando85/soft-fido2/tree/v0.4.0) - 2025-11-29
 
 ### Added
