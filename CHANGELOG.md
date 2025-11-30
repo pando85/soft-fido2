@@ -5,6 +5,12 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/), and this project
 adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [v0.4.3](https://github.com/pando85/soft-fido2/tree/v0.4.3) - 2025-11-30
+
+### Refactor
+
+- Reorder make_credential user verification logic ([b8f952c](https://github.com/pando85/soft-fido2/commit/b8f952c17c83c1f71b1c82938ff45725ba53d200))
+
 ## [v0.4.2](https://github.com/pando85/soft-fido2/tree/v0.4.2) - 2025-11-30
 
 ### Fixed
