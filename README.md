@@ -5,7 +5,7 @@
 [![Documentation](https://docs.rs/soft-fido2/badge.svg)](https://docs.rs/soft-fido2)
 [![License](https://img.shields.io/badge/license-GPL--3.0-blue.svg)](LICENSE)
 
-A pure Rust implementation of FIDO2/WebAuthn CTAP 2.0/2.1 protocol for virtual authenticators.
+A pure Rust implementation of FIDO2/WebAuthn CTAP 2.0/2.1/2.2 protocol for virtual authenticators.
 
 **soft-fido2** provides virtual FIDO2 authenticator capabilities for testing and development,
 enabling developers to implement WebAuthn authentication flows without physical security keys.
