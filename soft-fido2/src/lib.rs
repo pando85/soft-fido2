@@ -12,7 +12,7 @@
 //!
 //! ```toml
 //! [dependencies]
-//! soft-fido2 = { version = "0.2", default-features = false }
+//! soft-fido2 = { version = "0.4", default-features = false }
 //! ```
 //!
 //! **Note**: Transport layers (USB HID, UHID) require `std` and are not available in `no_std`.
