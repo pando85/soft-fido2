@@ -15,8 +15,10 @@
 
 use soft_fido2::{
     Client, ClientDataHash, GetAssertionRequest, MakeCredentialRequest, PinProtocol, PinUvAuth,
-    PinUvAuthEncapsulation, PinUvAuthProtocol, RelyingParty, Result, TransportList, User,
+    PinUvAuthEncapsulation, PinUvAuthProtocol, Result, TransportList,
 };
+
+use soft_fido2_ctap::types::{RelyingParty, User};
 
 use base64::Engine;
 use sha2::{Digest, Sha256};

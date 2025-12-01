@@ -464,7 +464,8 @@ mod tests {
     use super::*;
 
     use crate::request::ClientDataHash;
-    use crate::types::{RelyingParty, User};
+
+    use soft_fido2_ctap::types::{RelyingParty, User};
 
     #[test]
     fn test_make_credential_request_encoding() {
