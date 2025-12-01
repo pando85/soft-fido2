@@ -387,6 +387,29 @@ impl<C: AuthenticatorCallbacks> Authenticator<C> {
         self.pin_retries == 0
     }
 
+    /// Check if built-in user verification is enabled
+    ///
+    /// Built-in UV refers to biometric authentication methods (fingerprint,
+    /// face recognition, iris scan, etc.) that are built into the authenticator.
+    ///
+    /// For this virtual authenticator implementation, we consider built-in UV
+    /// as enabled if the `uv` config option is set to true. In a hardware
+    /// authenticator, this would check if biometric templates are enrolled.
+    ///
+    /// Note: Client PIN is NOT a built-in UV method per FIDO2 spec.
+    pub fn has_built_in_uv_enabled(&self) -> bool {
+        self.config.options.uv == Some(true)
+    }
+
+    /// Check if authenticator is protected by any form of user verification
+    ///
+    /// Returns true if either:
+    /// - Client PIN is set, OR
+    /// - Built-in UV (biometrics) is enabled
+    pub fn is_protected_by_uv(&self) -> bool {
+        self.is_pin_set() || self.has_built_in_uv_enabled()
+    }
+
     /// Set PIN
     ///
     /// # Arguments
@@ -1604,5 +1627,64 @@ mod tests {
 
         // PIN meets new minimum
         assert!(auth.set_pin("12345678").is_ok());
+    }
+
+    #[test]
+    fn test_has_built_in_uv_enabled() {
+        // Test with UV disabled
+        let config = AuthenticatorConfig::new().with_options(AuthenticatorOptions {
+            uv: None,
+            ..AuthenticatorOptions::new()
+        });
+        let auth = Authenticator::new(config, MockCallbacks);
+        assert!(!auth.has_built_in_uv_enabled());
+
+        // Test with UV enabled
+        let config = AuthenticatorConfig::new().with_options(AuthenticatorOptions {
+            uv: Some(true),
+            ..AuthenticatorOptions::new()
+        });
+        let auth = Authenticator::new(config, MockCallbacks);
+        assert!(auth.has_built_in_uv_enabled());
+
+        // Test with UV explicitly disabled
+        let config = AuthenticatorConfig::new().with_options(AuthenticatorOptions {
+            uv: Some(false),
+            ..AuthenticatorOptions::new()
+        });
+        let auth = Authenticator::new(config, MockCallbacks);
+        assert!(!auth.has_built_in_uv_enabled());
+    }
+
+    #[test]
+    fn test_is_protected_by_uv() {
+        // Test with no UV protection
+        let config = AuthenticatorConfig::new().with_options(AuthenticatorOptions {
+            uv: None,
+            ..AuthenticatorOptions::new()
+        });
+        let mut auth = Authenticator::new(config, MockCallbacks);
+        assert!(!auth.is_protected_by_uv());
+
+        // Test with PIN set
+        auth.set_pin("1234").unwrap();
+        assert!(auth.is_protected_by_uv());
+
+        // Test with built-in UV enabled (no PIN)
+        let config = AuthenticatorConfig::new().with_options(AuthenticatorOptions {
+            uv: Some(true),
+            ..AuthenticatorOptions::new()
+        });
+        let auth = Authenticator::new(config, MockCallbacks);
+        assert!(auth.is_protected_by_uv());
+
+        // Test with both PIN and built-in UV
+        let config = AuthenticatorConfig::new().with_options(AuthenticatorOptions {
+            uv: Some(true),
+            ..AuthenticatorOptions::new()
+        });
+        let mut auth = Authenticator::new(config, MockCallbacks);
+        auth.set_pin("1234").unwrap();
+        assert!(auth.is_protected_by_uv());
     }
 }

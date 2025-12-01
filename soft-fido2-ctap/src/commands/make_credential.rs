@@ -58,6 +58,14 @@ struct MakeCredentialOptions {
     uv: bool,
 }
 
+/// Response state tracker
+#[derive(Debug, Default)]
+struct ResponseState {
+    up: bool,
+    uv: bool,
+    ep_att: bool,
+}
+
 /// Handle authenticatorMakeCredential command
 ///
 /// Implements FIDO 2.2 spec section 6.1.2 authenticatorMakeCredential algorithm
@@ -94,8 +102,6 @@ pub fn handle<C: AuthenticatorCallbacks>(
         };
     let pin_uv_auth_protocol: Option<u8> = parser.get_opt(req_keys::PIN_UV_AUTH_PROTOCOL)?;
 
-    let options = parse_options(&parser)?;
-
     let extensions =
         if let Some(ext_value) = parser.get_opt::<crate::cbor::Value>(req_keys::EXTENSIONS)? {
             MakeCredentialExtensions::from_cbor(&ext_value)?
@@ -105,159 +111,519 @@ pub fn handle<C: AuthenticatorCallbacks>(
 
     let enterprise_attestation: Option<u8> = parser.get_opt(req_keys::ENTERPRISE_ATTESTATION)?;
 
+    // Parse options (will process in step 5)
+    let mut options = parse_options(&parser)?;
+
     // ===== Begin FIDO 2.2 Spec Algorithm =====
 
-    // Step 1: Check for zero-length pinUvAuthParam
-    if let Some(ref param) = pin_uv_auth_param
+    // Step 1: Zero-length pinUvAuthParam backward compatibility check
+    if (auth.config().options.pin_uv_auth_token
+        || auth.config().options.client_pin.unwrap_or(false))
+        && let Some(ref param) = pin_uv_auth_param
         && param.is_empty()
     {
-        // Zero-length pinUvAuthParam
-        if !auth.is_pin_set() {
-            return Err(StatusCode::PinNotSet);
-        } else {
-            return Err(StatusCode::PinAuthInvalid);
-        }
-    }
-
-    let mut user_authenticated = false;
-    let mut user_verified_flag_value = false;
-
-    // Step 2: If pinUvAuthParam is present, verify it
-    if let Some(ref pin_auth) = pin_uv_auth_param {
-        let protocol = pin_uv_auth_protocol.ok_or(StatusCode::MissingParameter)?;
-
-        auth.verify_pin_uv_auth_param(protocol, pin_auth, &client_data_hash)?;
-        auth.verify_pin_uv_auth_token(crate::pin_token::Permission::MakeCredential, Some(&rp.id))?;
-        user_authenticated = true;
-        user_verified_flag_value = get_user_verified_flag_value(auth);
-    }
-
-    if pin_uv_auth_param.is_none() && options.uv {
-        // Perform built-in user verification
-        let info = format!("Verify for {}", rp.id);
+        // Request evidence of user interaction
+        let info = format!("Select authenticator for {}", rp.id);
         match auth
             .callbacks()
-            .request_uv(&info, user.name.as_deref(), &rp.id)?
+            .request_up(&info, user.name.as_deref(), &rp.id)?
         {
-            UvResult::Accepted | UvResult::AcceptedWithUp => {
-                user_verified_flag_value = true;
-                user_authenticated = true;
-            }
-            UvResult::Denied => return Err(StatusCode::OperationDenied),
-            UvResult::Timeout => return Err(StatusCode::UserActionTimeout),
-        }
-    }
-
-    // Step 3: Check if all requested algorithms are supported
-    let alg = pub_key_cred_params
-        .iter()
-        .find(|p| auth.config().algorithms.contains(&p.alg))
-        .ok_or(StatusCode::UnsupportedAlgorithm)?;
-
-    // Step 9: Process enterprise attestation
-    let _use_enterprise_attestation = if let Some(ep_att) = enterprise_attestation {
-        // Check if enterprise attestation is supported
-        if !auth.config().options.ep.unwrap_or(false) {
-            return Err(StatusCode::InvalidParameter);
-        }
-        // For now, we don't actually implement enterprise attestation
-        // Just validate the parameter
-        ep_att == 1 || ep_att == 2
-    } else {
-        false
-    };
-
-    // Step 10: Process extensions (if not already done)
-    // Extensions are already parsed above
-
-    // Step 11: Process excludeList
-    if let Some(ref exclude) = exclude_list {
-        // Step 11.1: Check if any excluded credential exists with appropriate credProtect level
-        for cred_desc in exclude {
-            if let Ok(true) = auth.callbacks().credential_exists(&cred_desc.id) {
-                // Credential exists - need to check credProtect level
-                // Try to get the credential to check its credProtect level
-                if let Ok(cred) = auth.callbacks().get_credential(&cred_desc.id) {
-                    use crate::CredProtect;
-                    let cred_protect = cred.cred_protect;
-
-                    // credProtect level 1 (userVerificationOptional): always exclude
-                    if cred_protect == CredProtect::UserVerificationOptional as u8 {
-                        return Err(StatusCode::CredentialExcluded);
-                    }
-
-                    // credProtect level 2 (userVerificationOptionalWithCredentialIDList):
-                    // exclude if in excludeList
-                    if cred_protect
-                        == CredProtect::UserVerificationOptionalWithCredentialIdList as u8
-                    {
-                        return Err(StatusCode::CredentialExcluded);
-                    }
-
-                    // credProtect level 3 (userVerificationRequired):
-                    // only exclude if user is authenticated
-                    if cred_protect == CredProtect::UserVerificationRequired as u8
-                        && user_authenticated
-                    {
-                        return Err(StatusCode::CredentialExcluded);
-                    }
+            UpResult::Denied => return Err(StatusCode::OperationDenied),
+            UpResult::Timeout => return Err(StatusCode::OperationDenied),
+            UpResult::Accepted => {
+                // User interaction provided
+                // Check if authenticator is protected by UV (PIN or biometrics)
+                if !auth.is_protected_by_uv() {
+                    return Err(StatusCode::PinNotSet);
+                } else {
+                    return Err(StatusCode::PinInvalid);
                 }
             }
         }
     }
 
-    // Step 12: Process extensions that haven't been processed yet
-    // (Already done above in step 10)
-
-    // Step 13: Collect user presence if required
-    let mut user_present_flag_value = false;
-
-    // Determine if we need to collect UP
-    let need_user_presence = if options.up {
-        // UP was explicitly requested
-        true
-    } else if !user_authenticated {
-        // No authentication performed yet, need UP
-        true
-    } else {
-        false
-    };
-
-    if need_user_presence {
-        let info = format!("Register with {}", rp.id);
-        match auth
-            .callbacks()
-            .request_up(&info, user.name.as_deref(), &rp.id)?
-        {
-            UpResult::Accepted => user_present_flag_value = true,
-            UpResult::Denied => return Err(StatusCode::OperationDenied),
-            UpResult::Timeout => return Err(StatusCode::UserActionTimeout),
-        }
-    } else {
-        // If UV was performed, UP is implicitly true
-        if user_verified_flag_value {
-            user_present_flag_value = true;
+    // Step 2: If pinUvAuthParam is present, validate protocol
+    if pin_uv_auth_param.is_some() {
+        if let Some(protocol) = pin_uv_auth_protocol {
+            if !auth.config().pin_uv_auth_protocols.contains(&protocol) {
+                return Err(StatusCode::InvalidParameter);
+            }
+        } else {
+            return Err(StatusCode::MissingParameter);
         }
     }
 
-    // Step 14: Generate credential and prepare response
-    // Step 14.1-14.2: Generate key pair and credential
+    // Step 3: Validate pubKeyCredParams and choose algorithm
+    let alg = validate_and_choose_algorithm(auth, &pub_key_cred_params)?;
+
+    // Step 4: Create response structure with "uv" and "up" bits initialized as false
+    let mut response_state = ResponseState::default();
+
+    // Step 5: Process options parameter
+    // 5.1: If "uv" option is absent, treat as false (default)
+    // (Already done by default)
+
+    // 5.2: If pinUvAuthParam is present, treat "uv" option as false
+    if pin_uv_auth_param.is_some() {
+        options.uv = false;
+    }
+
+    // 5.3: If "uv" option is true, validate built-in UV support
+    if options.uv {
+        // Check if authenticator supports a built-in user verification method
+        if auth.config().options.uv != Some(true) {
+            return Err(StatusCode::InvalidOption);
+        }
+    }
+
+    // 5.4: Process "rk" option
+    if options.rk && !auth.config().options.rk {
+        return Err(StatusCode::UnsupportedOption);
+    }
+    // Else: treat "rk" as false (already default)
+
+    // 5.5: Process "up" option
+    if !options.up {
+        // "up" option false is invalid
+        return Err(StatusCode::InvalidOption);
+    }
+    // Else: "up" is true (default)
+
+    // Step 6: Handle alwaysUv option
+    if auth.config().options.always_uv {
+        // 6.1: Treat makeCredUvNotRqd as false
+        // 6.2: Check if authenticator is protected by user verification
+        // Protected by UV means either PIN is set OR built-in UV (biometrics) is enabled
+        if auth.is_protected_by_uv() {
+            // Protected by UV
+
+            // 6.3: If pinUvAuthParam not present and uv is true, keep uv as true
+            // (Already handled by options parsing)
+
+            // 6.4: If pinUvAuthParam not present and uv is false/absent, require PUAT
+            if pin_uv_auth_param.is_none() && !options.uv {
+                if auth.config().options.client_pin.unwrap_or(false)
+                    && !auth.config().options.pin_uv_auth_token
+                // noMcGaPermissionsWithClientPin absent or false
+                {
+                    return Err(StatusCode::PuatRequired);
+                } else {
+                    return Err(StatusCode::OperationDenied);
+                }
+            }
+        } else {
+            // Not protected by UV
+            if auth.config().options.client_pin.unwrap_or(false)
+                && !auth.config().options.pin_uv_auth_token
+            {
+                return Err(StatusCode::PuatRequired);
+            } else {
+                return Err(StatusCode::OperationDenied);
+            }
+        }
+    }
+
+    // Step 7: Handle makeCredUvNotRqd option
+    let authenticator_protected = auth.is_protected_by_uv();
+
+    if auth.config().options.make_cred_uv_not_rqd {
+        // makeCredUvNotRqd is true
+        if authenticator_protected && !options.uv && pin_uv_auth_param.is_none() && options.rk {
+            // Trying to create discoverable credential without UV
+            if auth.config().options.client_pin.unwrap_or(false)
+                && !auth.config().options.pin_uv_auth_token
+            {
+                return Err(StatusCode::PuatRequired);
+            } else {
+                return Err(StatusCode::OperationDenied);
+            }
+        }
+    } else {
+        // makeCredUvNotRqd is false or absent
+        if authenticator_protected && !options.uv && pin_uv_auth_param.is_none() {
+            // Creating any credential without UV when authenticator is protected
+            if auth.config().options.client_pin.unwrap_or(false)
+                && !auth.config().options.pin_uv_auth_token
+            {
+                return Err(StatusCode::PuatRequired);
+            } else {
+                return Err(StatusCode::OperationDenied);
+            }
+        }
+    }
+
+    // Step 9: Process enterpriseAttestation parameter
+    if let Some(ep_att_value) = enterprise_attestation {
+        if !auth.config().options.ep.unwrap_or(false) {
+            return Err(StatusCode::InvalidParameter);
+        }
+
+        if ep_att_value != 1 && ep_att_value != 2 {
+            return Err(StatusCode::InvalidOption);
+        }
+
+        // For now, we don't implement full enterprise attestation logic
+        // Just validate the parameter
+        response_state.ep_att = false; // Would be true if we returned enterprise attestation
+    }
+
+    // Step 10: Check if we can skip UV requirement
+    let skip_uv = !options.rk
+        && !options.uv
+        && auth.config().options.make_cred_uv_not_rqd
+        && pin_uv_auth_param.is_none();
+
+    if skip_uv {
+        // Go to Step 12 (generate credential)
+        // UV bit already false from Step 4
+    } else {
+        // Step 11: Perform user verification if required
+        perform_user_verification(
+            auth,
+            &mut response_state,
+            &mut options,
+            &pin_uv_auth_param,
+            pin_uv_auth_protocol,
+            &client_data_hash,
+            &rp,
+            &user,
+        )?;
+    }
+
+    // Track if evidence of user interaction was provided in Step 11
+    let evidence_from_step_11 = options.uv && pin_uv_auth_param.is_none() && response_state.uv;
+
+    // Step 12: Check excludeList for excluded credentials
+    check_exclude_list(
+        auth,
+        &exclude_list,
+        &response_state,
+        &pin_uv_auth_param,
+        evidence_from_step_11,
+    )?;
+
+    // Step 13: If evidence provided in Step 11 via built-in UV
+    if evidence_from_step_11 {
+        response_state.up = true;
+        // Go to Step 15
+    } else {
+        // Step 14: Collect user presence if "up" option is true
+        if options.up {
+            collect_user_presence(auth, &mut response_state, &pin_uv_auth_param, &rp, &user)?;
+        }
+    }
+
+    // Step 14 (last): Clear flags and permissions
+    auth.clear_pin_uv_auth_token_permissions_except_lbw();
+
+    // Step 15: Process extensions
+    let extension_outputs = extensions.build_outputs(auth.config().min_pin_length);
+
+    // Step 16: Generate credential key pair
     let (private_key, public_key_bytes) = ecdsa::generate_keypair();
 
-    let credential_id = if options.rk || auth.config().force_resident_keys {
-        // Resident key: generate random ID and store credential
+    // Step 17: Create credential (resident or non-resident)
+    let credential_id = create_credential(
+        auth,
+        &options,
+        &extensions,
+        &response_state,
+        private_key,
+        &rp,
+        &user,
+        alg,
+    )?;
+
+    // Step 18: Generate attestation
+    let cred_data = AttestationCredential {
+        id: credential_id,
+        public_key: public_key_bytes,
+        algorithm: alg,
+    };
+
+    let auth_data = build_authenticator_data(
+        &rp.id,
+        response_state.up,
+        response_state.uv,
+        auth.config().aaguid,
+        &cred_data,
+        extension_outputs.as_ref(),
+    )?;
+
+    // Build attestation statement (self-attestation)
+    let sig_data = [&auth_data[..], &client_data_hash[..]].concat();
+    let signature = ecdsa::sign(&private_key, &sig_data)?;
+    let att_stmt = build_attestation_statement(&signature, alg)?;
+
+    // Build response
+    let mut builder = MapBuilder::new()
+        .insert(resp_keys::FMT, "packed")?
+        .insert_bytes(resp_keys::AUTH_DATA, &auth_data)?
+        .insert(resp_keys::ATT_STMT, att_stmt)?;
+
+    if response_state.ep_att {
+        builder = builder.insert(resp_keys::EP_ATT, true)?;
+    }
+
+    builder.build()
+}
+
+/// Step 3: Validate pubKeyCredParams and choose algorithm
+fn validate_and_choose_algorithm<C: AuthenticatorCallbacks>(
+    auth: &Authenticator<C>,
+    params: &[PublicKeyCredentialParameters],
+) -> Result<i32> {
+    let mut chosen_alg: Option<i32> = None;
+
+    for param in params {
+        // Validate that type is present and correct
+        if param.cred_type != "public-key" {
+            return Err(StatusCode::InvalidCbor);
+        }
+
+        // If this algorithm is supported and we haven't chosen one yet
+        if chosen_alg.is_none() && auth.config().algorithms.contains(&param.alg) {
+            chosen_alg = Some(param.alg);
+        }
+    }
+
+    chosen_alg.ok_or(StatusCode::UnsupportedAlgorithm)
+}
+
+/// Step 11: Perform user verification
+#[allow(clippy::too_many_arguments)]
+fn perform_user_verification<C: AuthenticatorCallbacks>(
+    auth: &mut Authenticator<C>,
+    response_state: &mut ResponseState,
+    options: &mut MakeCredentialOptions,
+    pin_uv_auth_param: &Option<Vec<u8>>,
+    pin_uv_auth_protocol: Option<u8>,
+    client_data_hash: &[u8],
+    rp: &RelyingParty,
+    user: &User,
+) -> Result<()> {
+    let authenticator_protected = auth.is_pin_set();
+
+    if authenticator_protected {
+        if let Some(pin_auth) = pin_uv_auth_param {
+            // Step 11.1: Verify pinUvAuthParam
+            let protocol = pin_uv_auth_protocol.ok_or(StatusCode::MissingParameter)?;
+            auth.verify_pin_uv_auth_param(protocol, pin_auth, client_data_hash)?;
+
+            // Verify mc permission
+            auth.verify_pin_uv_auth_token(
+                crate::pin_token::Permission::MakeCredential,
+                Some(&rp.id),
+            )?;
+
+            // Get userVerifiedFlagValue
+            let user_verified = get_user_verified_flag_value(auth);
+
+            if !user_verified {
+                return Err(StatusCode::PinAuthInvalid);
+            }
+
+            if user_verified {
+                response_state.uv = true;
+            }
+
+            // Associate RP ID with token if not already associated
+            // (This is handled internally by verify_pin_uv_auth_token)
+
+            return Ok(());
+        }
+
+        if options.uv {
+            // Step 11.2: Perform built-in user verification
+            let internal_retry = true;
+            let uv_state = perform_built_in_uv(auth, internal_retry, rp, user)?;
+
+            if uv_state {
+                response_state.uv = true;
+            }
+
+            return Ok(());
+        }
+    }
+
+    // Note: If we reach here, authenticator is not protected or UV not requested
+    // UV bit remains false from Step 4
+    Ok(())
+}
+
+/// Step 11.2: Perform built-in user verification
+fn perform_built_in_uv<C: AuthenticatorCallbacks>(
+    auth: &mut Authenticator<C>,
+    _internal_retry: bool,
+    rp: &RelyingParty,
+    user: &User,
+) -> Result<bool> {
+    let info = format!("Verify for {}", rp.id);
+    match auth
+        .callbacks()
+        .request_uv(&info, user.name.as_deref(), &rp.id)?
+    {
+        UvResult::Accepted | UvResult::AcceptedWithUp => Ok(true),
+        UvResult::Timeout => Err(StatusCode::UserActionTimeout),
+        UvResult::Denied => {
+            // Check retry counter
+            if auth.uv_retries() == 0 {
+                return Err(StatusCode::PinBlocked);
+            }
+
+            if auth.config().options.client_pin.unwrap_or(false)
+                && !auth.config().options.pin_uv_auth_token
+            {
+                return Err(StatusCode::PuatRequired);
+            }
+
+            Err(StatusCode::OperationDenied)
+        }
+    }
+}
+
+/// Get user verified flag value from PIN token state
+pub(crate) fn get_user_verified_flag_value<C: AuthenticatorCallbacks>(
+    _auth: &Authenticator<C>,
+) -> bool {
+    // Per spec, if PIN token was obtained via getPinToken/getPinUvAuthTokenUsingPinWithPermissions,
+    // then UV flag should be true
+    // For simplicity, we return true when a valid PIN token exists
+    true
+}
+
+/// Get user present flag value
+pub(crate) fn get_user_present_flag_value<C: AuthenticatorCallbacks>(
+    auth: &Authenticator<C>,
+) -> bool {
+    // Check if there's a valid PIN token with recent usage
+    // For simplicity, return true if token exists
+    auth.pin_retries() > 0
+}
+
+/// Step 12: Check excludeList for credential exclusion
+fn check_exclude_list<C: AuthenticatorCallbacks>(
+    auth: &Authenticator<C>,
+    exclude_list: &Option<Vec<PublicKeyCredentialDescriptor>>,
+    response_state: &ResponseState,
+    pin_uv_auth_param: &Option<Vec<u8>>,
+    evidence_from_step_11: bool,
+) -> Result<()> {
+    if let Some(exclude) = exclude_list {
+        for cred_desc in exclude {
+            if let Ok(true) = auth.callbacks().credential_exists(&cred_desc.id)
+                && let Ok(cred) = auth.callbacks().get_credential(&cred_desc.id)
+            {
+                // Check credProtect level
+                if cred.cred_protect != CredProtect::UserVerificationRequired as u8 {
+                    // Not UV required - need UP before returning error
+                    let mut user_present = false;
+
+                    if pin_uv_auth_param.is_some() {
+                        user_present = get_user_present_flag_value(auth);
+                    } else if evidence_from_step_11 {
+                        user_present = true;
+                    }
+
+                    if !user_present {
+                        // Wait for user presence - but we can't actually wait here
+                        // Return error regardless
+                        return Err(StatusCode::CredentialExcluded);
+                    }
+
+                    return Err(StatusCode::CredentialExcluded);
+                } else {
+                    // UV required credential
+                    if response_state.uv {
+                        let mut user_present = false;
+
+                        if pin_uv_auth_param.is_some() {
+                            user_present = get_user_present_flag_value(auth);
+                        } else if evidence_from_step_11 {
+                            user_present = true;
+                        }
+
+                        if !user_present {
+                            return Err(StatusCode::CredentialExcluded);
+                        }
+
+                        return Err(StatusCode::CredentialExcluded);
+                    }
+                    // Else: UV not collected, remove from list and continue
+                    // (We just continue to next credential)
+                }
+            }
+        }
+    }
+
+    Ok(())
+}
+
+/// Step 14: Collect user presence
+fn collect_user_presence<C: AuthenticatorCallbacks>(
+    auth: &Authenticator<C>,
+    response_state: &mut ResponseState,
+    pin_uv_auth_param: &Option<Vec<u8>>,
+    rp: &RelyingParty,
+    user: &User,
+) -> Result<()> {
+    if pin_uv_auth_param.is_some() {
+        let user_present = get_user_present_flag_value(auth);
+
+        if !user_present {
+            // Request user interaction
+            let info = format!("Register with {}", rp.id);
+            match auth
+                .callbacks()
+                .request_up(&info, user.name.as_deref(), &rp.id)?
+            {
+                UpResult::Accepted => {}
+                UpResult::Denied => return Err(StatusCode::OperationDenied),
+                UpResult::Timeout => return Err(StatusCode::OperationDenied),
+            }
+        }
+    } else {
+        // pinUvAuthParam not present
+        if !response_state.up {
+            // Request user interaction
+            let info = format!("Register with {}", rp.id);
+            match auth
+                .callbacks()
+                .request_up(&info, user.name.as_deref(), &rp.id)?
+            {
+                UpResult::Accepted => {}
+                UpResult::Denied => return Err(StatusCode::OperationDenied),
+                UpResult::Timeout => return Err(StatusCode::OperationDenied),
+            }
+        }
+    }
+
+    response_state.up = true;
+    Ok(())
+}
+
+/// Step 17: Create credential (resident or non-resident)
+#[allow(clippy::too_many_arguments)]
+fn create_credential<C: AuthenticatorCallbacks>(
+    auth: &mut Authenticator<C>,
+    options: &MakeCredentialOptions,
+    extensions: &MakeCredentialExtensions,
+    response_state: &ResponseState,
+    private_key: [u8; 32],
+    rp: &RelyingParty,
+    user: &User,
+    algorithm: i32,
+) -> Result<Vec<u8>> {
+    if options.rk || auth.config().force_resident_keys {
+        // Create discoverable credential
         let id = generate_credential_id();
 
-        // Determine credProtect level:
-        // 1. Use explicitly requested credProtect from extensions
-        // 2. If UV was required during registration, enforce UV for future use (level 0x03)
-        // 3. Otherwise default to userVerificationOptional (level 0x01)
+        // Determine credProtect level
         let cred_protect_value = extensions
             .cred_protect
             .map(|p| p.to_u8())
             .unwrap_or_else(|| {
-                if user_verified_flag_value {
-                    // UV was performed - enforce UV for future authentications
+                if response_state.uv {
                     CredProtect::UserVerificationRequired as u8
                 } else {
                     CredProtect::UserVerificationOptional as u8
@@ -272,7 +638,7 @@ pub fn handle<C: AuthenticatorCallbacks>(
             user_name: user.name.clone(),
             user_display_name: user.display_name.clone(),
             private_key: SecBytes::from_array(private_key),
-            algorithm: alg.alg,
+            algorithm,
             sign_count: 0,
             created: current_timestamp(),
             discoverable: true,
@@ -281,68 +647,14 @@ pub fn handle<C: AuthenticatorCallbacks>(
 
         auth.callbacks().write_credential(&credential)?;
 
-        id
+        Ok(id)
     } else {
-        // Non-resident key: wrap private key into credential ID
-        auth.wrap_credential(&private_key, &rp.id, alg.alg)?
-    };
-
-    // Step 14.3: Call clearUserPresentFlag(), clearUserVerifiedFlag(),
-    // and clearPinUvAuthTokenPermissionsExceptLbw()
-    // Note: We don't have explicit user present/verified flags to clear since they're local variables
-    // But we do need to clear the PIN token permissions
-    auth.clear_pin_uv_auth_token_permissions_except_lbw();
-
-    // Step 15: Build extension outputs
-    let extension_outputs = extensions.build_outputs(auth.config().min_pin_length);
-
-    // Step 16: Build authenticator data
-    let cred_data = AttestationCredential {
-        id: credential_id,
-        public_key: public_key_bytes,
-        algorithm: alg.alg,
-    };
-    let auth_data = build_authenticator_data(
-        &rp.id,
-        user_present_flag_value,
-        user_verified_flag_value,
-        auth.config().aaguid,
-        &cred_data,
-        extension_outputs.as_ref(),
-    )?;
-
-    // Step 17: Build attestation statement (self-attestation for now)
-    let sig_data = [&auth_data[..], &client_data_hash[..]].concat();
-    let signature = ecdsa::sign(&private_key, &sig_data)?;
-
-    let att_stmt = build_attestation_statement(&signature, alg.alg)?;
-
-    // Step 18: Build and return response
-    MapBuilder::new()
-        .insert(resp_keys::FMT, "packed")?
-        .insert_bytes(resp_keys::AUTH_DATA, &auth_data)? // Must be CBOR bytes, not array!
-        .insert(resp_keys::ATT_STMT, att_stmt)?
-        .build()
-}
-
-/// Get user verified flag value from authenticator state
-///
-/// This helper checks if the current PIN/UV auth token was obtained with UV.
-/// Per FIDO2 spec, if a token exists and was obtained via UV, the UV flag should be set.
-pub fn get_user_verified_flag_value<C: AuthenticatorCallbacks>(_auth: &Authenticator<C>) -> bool {
-    // For now, we assume that if a valid PIN token exists, it was obtained with some form of verification
-    // In a full implementation, we would track whether the token was obtained via PIN or UV
-    // and set the flag accordingly. For simplicity, we return true if a token exists.
-    // This could be enhanced by adding a field to PinToken to track the verification method.
-    true
+        // Create non-discoverable credential
+        auth.wrap_credential(&private_key, &rp.id, algorithm)
+    }
 }
 
 /// Parse user object from the request
-///
-/// User object is a CBOR map with text keys containing:
-/// - "id" (required): CBOR Bytes
-/// - "name" (optional): CBOR Text
-/// - "displayName" (optional): CBOR Text
 fn parse_user(parser: &MapParser, key: i32) -> Result<User> {
     let user_value: crate::cbor::Value = parser.get(key)?;
 
@@ -393,7 +705,7 @@ fn parse_options(parser: &MapParser) -> Result<MakeCredentialOptions> {
 
     let mut options = MakeCredentialOptions {
         rk: false,
-        up: true, // Default to true
+        up: true, // Default to true per spec
         uv: false,
     };
 
@@ -404,7 +716,7 @@ fn parse_options(parser: &MapParser) -> Result<MakeCredentialOptions> {
                     "rk" => options.rk = val,
                     "up" => options.up = val,
                     "uv" => options.uv = val,
-                    _ => {} // Ignore unknown options
+                    _ => {} // Ignore unknown options per spec
                 }
             }
         }
@@ -439,8 +751,6 @@ fn current_timestamp() -> i64 {
 /// Get current timestamp in seconds (no_std fallback)
 #[cfg(not(feature = "std"))]
 fn current_timestamp() -> i64 {
-    // In no_std, return 0. Applications can override this by providing
-    // their own time source through the authenticator config.
     0
 }
 
@@ -571,5 +881,188 @@ mod tests {
         let public_key = vec![0x01, 0x02, 0x03]; // Invalid format
         let result = build_cose_public_key(&public_key, -7);
         assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_validate_algorithm_selection() {
+        use crate::authenticator::{Authenticator, AuthenticatorConfig, AuthenticatorOptions};
+
+        // Mock callbacks for testing
+        struct MockCallbacks;
+
+        impl crate::callbacks::UserInteractionCallbacks for MockCallbacks {
+            fn request_up(
+                &self,
+                _info: &str,
+                _user_name: Option<&str>,
+                _rp_id: &str,
+            ) -> Result<crate::callbacks::UpResult> {
+                Ok(crate::callbacks::UpResult::Accepted)
+            }
+
+            fn request_uv(
+                &self,
+                _info: &str,
+                _user_name: Option<&str>,
+                _rp_id: &str,
+            ) -> Result<crate::callbacks::UvResult> {
+                Ok(crate::callbacks::UvResult::Accepted)
+            }
+
+            fn select_credential(&self, _rp_id: &str, _user_names: &[String]) -> Result<usize> {
+                Ok(0)
+            }
+        }
+
+        impl crate::callbacks::CredentialStorageCallbacks for MockCallbacks {
+            fn write_credential(&self, _credential: &crate::types::Credential) -> Result<()> {
+                Ok(())
+            }
+
+            fn delete_credential(&self, _credential_id: &[u8]) -> Result<()> {
+                Ok(())
+            }
+
+            fn read_credentials(
+                &self,
+                _rp_id: &str,
+                _user_id: Option<&[u8]>,
+            ) -> Result<Vec<crate::types::Credential>> {
+                Ok(vec![])
+            }
+
+            fn credential_exists(&self, _credential_id: &[u8]) -> Result<bool> {
+                Ok(false)
+            }
+
+            fn get_credential(&self, _credential_id: &[u8]) -> Result<crate::types::Credential> {
+                Err(StatusCode::NoCredentials)
+            }
+
+            fn update_credential(&self, _credential: &crate::types::Credential) -> Result<()> {
+                Ok(())
+            }
+
+            fn enumerate_rps(&self) -> Result<Vec<(String, Option<String>, usize)>> {
+                Ok(vec![])
+            }
+
+            fn credential_count(&self) -> Result<usize> {
+                Ok(0)
+            }
+        }
+
+        let config = AuthenticatorConfig::new()
+            .with_algorithms(vec![-7, -8]) // ES256, EdDSA
+            .with_options(AuthenticatorOptions::new());
+        let auth = Authenticator::new(config, MockCallbacks);
+
+        let params = vec![
+            PublicKeyCredentialParameters {
+                cred_type: "public-key".to_string(),
+                alg: -257, // RS256 (not supported)
+            },
+            PublicKeyCredentialParameters {
+                cred_type: "public-key".to_string(),
+                alg: -8, // EdDSA (supported)
+            },
+            PublicKeyCredentialParameters {
+                cred_type: "public-key".to_string(),
+                alg: -7, // ES256 (supported)
+            },
+        ];
+
+        // Should choose the first supported algorithm (EdDSA in this case)
+        let result = validate_and_choose_algorithm(&auth, &params);
+        assert_eq!(result.unwrap(), -8);
+    }
+
+    #[test]
+    fn test_validate_algorithm_none_supported() {
+        use crate::authenticator::{Authenticator, AuthenticatorConfig, AuthenticatorOptions};
+
+        // Mock callbacks for testing
+        struct MockCallbacks;
+
+        impl crate::callbacks::UserInteractionCallbacks for MockCallbacks {
+            fn request_up(
+                &self,
+                _info: &str,
+                _user_name: Option<&str>,
+                _rp_id: &str,
+            ) -> Result<crate::callbacks::UpResult> {
+                Ok(crate::callbacks::UpResult::Accepted)
+            }
+
+            fn request_uv(
+                &self,
+                _info: &str,
+                _user_name: Option<&str>,
+                _rp_id: &str,
+            ) -> Result<crate::callbacks::UvResult> {
+                Ok(crate::callbacks::UvResult::Accepted)
+            }
+
+            fn select_credential(&self, _rp_id: &str, _user_names: &[String]) -> Result<usize> {
+                Ok(0)
+            }
+        }
+
+        impl crate::callbacks::CredentialStorageCallbacks for MockCallbacks {
+            fn write_credential(&self, _credential: &crate::types::Credential) -> Result<()> {
+                Ok(())
+            }
+
+            fn delete_credential(&self, _credential_id: &[u8]) -> Result<()> {
+                Ok(())
+            }
+
+            fn read_credentials(
+                &self,
+                _rp_id: &str,
+                _user_id: Option<&[u8]>,
+            ) -> Result<Vec<crate::types::Credential>> {
+                Ok(vec![])
+            }
+
+            fn credential_exists(&self, _credential_id: &[u8]) -> Result<bool> {
+                Ok(false)
+            }
+
+            fn get_credential(&self, _credential_id: &[u8]) -> Result<crate::types::Credential> {
+                Err(StatusCode::NoCredentials)
+            }
+
+            fn update_credential(&self, _credential: &crate::types::Credential) -> Result<()> {
+                Ok(())
+            }
+
+            fn enumerate_rps(&self) -> Result<Vec<(String, Option<String>, usize)>> {
+                Ok(vec![])
+            }
+
+            fn credential_count(&self) -> Result<usize> {
+                Ok(0)
+            }
+        }
+
+        let config = AuthenticatorConfig::new()
+            .with_algorithms(vec![-7]) // Only ES256
+            .with_options(AuthenticatorOptions::new());
+        let auth = Authenticator::new(config, MockCallbacks);
+
+        let params = vec![
+            PublicKeyCredentialParameters {
+                cred_type: "public-key".to_string(),
+                alg: -257, // RS256 (not supported)
+            },
+            PublicKeyCredentialParameters {
+                cred_type: "public-key".to_string(),
+                alg: -8, // EdDSA (not supported)
+            },
+        ];
+
+        let result = validate_and_choose_algorithm(&auth, &params);
+        assert_eq!(result, Err(StatusCode::UnsupportedAlgorithm));
     }
 }

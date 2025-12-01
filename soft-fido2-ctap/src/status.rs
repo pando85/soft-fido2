@@ -152,6 +152,9 @@ pub enum StatusCode {
     /// Unauthorized permission
     UnauthorizedPermission = 0x40,
 
+    /// PIN/UV auth token required
+    PuatRequired = 0x41,
+
     /// Other unspecified error
     Other = 0x7F,
 }
@@ -206,6 +209,7 @@ impl fmt::Display for StatusCode {
             Self::InvalidSubcommand => "Invalid subcommand",
             Self::UvInvalid => "UV invalid",
             Self::UnauthorizedPermission => "Unauthorized permission",
+            Self::PuatRequired => "PIN/UV auth token required",
             Self::Other => "Other error",
         };
         write!(f, "{}", msg)
@@ -272,6 +276,7 @@ impl StatusCode {
             0x3E => Self::InvalidSubcommand,
             0x3F => Self::UvInvalid,
             0x40 => Self::UnauthorizedPermission,
+            0x41 => Self::PuatRequired,
             _ => Self::Other,
         }
     }
