@@ -126,6 +126,7 @@ impl From<soft_fido2_ctap::StatusCode> for Error {
             StatusCode::InvalidSubcommand => Error::CtapError(0x3E),
             StatusCode::UvInvalid => Error::CtapError(0x3F),
             StatusCode::UnauthorizedPermission => Error::CtapError(0x40),
+            StatusCode::PuatRequired => Error::CtapError(0x41),
             StatusCode::Other => Error::Other,
         }
     }
