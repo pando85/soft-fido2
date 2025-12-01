@@ -205,7 +205,8 @@ pub fn handle<C: AuthenticatorCallbacks>(
         match auth.callbacks().request_up(&info, None, &rp_id)? {
             UpResult::Accepted => {
                 // User interaction provided
-                if !auth.is_pin_set() {
+                // Check if authenticator is protected by UV (PIN or biometrics)
+                if !auth.is_protected_by_uv() {
                     return Err(StatusCode::PinNotSet);
                 } else {
                     return Err(StatusCode::PinAuthInvalid);
@@ -252,9 +253,11 @@ pub fn handle<C: AuthenticatorCallbacks>(
         if !auth.config().options.uv.unwrap_or(false) {
             return Err(StatusCode::InvalidOption);
         }
-        // Check if user verification method is enabled
-        // For simplicity, we assume if UV is supported, it's enabled
-        // A full implementation would track UV enablement state
+        // Check if built-in user verification method is enabled
+        // Built-in UV refers to biometric methods (fingerprint, face recognition, etc.)
+        if !auth.has_built_in_uv_enabled() {
+            return Err(StatusCode::InvalidOption);
+        }
     }
 
     // Step 4.4: If "rk" option is present, return error
@@ -265,29 +268,43 @@ pub fn handle<C: AuthenticatorCallbacks>(
 
     // Step 5: alwaysUv option processing
     if auth.config().options.always_uv && options.up {
-        // Authenticator is not protected if neither PIN nor UV is available
-        let is_protected = auth.is_pin_set() || auth.config().options.uv.unwrap_or(false);
-
-        if !is_protected {
+        // Step 5.1: Check if authenticator is protected by user verification
+        // (either PIN is set OR built-in UV is enabled)
+        if !auth.is_protected_by_uv() {
+            // Authenticator is NOT protected by some form of user verification
             // Check if clientPin is supported for ga permission
-            // For backward compatibility, we assume it is unless configured otherwise
-            return Err(StatusCode::PinRequired);
+            if auth.config().options.client_pin.unwrap_or(false)
+                && !auth.config().options.pin_uv_auth_token
+            // noMcGaPermissionsWithClientPin absent or false
+            {
+                return Err(StatusCode::PuatRequired);
+            } else {
+                // clientPin is not supported
+                return Err(StatusCode::OperationDenied);
+            }
         }
 
-        // If pinUvAuthParam is present, continue to step 7
+        // Authenticator IS protected by UV
+        // Step 5.2: If pinUvAuthParam is present, continue to step 7
         if pin_uv_auth_param.is_some() {
-            // Continue
-        } else if options.uv {
-            // If "uv" option is true, continue to step 7 (built-in UV will be performed)
-            // Continue
-        } else if auth.config().options.uv.unwrap_or(false) {
-            // If "uv" is false but authenticator supports enabled built-in UV
+            // Continue to step 7
+        }
+        // Step 5.3: If "uv" option is true, continue to step 7
+        else if options.uv {
+            // Continue to step 7 (built-in UV will be performed)
+        }
+        // Step 5.4: If "uv" is false but authenticator supports enabled built-in UV
+        else if auth.has_built_in_uv_enabled() {
             // Treat "uv" as true
             options.uv = true;
             // Continue to step 7
-        } else if auth.is_pin_set() {
-            // clientPin is supported, return PIN/UV auth token required
-            return Err(StatusCode::PinRequired);
+        }
+        // Step 5.5: Otherwise, require PUAT or deny
+        else if auth.config().options.client_pin.unwrap_or(false)
+            && !auth.config().options.pin_uv_auth_token
+        {
+            // clientPin is supported, return PUAT required
+            return Err(StatusCode::PuatRequired);
         } else {
             // clientPin is not supported
             return Err(StatusCode::OperationDenied);
@@ -318,9 +335,7 @@ pub fn handle<C: AuthenticatorCallbacks>(
     }
 
     // Step 7: User verification handling
-    let is_protected = auth.is_pin_set() || auth.config().options.uv.unwrap_or(false);
-
-    if is_protected {
+    if auth.is_protected_by_uv() {
         if let Some(ref pin_auth) = pin_uv_auth_param {
             // Step 7.1: pinUvAuthParam is present (and "uv" option is treated as false per step 4.2)
             let protocol = pin_uv_auth_protocol.unwrap(); // Already validated in step 2
@@ -349,8 +364,8 @@ pub fn handle<C: AuthenticatorCallbacks>(
         } else if options.uv {
             // Step 7.2: "uv" option is present and true (pinUvAuthParam is not present)
             // This provides backward compatibility for CTAP2.0
+            // Perform built-in user verification with internal retry
 
-            // Perform built-in user verification
             let info = format!("Verify for {}", rp_id);
             match auth.callbacks().request_uv(&info, None, &rp_id)? {
                 UvResult::Accepted => {
@@ -360,14 +375,27 @@ pub fn handle<C: AuthenticatorCallbacks>(
                     response_state.uv = true;
                     response_state.up = true;
                 }
+                UvResult::Timeout => {
+                    // User action timeout
+                    return Err(StatusCode::UserActionTimeout);
+                }
                 UvResult::Denied => {
-                    // Check if we should fall back to PIN
-                    if auth.is_pin_set() {
-                        return Err(StatusCode::PinRequired);
+                    // UV failed
+                    // Check UV retry counter
+                    if auth.uv_retries() == 0 {
+                        return Err(StatusCode::PinBlocked);
                     }
+
+                    // Check if clientPin is supported and noMcGaPermissionsWithClientPin is absent/false
+                    if auth.config().options.client_pin.unwrap_or(false)
+                        && !auth.config().options.pin_uv_auth_token
+                    {
+                        return Err(StatusCode::PuatRequired);
+                    }
+
+                    // Otherwise return operation denied
                     return Err(StatusCode::OperationDenied);
                 }
-                UvResult::Timeout => return Err(StatusCode::UserActionTimeout),
             }
             // Continue to Step 8
         }
