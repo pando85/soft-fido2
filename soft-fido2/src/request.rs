@@ -1,7 +1,8 @@
 //! Request and response types for CTAP client operations
 
 use crate::error::{Error, Result};
-use crate::types::{RelyingParty, User};
+
+use soft_fido2_ctap::types::{RelyingParty, User};
 
 /// A validated client data hash (must be exactly 32 bytes)
 ///

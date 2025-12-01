@@ -28,9 +28,9 @@ mod common;
 
 use soft_fido2::{
     Authenticator, AuthenticatorCallbacks, AuthenticatorConfig, AuthenticatorOptions, Client,
-    GetAssertionRequest, MakeCredentialRequest, RelyingParty, TransportList, User,
+    GetAssertionRequest, MakeCredentialRequest, TransportList,
 };
-
+use soft_fido2_ctap::types::{RelyingParty, User};
 use soft_fido2_transport::{CommandHandler, CtapHidHandler, Packet, UhidDevice};
 
 use std::sync::{Arc, Mutex};
