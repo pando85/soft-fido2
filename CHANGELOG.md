@@ -5,6 +5,23 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/), and this project
 adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [v0.5.0](https://github.com/pando85/soft-fido2/tree/v0.5.0) - 2025-12-02
+
+### Added
+
+- Add client manage credential commands and fix manage cred perm ([27cf48a](https://github.com/pando85/soft-fido2/commit/27cf48a07ea87d334bf5f25552875d68569fab7b))
+
+### Fixed
+
+- Strictly implement FIDO 2.2 make_credentials ([f5d7fa3](https://github.com/pando85/soft-fido2/commit/f5d7fa3ca067187c25b96b2766dbb71d5bf2128e))
+- Strictly implement FIDO 2.2 get_assertion ([a73a5d9](https://github.com/pando85/soft-fido2/commit/a73a5d9d33bdfde9ee16438cca787cfc5f86bd37))
+
+### Documentation
+
+- Simplify README ([6197659](https://github.com/pando85/soft-fido2/commit/61976595b9433806312f9d111c1e60e5194833da))
+- Add version 2.2 support to readme ([52d4106](https://github.com/pando85/soft-fido2/commit/52d4106d65a12db31fd4a2474e3a2b0b0afdb048))
+- Add FIDO version 2.2 commented ([8cabe71](https://github.com/pando85/soft-fido2/commit/8cabe712ac2cbbee2dc58d8680410c9d776344ab))
+
 ## [v0.4.4](https://github.com/pando85/soft-fido2/tree/v0.4.4) - 2025-12-01
 
 ### Revert
