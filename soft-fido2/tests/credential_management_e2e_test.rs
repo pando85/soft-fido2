@@ -537,4 +537,187 @@ mod e2e_tests {
 
         assert!(!assertion.is_empty());
     }
+
+    #[test]
+    #[ignore]
+    fn test_update_user_information() {
+        let (mut transport, _runner) = setup_transport().unwrap();
+
+        // Create a test credential
+        let _cred_id = create_test_credential(&mut transport, "update-test.com", "alice").unwrap();
+
+        // Get PIN/UV auth for credential management
+        let pin_uv_auth = get_uv_auth_for_credential_management(&mut transport).unwrap();
+
+        // Enumerate credentials to get the credential ID
+        let rp_id_hash = compute_rp_id_hash("update-test.com");
+        let request = EnumerateCredentialsRequest::new(Some(pin_uv_auth.clone()), rp_id_hash);
+        let credentials = Client::enumerate_credentials(&mut transport, request).unwrap();
+
+        assert_eq!(credentials.len(), 1);
+        let credential = &credentials[0];
+
+        // Verify original user information
+        assert_eq!(
+            credential.user.name.as_ref().unwrap(),
+            "alice@update-test.com"
+        );
+        assert_eq!(credential.user.display_name.as_ref().unwrap(), "alice");
+
+        // Update user information with new name and display name
+        let updated_user = User {
+            id: credential.user.id.clone(), // Must match existing user ID
+            name: Some("alice.smith@update-test.com".to_string()),
+            display_name: Some("Alice Smith".to_string()),
+        };
+
+        let update_request = soft_fido2::request::UpdateUserRequest::new(
+            Some(pin_uv_auth.clone()),
+            credential.credential_id.id.clone(),
+            updated_user,
+        );
+
+        Client::update_user_information(&mut transport, update_request).unwrap();
+
+        // Re-enumerate credentials to verify the update
+        let rp_id_hash = compute_rp_id_hash("update-test.com");
+        let request = EnumerateCredentialsRequest::new(Some(pin_uv_auth.clone()), rp_id_hash);
+        let credentials = Client::enumerate_credentials(&mut transport, request).unwrap();
+
+        assert_eq!(credentials.len(), 1);
+        let updated_credential = &credentials[0];
+
+        // Verify updated user information
+        assert_eq!(
+            updated_credential.user.name.as_ref().unwrap(),
+            "alice.smith@update-test.com"
+        );
+        assert_eq!(
+            updated_credential.user.display_name.as_ref().unwrap(),
+            "Alice Smith"
+        );
+        assert_eq!(
+            updated_credential.user.id, credential.user.id,
+            "User ID should remain unchanged"
+        );
+
+        // Clean up - delete the credential
+        let delete_request = DeleteCredentialRequest::new(
+            Some(pin_uv_auth),
+            updated_credential.credential_id.id.clone(),
+        );
+        Client::delete_credential(&mut transport, delete_request).unwrap();
+    }
+
+    #[test]
+    #[ignore]
+    fn test_update_user_information_with_empty_fields() {
+        let (mut transport, _runner) = setup_transport().unwrap();
+
+        // Create a test credential with full user info
+        let _cred_id =
+            create_test_credential(&mut transport, "empty-fields-test.com", "bob").unwrap();
+
+        // Get PIN/UV auth for credential management
+        let pin_uv_auth = get_uv_auth_for_credential_management(&mut transport).unwrap();
+
+        // Enumerate credentials to get the credential ID
+        let rp_id_hash = compute_rp_id_hash("empty-fields-test.com");
+        let request = EnumerateCredentialsRequest::new(Some(pin_uv_auth.clone()), rp_id_hash);
+        let credentials = Client::enumerate_credentials(&mut transport, request).unwrap();
+
+        assert_eq!(credentials.len(), 1);
+        let credential = &credentials[0];
+
+        // Update user information with empty name and display name
+        // Per spec: empty fields should be removed from the credential
+        let updated_user = User {
+            id: credential.user.id.clone(),
+            name: None,         // Remove name field
+            display_name: None, // Remove display name field
+        };
+
+        let update_request = soft_fido2::request::UpdateUserRequest::new(
+            Some(pin_uv_auth.clone()),
+            credential.credential_id.id.clone(),
+            updated_user,
+        );
+
+        Client::update_user_information(&mut transport, update_request).unwrap();
+
+        // Re-enumerate credentials to verify the update
+        let rp_id_hash = compute_rp_id_hash("empty-fields-test.com");
+        let request = EnumerateCredentialsRequest::new(Some(pin_uv_auth.clone()), rp_id_hash);
+        let credentials = Client::enumerate_credentials(&mut transport, request).unwrap();
+
+        assert_eq!(credentials.len(), 1);
+        let updated_credential = &credentials[0];
+
+        // Verify fields were removed
+        assert!(
+            updated_credential.user.name.is_none(),
+            "Name should be removed when updated with None"
+        );
+        assert!(
+            updated_credential.user.display_name.is_none(),
+            "Display name should be removed when updated with None"
+        );
+        assert_eq!(
+            updated_credential.user.id, credential.user.id,
+            "User ID should remain unchanged"
+        );
+
+        // Clean up
+        let delete_request = DeleteCredentialRequest::new(
+            Some(pin_uv_auth),
+            updated_credential.credential_id.id.clone(),
+        );
+        Client::delete_credential(&mut transport, delete_request).unwrap();
+    }
+
+    #[test]
+    #[ignore]
+    fn test_update_user_information_wrong_user_id() {
+        let (mut transport, _runner) = setup_transport().unwrap();
+
+        // Create a test credential
+        let _cred_id =
+            create_test_credential(&mut transport, "wrong-id-test.com", "carol").unwrap();
+
+        // Get PIN/UV auth for credential management
+        let pin_uv_auth = get_uv_auth_for_credential_management(&mut transport).unwrap();
+
+        // Enumerate credentials to get the credential ID
+        let rp_id_hash = compute_rp_id_hash("wrong-id-test.com");
+        let request = EnumerateCredentialsRequest::new(Some(pin_uv_auth.clone()), rp_id_hash);
+        let credentials = Client::enumerate_credentials(&mut transport, request).unwrap();
+
+        assert_eq!(credentials.len(), 1);
+        let credential = &credentials[0];
+
+        // Try to update with a different user ID (should fail per spec)
+        let wrong_user = User {
+            id: vec![9, 9, 9, 9], // Different from original user ID
+            name: Some("invalid".to_string()),
+            display_name: Some("Invalid".to_string()),
+        };
+
+        let update_request = soft_fido2::request::UpdateUserRequest::new(
+            Some(pin_uv_auth.clone()),
+            credential.credential_id.id.clone(),
+            wrong_user,
+        );
+
+        // Should return InvalidParameter error (CTAP error 0x02)
+        let result = Client::update_user_information(&mut transport, update_request);
+        assert!(
+            matches!(result, Err(Error::CtapError(0x02))),
+            "Should fail with InvalidParameter (0x02) when user ID doesn't match"
+        );
+
+        // Clean up
+        let delete_request =
+            DeleteCredentialRequest::new(Some(pin_uv_auth), credential.credential_id.id.clone());
+        Client::delete_credential(&mut transport, delete_request).unwrap();
+    }
 }
