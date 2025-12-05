@@ -5,6 +5,12 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/), and this project
 adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [v0.6.1](https://github.com/pando85/soft-fido2/tree/v0.6.1) - 2025-12-05
+
+### Fixed
+
+- Check UV capability correctly in makeCredential ([d89c3f0](https://github.com/pando85/soft-fido2/commit/d89c3f0aba648fc74d494cf44301b9791d36f365))
+
 ## [v0.6.0](https://github.com/pando85/soft-fido2/tree/v0.6.0) - 2025-12-05
 
 ### Refactor
