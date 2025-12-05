@@ -74,6 +74,11 @@ echo 'KERNEL=="uhid", GROUP="fido", MODE="0660"' > /etc/udev/rules.d/90-uinput.r
 udevadm control --reload-rules && udevadm trigger
 ```
 
+## Projects Using soft-fido2
+
+- **[passless](https://github.com/pando85/passless)** - Virtual FIDO2 device and client FIDO 2
+  utility, it runs as a virtual UHID device on Linux.
+
 ## Contributing
 
 Contributions are welcome! Please feel free to submit a Pull Request. For major changes, please open
