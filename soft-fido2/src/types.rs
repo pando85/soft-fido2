@@ -1,32 +1,64 @@
-//! Common types for FIDO2/WebAuthn operations
+//! High-level types for FIDO2/WebAuthn credentials
+//!
+//! This module provides ergonomic types for working with FIDO2 credentials at the
+//! application level. The main difference from the CTAP protocol layer is the use
+//! of grouped structures for better API usability:
+//!
+//! ```rust
+//! use soft_fido2::types::Credential;
+//!
+//! # let credential = Credential {
+//! #     id: vec![1, 2, 3],
+//! #     rp: soft_fido2::RelyingParty::new("example.com".into()),
+//! #     user: soft_fido2::User::new(vec![1, 2, 3]),
+//! #     sign_count: 0,
+//! #     alg: -7,
+//! #     private_key: soft_fido2_ctap::SecBytes::new(vec![0u8; 32]),
+//! #     created: 0,
+//! #     discoverable: false,
+//! #     extensions: soft_fido2::Extensions::default(),
+//! # };
+//! // Grouped fields for ergonomics
+//! println!("RP: {}", credential.rp.id);
+//! println!("User: {}", credential.user.id[0]);
+//! ```
+//!
+//! ## Type Organization
+//!
+//! - **[`RelyingParty`]** and **[`User`]**: Basic WebAuthn entities (from CTAP layer)
+//! - **[`Credential`]**: Owned credential with grouped fields for API ergonomics
+//! - **[`CredentialRef`]**: Zero-copy borrowed credential for callback interfaces
+//! - **[`Extensions`]**: WebAuthn extension data (credProtect, hmac-secret)
+//!
+//! ## Converting Between Layers
+//!
+//! Use [`From`] trait to convert between high-level and CTAP protocol representations:
+//!
+//! ```rust
+//! # use soft_fido2::types::Credential;
+//! # let high_level_cred = Credential {
+//! #     id: vec![1, 2, 3],
+//! #     rp: soft_fido2::RelyingParty::new("example.com".into()),
+//! #     user: soft_fido2::User::new(vec![1, 2, 3]),
+//! #     sign_count: 0,
+//! #     alg: -7,
+//! #     private_key: soft_fido2_ctap::SecBytes::new(vec![0u8; 32]),
+//! #     created: 0,
+//! #     discoverable: false,
+//! #     extensions: soft_fido2::Extensions::default(),
+//! # };
+//! // Convert to CTAP protocol format (flat structure)
+//! let ctap_cred: soft_fido2_ctap::types::Credential = high_level_cred.into();
+//! ```
 
 use crate::error::{Error, Result};
 
 use soft_fido2_ctap::SecBytes;
 
-use alloc::string::String;
 use alloc::vec::Vec;
 use serde::{Deserialize, Serialize};
 
-/// Relying party information
-#[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
-pub struct RelyingParty {
-    /// RP ID (max 128 bytes)
-    pub id: String,
-    /// RP name (optional)
-    pub name: Option<String>,
-}
-
-/// User information
-#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
-pub struct User {
-    /// User handle (max 64 bytes)
-    pub id: Vec<u8>,
-    /// User name (email or username)
-    pub name: Option<String>,
-    /// User display name (friendly name)
-    pub display_name: Option<String>,
-}
+pub use soft_fido2_ctap::types::{RelyingParty, User};
 
 /// Credential extension data
 #[derive(Clone, Debug, Default, Serialize, Deserialize, PartialEq)]
