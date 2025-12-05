@@ -313,6 +313,24 @@ fn get_uv_token_for_make_credential(
     Ok(token)
 }
 
+/// Helper to obtain a UV-based PIN/UV auth token with getAssertion permission
+fn get_uv_token_for_get_assertion(
+    transport: &mut Transport,
+    rp_id: &str,
+) -> Result<Vec<u8>, Error> {
+    let protocol = soft_fido2::PinProtocol::V2;
+    let mut encapsulation = soft_fido2::pin::PinUvAuthEncapsulation::new(transport, protocol)?;
+
+    let permissions = soft_fido2::request::Permission::GetAssertion as u8;
+    let token = encapsulation.get_pin_uv_auth_token_using_uv_with_permissions(
+        transport,
+        permissions,
+        Some(rp_id),
+    )?;
+
+    Ok(token)
+}
+
 /// Helper to obtain a UV-based PIN/UV auth for CredentialManagement
 fn get_uv_auth_for_credential_management(transport: &mut Transport) -> Result<PinUvAuth, Error> {
     // Use the client library's helper function which returns PinUvAuth
@@ -531,8 +549,22 @@ mod e2e_tests {
 
         create_test_credential(&mut transport, "assertion-test.com", "testuser").unwrap();
 
+        // Get UV-based PIN token for getAssertion
+        // Note: Credential was created with UV, so it requires UV for assertion
+        let pin_token =
+            get_uv_token_for_get_assertion(&mut transport, "assertion-test.com").unwrap();
+
         let client_data_hash = ClientDataHash::new([1u8; 32]);
-        let request = GetAssertionRequest::new(client_data_hash, "assertion-test.com");
+
+        // Compute pinUvAuthParam = HMAC-SHA256(pinToken, clientDataHash)
+        let mut mac = Hmac::<Sha256>::new_from_slice(&pin_token).unwrap();
+        mac.update(client_data_hash.as_slice());
+        let pin_uv_auth_param = mac.finalize().into_bytes().to_vec();
+
+        let pin_uv_auth = PinUvAuth::new(pin_uv_auth_param, PinUvAuthProtocol::V2);
+
+        let request = GetAssertionRequest::new(client_data_hash, "assertion-test.com")
+            .with_pin_uv_auth(pin_uv_auth);
         let assertion = Client::get_assertion(&mut transport, request).unwrap();
 
         assert!(!assertion.is_empty());

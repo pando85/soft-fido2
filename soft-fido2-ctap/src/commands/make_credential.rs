@@ -402,7 +402,7 @@ fn perform_user_verification<C: AuthenticatorCallbacks>(
     rp: &RelyingParty,
     user: &User,
 ) -> Result<()> {
-    let authenticator_protected = auth.is_pin_set();
+    let authenticator_protected = auth.is_protected_by_uv();
 
     if authenticator_protected {
         if let Some(pin_auth) = pin_uv_auth_param {
