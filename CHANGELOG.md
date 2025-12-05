@@ -5,6 +5,16 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/), and this project
 adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [v0.6.0](https://github.com/pando85/soft-fido2/tree/v0.6.0) - 2025-12-05
+
+### Refactor
+
+- Unify types between soft-fido2 and CTAP module ([41db80a](https://github.com/pando85/soft-fido2/commit/41db80ab0b7ae19996db7a4d3e6018e946a38c91))
+
+### Testing
+
+- Add update user information e2e tests ([e93bb52](https://github.com/pando85/soft-fido2/commit/e93bb529ad6db93fd8939be266822a0e5a95fc43))
+
 ## [v0.5.0](https://github.com/pando85/soft-fido2/tree/v0.5.0) - 2025-12-02
 
 ### Added
