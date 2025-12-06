@@ -121,8 +121,8 @@ impl AuthenticatorConfig {
             max_cred_blob_length: Some(32),
             min_pin_length: Some(4),       // CTAP default minimum PIN length
             credential_wrapping_key: None, // Will be generated if needed
-            force_resident_keys: true,     // Default to true for testing use cases
-            constant_sign_count: false,    // Default: counter increments normally
+            force_resident_keys: true,
+            constant_sign_count: false,
         }
     }
 
@@ -350,7 +350,7 @@ impl<C: AuthenticatorCallbacks> Authenticator<C> {
             pin_retries: MAX_PIN_RETRIES,
             pin_tokens: PinTokenManager::new(),
             force_change_pin: false,
-            min_pin_length: 4, // Default minimum PIN length
+            min_pin_length: 4,
             uv_retries: MAX_UV_RETRIES,
             custom_commands: BTreeMap::new(),
             pin_protocol_keypairs: BTreeMap::new(),

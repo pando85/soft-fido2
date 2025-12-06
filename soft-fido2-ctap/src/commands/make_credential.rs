@@ -705,7 +705,7 @@ fn parse_options(parser: &MapParser) -> Result<MakeCredentialOptions> {
 
     let mut options = MakeCredentialOptions {
         rk: false,
-        up: true, // Default to true per spec
+        up: true,
         uv: false,
     };
 

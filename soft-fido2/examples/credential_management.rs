@@ -160,11 +160,8 @@ fn main() -> Result<()> {
                         }
                         println!();
 
-                        // If we have credentials, demonstrate deletion (commented out for safety)
                         if !credentials.is_empty() {
-                            println!(
-                                "[9] Credential deletion example (commented out for safety)..."
-                            );
+                            println!("[9] Credential deletion example...");
                             println!("    // To delete a credential:");
                             println!(
                                 "    // let delete_request = soft_fido2::request::DeleteCredentialRequest::new("

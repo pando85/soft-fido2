@@ -12,11 +12,11 @@ WebAuthn authentication flows.
 
 ## Features
 
-- 🔐 **Full CTAP 2.0/2.1/2.2 Protocol** - Complete implementation of FIDO2 Authenticator Protocol
-- 🚫 **no_std Support** - Core protocol and cryptography work in embedded environments
-- 🔌 **Multiple Transports** - USB HID and Linux UHID virtual device support
-- 🧪 **Testing-First** - Designed for WebAuthn integration testing and development
-- 🔒 **Well-Audited Crypto** - Uses industry-standard cryptographic libraries (p256, sha2, aes)
+- **Full CTAP 2.0/2.1/2.2 Protocol** - Complete implementation of FIDO2 Authenticator Protocol
+- **no_std Support** - Core protocol and cryptography work in embedded environments
+- **Multiple Transports** - USB HID and Linux UHID virtual device support
+- **Testing-First** - Designed for WebAuthn integration testing and development
+- **Well-Audited Crypto** - Uses industry-standard cryptographic libraries (p256, sha2, aes)
 
 ## Architecture
 
@@ -34,10 +34,10 @@ soft-fido2/
 
 | Crate                                          | Description                                   | no_std          |
 | ---------------------------------------------- | --------------------------------------------- | --------------- |
-| [`soft-fido2`](soft-fido2)                     | High-level API combining all components       | ⚠️ Core only    |
-| [`soft-fido2-crypto`](soft-fido2-crypto)       | P-256 ECDSA/ECDH, PIN protocols V1/V2         | ✅ Yes          |
-| [`soft-fido2-ctap`](soft-fido2-ctap)           | CTAP command handlers and authenticator logic | ✅ Yes          |
-| [`soft-fido2-transport`](soft-fido2-transport) | USB HID and UHID transport implementations    | ❌ Requires std |
+| [`soft-fido2`](soft-fido2)                     | High-level API combining all components       | Core only    |
+| [`soft-fido2-crypto`](soft-fido2-crypto)       | P-256 ECDSA/ECDH, PIN protocols V1/V2         | Yes          |
+| [`soft-fido2-ctap`](soft-fido2-ctap)           | CTAP command handlers and authenticator logic | Yes          |
+| [`soft-fido2-transport`](soft-fido2-transport) | USB HID and UHID transport implementations    | Requires std |
 
 ## Documentation
 

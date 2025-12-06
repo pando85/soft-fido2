@@ -651,8 +651,8 @@ fn parse_options(parser: &MapParser) -> Result<GetAssertionOptions> {
     let opts_map: Option<crate::cbor::Value> = parser.get_opt(req_keys::OPTIONS)?;
 
     let mut options = GetAssertionOptions {
-        up: true,  // Default to true per spec step 4.5
-        uv: false, // Default to false per spec step 4.1
+        up: true,
+        uv: false,
     };
 
     if let Some(crate::cbor::Value::Map(opts)) = opts_map {

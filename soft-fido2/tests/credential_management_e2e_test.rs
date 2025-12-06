@@ -455,11 +455,7 @@ mod e2e_tests {
         create_test_credential(&mut transport, "example.com", "alice").unwrap();
         create_test_credential(&mut transport, "other.com", "bob").unwrap();
 
-        // Get PIN/UV auth for credential management
-        // IMPORTANT: Must be obtained AFTER create_test_credential
         let pin_uv_auth = get_uv_auth_for_credential_management(&mut transport).unwrap();
-
-        // Begin RP enumeration with auth
         let request = CredentialManagementRequest::new(Some(pin_uv_auth.clone()));
         let begin_response = Client::enumerate_rps_begin(&mut transport, request).unwrap();
 
@@ -482,11 +478,7 @@ mod e2e_tests {
         create_test_credential(&mut transport, "example.com", "bob").unwrap();
         create_test_credential(&mut transport, "other.com", "charlie").unwrap();
 
-        // Get PIN/UV auth for credential management
-        // IMPORTANT: Must be obtained AFTER create_test_credential
         let pin_uv_auth = get_uv_auth_for_credential_management(&mut transport).unwrap();
-
-        // Enumerate RPs with auth
         let request = CredentialManagementRequest::new(Some(pin_uv_auth.clone()));
         let rps = Client::enumerate_rps(&mut transport, request).unwrap();
 
@@ -521,9 +513,6 @@ mod e2e_tests {
             .map_err(|e| eprintln!("Failed to create credential: {:?}", e))
             .unwrap();
 
-        // Get PIN/UV auth for credential management
-        // IMPORTANT: Must be obtained AFTER create_test_credential, as that operation
-        // gets its own PIN token which replaces any existing token
         let pin_uv_auth = get_uv_auth_for_credential_management(&mut transport).unwrap();
 
         let rp_id_hash = compute_rp_id_hash("test.com");

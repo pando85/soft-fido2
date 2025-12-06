@@ -222,7 +222,7 @@ pub trait AuthenticatorCallbacks: Send + Sync {
     ///
     /// Index of the selected credential
     fn select_credential(&self, _rp_id: &str, _credentials: &[Credential]) -> Result<usize> {
-        Ok(0) // Default: select first credential
+        Ok(0)
     }
 
     /// Enumerate all relying parties with stored credentials
@@ -398,9 +398,9 @@ impl Default for AuthenticatorConfig {
             options: None,
             max_credentials: 100,
             extensions: vec![],
-            force_resident_keys: true, // Default to true for testing use cases
+            force_resident_keys: true,
             firmware_version: None,
-            constant_sign_count: false, // Default: counter increments normally
+            constant_sign_count: false,
             max_msg_size: MAX_CTAP_MESSAGE_SIZE,
         }
     }
@@ -433,9 +433,9 @@ impl Default for AuthenticatorConfigBuilder {
             options: None,
             max_credentials: 0,
             extensions: vec![],
-            force_resident_keys: true, // Default to true for testing use cases
+            force_resident_keys: true,
             firmware_version: None,
-            constant_sign_count: false, // Default: counter increments normally
+            constant_sign_count: false,
             max_msg_size: MAX_CTAP_MESSAGE_SIZE,
         }
     }
