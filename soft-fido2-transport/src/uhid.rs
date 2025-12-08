@@ -3,6 +3,9 @@
 //! Implements a virtual HID device using the Linux UHID (User-space HID) kernel module.
 //! This allows creating virtual FIDO2 authenticators for testing without physical hardware.
 //!
+//! UHID is used on the authenticator side to create virtual USB devices. For client-side
+//! communication with authenticators, use the USB module instead.
+//!
 //! # Prerequisites
 //!
 //! - Linux kernel with UHID module loaded (`modprobe uhid`)
@@ -166,15 +169,34 @@ impl UhidDevice {
     ///
     /// Creates a virtual HID device with FIDO2 usage page and 64-byte reports.
     pub fn create_fido_device() -> Result<Self> {
+        Self::create_fido_device_with_ids(None, None, None, None)
+    }
+
+    /// Create a FIDO2 virtual HID device with custom IDs
+    ///
+    /// Creates a virtual HID device with FIDO2 usage page and custom vendor/product IDs.
+    ///
+    /// # Arguments
+    ///
+    /// * `name` - Device name (defaults to "Virtual FIDO2 Authenticator")
+    /// * `vendor_id` - USB vendor ID (defaults to 0x15d9)
+    /// * `product_id` - USB product ID (defaults to 0x0a37)
+    /// * `version` - Device version (defaults to 0x0001)
+    pub fn create_fido_device_with_ids(
+        name: Option<&str>,
+        vendor_id: Option<u16>,
+        product_id: Option<u16>,
+        version: Option<u16>,
+    ) -> Result<Self> {
         let mut device = Self::open()?;
         device.create_device(
-            "Virtual FIDO2 Authenticator",
+            name.unwrap_or("Virtual FIDO2 Authenticator"),
             "virtual-fido",
             "virtual-fido-001",
             BUS_USB,
-            0x15d9, // NOT Yubico - browsers recognize Yubico and force U2F
-            0x0a37,
-            0x0001, // Version
+            vendor_id.unwrap_or(0x15d9) as u32, // NOT Yubico - browsers recognize Yubico and force U2F
+            product_id.unwrap_or(0x0a37) as u32,
+            version.unwrap_or(0x0001) as u32,
             FIDO_HID_REPORT_DESCRIPTOR,
         )?;
         Ok(device)

@@ -4,7 +4,7 @@
 //!
 //! # Usage
 //! ```bash
-//! cargo run --example client --features pure-rust
+//! cargo run --example client
 //! ```
 
 use soft_fido2::{Client, TransportList};
