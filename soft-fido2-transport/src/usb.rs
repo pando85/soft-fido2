@@ -2,8 +2,8 @@
 //!
 //! Implements CTAP HID over USB using the hidapi library.
 //!
-//! This module provides device enumeration and communication with FIDO2
-//! authenticators over USB HID.
+//! This module provides client-side device enumeration and communication with FIDO2
+//! authenticators over USB HID. For creating virtual authenticators, use the UHID module.
 
 use crate::ctaphid::Packet;
 use crate::error::{Error, Result};

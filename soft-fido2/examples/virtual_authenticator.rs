@@ -49,6 +49,7 @@
 //! - Multiple credentials per RP
 //! - Counter-based replay protection
 //! - Extension support (credProtect, hmac-secret)
+//! - Custom USB device IDs (vendor ID, product ID, device name)
 
 use soft_fido2::{
     Authenticator, AuthenticatorCallbacks, AuthenticatorConfig, AuthenticatorOptions, Credential,
@@ -106,8 +107,14 @@ struct UhidAuthenticator<C: AuthenticatorCallbacks> {
 }
 
 impl<C: AuthenticatorCallbacks> UhidAuthenticator<C> {
-    fn new(authenticator: Authenticator<C>) -> Result<Self> {
-        let device = UhidDevice::create_fido_device().map_err(|_| Error::Other)?;
+    fn new(authenticator: Authenticator<C>, config: &AuthenticatorConfig) -> Result<Self> {
+        let device = UhidDevice::create_fido_device_with_ids(
+            config.device_name.as_deref(),
+            config.vendor_id,
+            config.product_id,
+            config.device_version,
+        )
+        .map_err(|_| Error::Other)?;
 
         let auth_handler = AuthenticatorHandler::new(authenticator);
         let handler = soft_fido2_transport::CtapHidHandler::new(auth_handler);
@@ -346,7 +353,10 @@ fn main() -> Result<()> {
                 .with_pin_uv_auth_token(Some(true)) // Support PIN/UV authentication
                 .with_make_cred_uv_not_required(Some(true)), // Flexible UV (not always required)
         )
-        // Note: force_resident_keys defaults to true for WebAuthn test compatibility
+        .device_name("Custom FIDO2 Authenticator".to_string())
+        .vendor_id(0x1234)
+        .product_id(0x5678)
+        .device_version(0x0100)
         .build();
 
     println!("╔═══════════════════════════════════════════════════════════╗");
@@ -374,11 +384,11 @@ fn main() -> Result<()> {
     // - Credentials can be created without UV when not required
     // - This ensures consistent UV behavior across different userVerification preferences
     // We auto-approve all UV requests in callbacks (no actual PIN verification)
-    let auth = Authenticator::with_config(callbacks, config)?;
+    let auth = Authenticator::with_config(callbacks, config.clone())?;
 
     // Create UHID virtual device
     println!("Creating UHID virtual device...");
-    let mut uhid_auth = UhidAuthenticator::new(auth).map_err(|e| {
+    let mut uhid_auth = UhidAuthenticator::new(auth, &config).map_err(|e| {
         eprintln!("\n✗ Failed to create UHID device: {:?}", e);
         eprintln!("\nTroubleshooting:");
         eprintln!("  1. Check UHID module: sudo modprobe uhid");

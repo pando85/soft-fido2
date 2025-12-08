@@ -388,6 +388,14 @@ pub struct AuthenticatorConfig {
     pub firmware_version: Option<u32>,
     pub constant_sign_count: bool,
     pub max_msg_size: usize,
+    /// USB/HID device name
+    pub device_name: Option<String>,
+    /// USB vendor ID
+    pub vendor_id: Option<u16>,
+    /// USB product ID
+    pub product_id: Option<u16>,
+    /// Device version number
+    pub device_version: Option<u16>,
 }
 
 impl Default for AuthenticatorConfig {
@@ -402,6 +410,10 @@ impl Default for AuthenticatorConfig {
             firmware_version: None,
             constant_sign_count: false,
             max_msg_size: MAX_CTAP_MESSAGE_SIZE,
+            device_name: None,
+            vendor_id: None,
+            product_id: None,
+            device_version: None,
         }
     }
 }
@@ -423,6 +435,10 @@ pub struct AuthenticatorConfigBuilder {
     firmware_version: Option<u32>,
     constant_sign_count: bool,
     max_msg_size: usize,
+    device_name: Option<String>,
+    vendor_id: Option<u16>,
+    product_id: Option<u16>,
+    device_version: Option<u16>,
 }
 
 impl Default for AuthenticatorConfigBuilder {
@@ -437,6 +453,10 @@ impl Default for AuthenticatorConfigBuilder {
             firmware_version: None,
             constant_sign_count: false,
             max_msg_size: MAX_CTAP_MESSAGE_SIZE,
+            device_name: None,
+            vendor_id: None,
+            product_id: None,
+            device_version: None,
         }
     }
 }
@@ -491,6 +511,26 @@ impl AuthenticatorConfigBuilder {
         self
     }
 
+    pub fn device_name(mut self, name: String) -> Self {
+        self.device_name = Some(name);
+        self
+    }
+
+    pub fn vendor_id(mut self, id: u16) -> Self {
+        self.vendor_id = Some(id);
+        self
+    }
+
+    pub fn product_id(mut self, id: u16) -> Self {
+        self.product_id = Some(id);
+        self
+    }
+
+    pub fn device_version(mut self, version: u16) -> Self {
+        self.device_version = Some(version);
+        self
+    }
+
     pub fn build(self) -> AuthenticatorConfig {
         AuthenticatorConfig {
             aaguid: self.aaguid,
@@ -510,6 +550,10 @@ impl AuthenticatorConfigBuilder {
             firmware_version: self.firmware_version,
             constant_sign_count: self.constant_sign_count,
             max_msg_size: self.max_msg_size,
+            device_name: self.device_name,
+            vendor_id: self.vendor_id,
+            product_id: self.product_id,
+            device_version: self.device_version,
         }
     }
 }
