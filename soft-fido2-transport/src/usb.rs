@@ -5,27 +5,20 @@
 //! This module provides device enumeration and communication with FIDO2
 //! authenticators over USB HID.
 
-#[cfg(feature = "usb")]
 use crate::ctaphid::Packet;
-#[cfg(feature = "usb")]
 use crate::error::{Error, Result};
 
-#[cfg(feature = "usb")]
 use std::ffi::CString;
 
-#[cfg(feature = "usb")]
 use hidapi::{HidApi, HidDevice};
 
 /// FIDO2 HID usage page
-#[cfg(feature = "usb")]
 const FIDO_USAGE_PAGE: u16 = 0xF1D0;
 
 /// FIDO2 HID usage
-#[cfg(feature = "usb")]
 const FIDO_USAGE: u16 = 0x01;
 
 /// USB HID device information
-#[cfg(feature = "usb")]
 #[derive(Debug, Clone)]
 pub struct UsbDeviceInfo {
     /// Vendor ID
@@ -50,7 +43,6 @@ pub struct UsbDeviceInfo {
 /// USB HID transport for CTAP
 ///
 /// Provides communication with FIDO2 authenticators over USB HID.
-#[cfg(feature = "usb")]
 pub struct UsbTransport {
     /// HID device handle
     device: HidDevice,
@@ -59,7 +51,6 @@ pub struct UsbTransport {
     info: UsbDeviceInfo,
 }
 
-#[cfg(feature = "usb")]
 impl UsbTransport {
     /// Open a USB HID device by path
     pub fn open(api: &HidApi, path: &str) -> Result<Self> {
@@ -178,7 +169,6 @@ impl UsbTransport {
 /// Enumerate FIDO2 USB HID devices
 ///
 /// Returns a list of all connected FIDO2 authenticators.
-#[cfg(feature = "usb")]
 pub fn enumerate_devices(api: &HidApi) -> Result<Vec<UsbDeviceInfo>> {
     let mut devices = Vec::new();
 
@@ -202,12 +192,11 @@ pub fn enumerate_devices(api: &HidApi) -> Result<Vec<UsbDeviceInfo>> {
 /// Initialize the HID API
 ///
 /// Must be called before using any USB transport functions.
-#[cfg(feature = "usb")]
 pub fn init_usb() -> Result<HidApi> {
     HidApi::new().map_err(|e| Error::IoError(format!("Failed to initialize HID API: {}", e)))
 }
 
-#[cfg(all(test, feature = "usb"))]
+#[cfg(test)]
 mod tests {
     use super::*;
 
