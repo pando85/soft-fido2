@@ -5,6 +5,22 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/), and this project
 adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [v0.7.0](https://github.com/pando85/soft-fido2/tree/v0.7.0) - 2025-12-08
+
+### Added
+
+- Make HID device configurable ([812e1a0](https://github.com/pando85/soft-fido2/commit/812e1a056553a9c4e06554db2e9d962b9a71cd3e))
+
+### Documentation
+
+- Add client capability info to README ([5f491a1](https://github.com/pando85/soft-fido2/commit/5f491a12459f5e745672c81f209b97d997610203))
+- Add projects section ([22fcbce](https://github.com/pando85/soft-fido2/commit/22fcbce46e28ab02ac1afeaec39c16d28608d311))
+
+### Refactor
+
+- Remove AI slop ([3523468](https://github.com/pando85/soft-fido2/commit/3523468c046a97ad111a7ef9bc7e3d9f9cf58e5f))
+- Clean unnecessary usb feature gates ([d00f774](https://github.com/pando85/soft-fido2/commit/d00f774db9176c3e9f2aa99ea0338153eac2cbad))
+
 ## [v0.6.1](https://github.com/pando85/soft-fido2/tree/v0.6.1) - 2025-12-05
 
 ### Fixed
