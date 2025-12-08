@@ -42,17 +42,13 @@
 //! # }
 //! ```
 
-#[cfg(feature = "usb")]
 use crate::handler::CtapHidHandler;
-#[cfg(feature = "usb")]
 use crate::usb::UsbTransport;
-#[cfg(feature = "usb")]
 use crate::{CommandHandler, Error, Result};
 
 /// Authenticator runner with USB HID transport
 ///
 /// Manages the complete authenticator stack from USB I/O to CTAP command processing.
-#[cfg(feature = "usb")]
 pub struct AuthenticatorRunner<H: CommandHandler> {
     /// USB transport for device I/O
     transport: UsbTransport,
@@ -64,7 +60,6 @@ pub struct AuthenticatorRunner<H: CommandHandler> {
     timeout_ms: i32,
 }
 
-#[cfg(feature = "usb")]
 impl<H: CommandHandler> AuthenticatorRunner<H> {
     /// Create a new authenticator runner
     ///
@@ -173,7 +168,7 @@ impl<H: CommandHandler> AuthenticatorRunner<H> {
     }
 }
 
-#[cfg(all(test, feature = "usb"))]
+#[cfg(test)]
 mod tests {
     use super::*;
 
