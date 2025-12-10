@@ -80,6 +80,10 @@ pub use request::{
 };
 pub use soft_fido2_ctap::StatusCode;
 
+// Re-export PIN storage types for persistent PIN state support
+pub use soft_fido2_ctap::callbacks::PinStorageCallbacks;
+pub use soft_fido2_ctap::types::PinState;
+
 pub use types::{Credential, CredentialRef, Extensions, RelyingParty, User};
 
 // Re-export response types

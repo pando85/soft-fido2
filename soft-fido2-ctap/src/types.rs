@@ -3,7 +3,7 @@
 //! Core data structures used in CTAP protocol messages.
 //! All types support CBOR serialization as required by the FIDO2 spec.
 
-use crate::sec_bytes::SecBytes;
+use crate::sec_bytes::{SecBytes, SecPinHash};
 
 use alloc::string::{String, ToString};
 use alloc::vec::Vec;
@@ -386,6 +386,65 @@ impl AuthenticatorTransport {
             "internal" => Some(Self::Internal),
             _ => None,
         }
+    }
+}
+
+/// Maximum PIN retry attempts before blocking
+pub const MAX_PIN_RETRIES: u8 = 8;
+
+/// Default minimum PIN length (Unicode code points)
+pub const DEFAULT_MIN_PIN_LENGTH: u8 = 4;
+
+/// Persistent PIN state for secure storage
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct PinState {
+    /// SHA-256 hash of the PIN (None if no PIN set)
+    pub pin_hash: Option<SecPinHash>,
+
+    /// Remaining PIN retry attempts (0-8)
+    pub retries: u8,
+
+    /// Minimum PIN length in Unicode code points (4-63)
+    pub min_pin_length: u8,
+
+    /// State version for rollback detection
+    pub version: u64,
+
+    /// Force PIN change flag
+    pub force_pin_change: bool,
+}
+
+impl Default for PinState {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl PinState {
+    /// Create a new PIN state with no PIN set
+    pub fn new() -> Self {
+        Self {
+            pin_hash: None,
+            retries: MAX_PIN_RETRIES,
+            min_pin_length: DEFAULT_MIN_PIN_LENGTH,
+            version: 0,
+            force_pin_change: false,
+        }
+    }
+
+    /// Check if a PIN has been set
+    pub fn is_pin_set(&self) -> bool {
+        self.pin_hash.is_some()
+    }
+
+    /// Check if PIN is blocked (no retries remaining)
+    pub fn is_blocked(&self) -> bool {
+        self.retries == 0
+    }
+
+    /// Increment version for state change
+    pub fn increment_version(&mut self) {
+        self.version = self.version.saturating_add(1);
     }
 }
 

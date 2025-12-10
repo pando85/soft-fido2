@@ -2070,3 +2070,548 @@ fn test_reset_deletes_all_credentials() {
     eprintln!("  • Verified all credentials were deleted");
     eprintln!("  • Verified authenticator remains functional");
 }
+
+#[test]
+fn test_pin_storage_persistence() {
+    use soft_fido2::{PinState, PinStorageCallbacks};
+    use std::sync::Arc;
+    use std::sync::atomic::{AtomicUsize, Ordering};
+
+    eprintln!("\n╔════════════════════════════════════════════════╗");
+    eprintln!("║     PIN Storage Persistence E2E Test          ║");
+    eprintln!("╚════════════════════════════════════════════════╝\n");
+
+    struct MockPinStorage {
+        state: Arc<std::sync::Mutex<Option<PinState>>>,
+        save_count: Arc<AtomicUsize>,
+        load_count: Arc<AtomicUsize>,
+    }
+
+    impl MockPinStorage {
+        fn new() -> Self {
+            Self {
+                state: Arc::new(std::sync::Mutex::new(None)),
+                save_count: Arc::new(AtomicUsize::new(0)),
+                load_count: Arc::new(AtomicUsize::new(0)),
+            }
+        }
+
+        fn with_state(state: PinState) -> Self {
+            Self {
+                state: Arc::new(std::sync::Mutex::new(Some(state))),
+                save_count: Arc::new(AtomicUsize::new(0)),
+                load_count: Arc::new(AtomicUsize::new(0)),
+            }
+        }
+    }
+
+    impl PinStorageCallbacks for MockPinStorage {
+        fn load_pin_state(&self) -> Result<PinState, soft_fido2::StatusCode> {
+            self.load_count.fetch_add(1, Ordering::SeqCst);
+            self.state
+                .lock()
+                .unwrap()
+                .clone()
+                .ok_or(soft_fido2::StatusCode::Other)
+        }
+
+        fn save_pin_state(&self, state: &PinState) -> Result<(), soft_fido2::StatusCode> {
+            self.save_count.fetch_add(1, Ordering::SeqCst);
+            *self.state.lock().unwrap() = Some(state.clone());
+            Ok(())
+        }
+    }
+
+    // ========================================
+    // PHASE 1: SET PIN WITH PERSISTENT STORAGE
+    // ========================================
+    eprintln!("[Test] ═══ SETTING PIN WITH PERSISTENT STORAGE ═══\n");
+
+    let callbacks = TestCallbacks::new();
+    let storage = MockPinStorage::new();
+    let save_count = storage.save_count.clone();
+    let state_arc = storage.state.clone();
+
+    let config = AuthenticatorConfig::builder()
+        .aaguid([
+            0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08, 0x09, 0x0a, 0x0b, 0x0c, 0x0d, 0x0e,
+            0x0f, 0x10,
+        ])
+        .options(
+            AuthenticatorOptions::new()
+                .with_resident_keys(true)
+                .with_user_presence(true)
+                .with_user_verification(Some(true))
+                .with_platform_device(false)
+                .with_client_pin(Some(false)) // PIN supported but not yet set
+                .with_credential_management(Some(true)),
+        )
+        .build();
+
+    let mut auth =
+        soft_fido2::Authenticator::with_config_and_pin_storage(callbacks.clone(), config, storage)
+            .expect("Failed to create auth with PIN storage");
+
+    // Set PIN via CTAP commands
+    let pin = "123456";
+
+    // Step 1: Get authenticator's key agreement
+    let get_key_agreement_cbor = build_get_key_agreement_request(2); // PIN protocol v2
+    let mut ctap_request = vec![0x06]; // clientPIN command
+    ctap_request.extend_from_slice(&get_key_agreement_cbor);
+
+    let mut response = Vec::new();
+    auth.handle(&ctap_request, &mut response)
+        .expect("getKeyAgreement failed");
+
+    assert_eq!(
+        response[0], 0x00,
+        "getKeyAgreement failed with status: 0x{:02x}",
+        response[0]
+    );
+
+    let auth_cose_key = extract_cose_key(&response).expect("Failed to extract COSE key");
+    eprintln!("[Test] ✓ Got authenticator key agreement");
+
+    // Step 2: Perform ECDH and encrypt PIN
+    let mut rng = rand::thread_rng();
+    let platform_secret = EphemeralSecret::random(&mut rng);
+    let platform_public = platform_secret.public_key();
+
+    use soft_fido2_ctap::cbor::Value;
+    let auth_key_value: Value = soft_fido2_ctap::cbor::decode(&auth_cose_key)
+        .expect("Failed to parse authenticator COSE key");
+
+    let (x_bytes, y_bytes) = if let Value::Map(map) = auth_key_value {
+        let mut x = None;
+        let mut y = None;
+        for (k, v) in map {
+            match k {
+                Value::Integer(i) if i == (-2).into() => {
+                    if let Value::Bytes(b) = v {
+                        x = Some(b);
+                    }
+                }
+                Value::Integer(i) if i == (-3).into() => {
+                    if let Value::Bytes(b) = v {
+                        y = Some(b);
+                    }
+                }
+                _ => {}
+            }
+        }
+        (
+            x.expect("Missing x coordinate"),
+            y.expect("Missing y coordinate"),
+        )
+    } else {
+        panic!("Invalid COSE key format");
+    };
+
+    let mut auth_pubkey_bytes = vec![0x04];
+    auth_pubkey_bytes.extend_from_slice(&x_bytes);
+    auth_pubkey_bytes.extend_from_slice(&y_bytes);
+    let auth_public = PublicKey::from_sec1_bytes(&auth_pubkey_bytes)
+        .expect("Failed to parse authenticator public key");
+
+    let shared_secret = platform_secret.diffie_hellman(&auth_public);
+
+    let pin_padded = format!("{:\0<64}", pin);
+    let shared_secret_bytes: &[u8; 32] = shared_secret
+        .raw_secret_bytes()
+        .as_slice()
+        .try_into()
+        .expect("Shared secret should be 32 bytes");
+
+    let enc_key = v2::derive_encryption_key(shared_secret_bytes);
+    let hmac_key = v2::derive_hmac_key(shared_secret_bytes);
+
+    let pin_enc = v2::encrypt(&enc_key, pin_padded.as_bytes()).expect("Failed to encrypt PIN");
+    let pin_auth = v2::authenticate(&hmac_key, &pin_enc).to_vec();
+
+    let platform_pubkey_point = platform_public.to_encoded_point(false);
+    let platform_cose_key = Value::Map(vec![
+        (Value::Integer(1.into()), Value::Integer(2.into())),
+        (Value::Integer(3.into()), Value::Integer((-25).into())),
+        (Value::Integer((-1).into()), Value::Integer(1.into())),
+        (
+            Value::Integer((-2).into()),
+            Value::Bytes(platform_pubkey_point.x().unwrap().to_vec()),
+        ),
+        (
+            Value::Integer((-3).into()),
+            Value::Bytes(platform_pubkey_point.y().unwrap().to_vec()),
+        ),
+    ]);
+
+    let mut platform_cose_key_bytes = Vec::new();
+    soft_fido2_ctap::cbor::into_writer(&platform_cose_key, &mut platform_cose_key_bytes)
+        .expect("Failed to encode platform COSE key");
+
+    // Step 3: Set PIN
+    let set_pin_cbor = build_set_pin_request(2, &platform_cose_key_bytes, &pin_enc, &pin_auth);
+    let mut ctap_request = vec![0x06];
+    ctap_request.extend_from_slice(&set_pin_cbor);
+
+    let mut response = Vec::new();
+    auth.handle(&ctap_request, &mut response)
+        .expect("setPIN failed");
+
+    assert_eq!(
+        response[0], 0x00,
+        "setPIN failed with status: 0x{:02x}",
+        response[0]
+    );
+
+    eprintln!("[Test] ✓ PIN set successfully");
+
+    // Verify storage was called
+    let save_calls = save_count.load(Ordering::SeqCst);
+    eprintln!("[Test]   Storage save calls: {}", save_calls);
+    assert!(
+        save_calls >= 1,
+        "Expected at least 1 save call after setting PIN"
+    );
+
+    // Verify state was persisted
+    let persisted_state = state_arc
+        .lock()
+        .unwrap()
+        .clone()
+        .expect("State should be persisted");
+    assert!(
+        persisted_state.is_pin_set(),
+        "Persisted state should have PIN set"
+    );
+    assert_eq!(persisted_state.retries, 8, "Retries should be at max (8)");
+    eprintln!("[Test] ✓ PIN state persisted correctly\n");
+
+    // ========================================
+    // PHASE 2: VERIFY PIN PERSISTENCE AFTER FAILED ATTEMPT
+    // ========================================
+    eprintln!("[Test] ═══ TESTING FAILED PIN VERIFICATION ═══\n");
+
+    // Get new key agreement for PIN token request
+    let get_key_agreement_cbor = build_get_key_agreement_request(2);
+    let mut ctap_request = vec![0x06];
+    ctap_request.extend_from_slice(&get_key_agreement_cbor);
+
+    let mut response = Vec::new();
+    auth.handle(&ctap_request, &mut response)
+        .expect("getKeyAgreement failed");
+
+    let auth_cose_key = extract_cose_key(&response).expect("Failed to extract COSE key");
+
+    let platform_secret = EphemeralSecret::random(&mut rng);
+    let platform_public = platform_secret.public_key();
+
+    let auth_key_value: Value = soft_fido2_ctap::cbor::decode(&auth_cose_key)
+        .expect("Failed to parse authenticator COSE key");
+
+    let (x_bytes, y_bytes) = if let Value::Map(map) = auth_key_value {
+        let mut x = None;
+        let mut y = None;
+        for (k, v) in map {
+            match k {
+                Value::Integer(i) if i == (-2).into() => {
+                    if let Value::Bytes(b) = v {
+                        x = Some(b);
+                    }
+                }
+                Value::Integer(i) if i == (-3).into() => {
+                    if let Value::Bytes(b) = v {
+                        y = Some(b);
+                    }
+                }
+                _ => {}
+            }
+        }
+        (
+            x.expect("Missing x coordinate"),
+            y.expect("Missing y coordinate"),
+        )
+    } else {
+        panic!("Invalid COSE key format");
+    };
+
+    let mut auth_pubkey_bytes = vec![0x04];
+    auth_pubkey_bytes.extend_from_slice(&x_bytes);
+    auth_pubkey_bytes.extend_from_slice(&y_bytes);
+    let auth_public = PublicKey::from_sec1_bytes(&auth_pubkey_bytes)
+        .expect("Failed to parse authenticator public key");
+
+    let shared_secret = platform_secret.diffie_hellman(&auth_public);
+    let shared_secret_bytes: &[u8; 32] = shared_secret
+        .raw_secret_bytes()
+        .as_slice()
+        .try_into()
+        .expect("Shared secret should be 32 bytes");
+
+    let enc_key = v2::derive_encryption_key(shared_secret_bytes);
+
+    // Send WRONG PIN hash
+    let wrong_pin = "999999";
+    let wrong_pin_hash = Sha256::digest(wrong_pin.as_bytes());
+    let wrong_pin_hash_enc =
+        v2::encrypt(&enc_key, &wrong_pin_hash[..16]).expect("Failed to encrypt wrong PIN hash");
+
+    let platform_pubkey_point = platform_public.to_encoded_point(false);
+    let platform_cose_key = Value::Map(vec![
+        (Value::Integer(1.into()), Value::Integer(2.into())),
+        (Value::Integer(3.into()), Value::Integer((-25).into())),
+        (Value::Integer((-1).into()), Value::Integer(1.into())),
+        (
+            Value::Integer((-2).into()),
+            Value::Bytes(platform_pubkey_point.x().unwrap().to_vec()),
+        ),
+        (
+            Value::Integer((-3).into()),
+            Value::Bytes(platform_pubkey_point.y().unwrap().to_vec()),
+        ),
+    ]);
+
+    let mut platform_cose_key_bytes = Vec::new();
+    soft_fido2_ctap::cbor::into_writer(&platform_cose_key, &mut platform_cose_key_bytes)
+        .expect("Failed to encode platform COSE key");
+
+    // Try to get PIN token with wrong PIN
+    let permissions = 0x01; // makeCredential
+    let get_pin_token_cbor = build_get_pin_uv_auth_token_using_pin_with_permissions_request(
+        2,
+        &platform_cose_key_bytes,
+        &wrong_pin_hash_enc,
+        permissions,
+        None,
+    );
+    let mut ctap_request = vec![0x06];
+    ctap_request.extend_from_slice(&get_pin_token_cbor);
+
+    let mut response = Vec::new();
+    auth.handle(&ctap_request, &mut response)
+        .expect("getPinUvAuthToken call failed");
+
+    // Should fail with PIN invalid
+    assert_eq!(
+        response[0], 0x31,
+        "Expected PinInvalid (0x31), got: 0x{:02x}",
+        response[0]
+    );
+
+    eprintln!("[Test] ✓ Wrong PIN correctly rejected");
+
+    // Verify retries were decremented and persisted
+    let persisted_state = state_arc
+        .lock()
+        .unwrap()
+        .clone()
+        .expect("State should be persisted");
+    assert_eq!(
+        persisted_state.retries, 7,
+        "Retries should be decremented to 7"
+    );
+    eprintln!("[Test] ✓ PIN retries correctly persisted (7 remaining)\n");
+
+    // ========================================
+    // PHASE 3: VERIFY SUCCESSFUL PIN RESETS RETRIES
+    // ========================================
+    eprintln!("[Test] ═══ TESTING SUCCESSFUL PIN VERIFICATION ═══\n");
+
+    // Send correct PIN hash
+    let correct_pin_hash = Sha256::digest(pin.as_bytes());
+    let correct_pin_hash_enc =
+        v2::encrypt(&enc_key, &correct_pin_hash[..16]).expect("Failed to encrypt correct PIN hash");
+
+    let get_pin_token_cbor = build_get_pin_uv_auth_token_using_pin_with_permissions_request(
+        2,
+        &platform_cose_key_bytes,
+        &correct_pin_hash_enc,
+        permissions,
+        None,
+    );
+    let mut ctap_request = vec![0x06];
+    ctap_request.extend_from_slice(&get_pin_token_cbor);
+
+    let mut response = Vec::new();
+    auth.handle(&ctap_request, &mut response)
+        .expect("getPinUvAuthToken call failed");
+
+    assert_eq!(
+        response[0], 0x00,
+        "getPinUvAuthToken with correct PIN failed with status: 0x{:02x}",
+        response[0]
+    );
+
+    eprintln!("[Test] ✓ Correct PIN accepted");
+
+    // Verify retries were reset and persisted
+    let persisted_state = state_arc
+        .lock()
+        .unwrap()
+        .clone()
+        .expect("State should be persisted");
+    assert_eq!(persisted_state.retries, 8, "Retries should be reset to 8");
+    eprintln!("[Test] ✓ PIN retries correctly reset to max (8)\n");
+
+    // ========================================
+    // PHASE 4: VERIFY STATE LOADS ON NEW AUTHENTICATOR
+    // ========================================
+    eprintln!("[Test] ═══ TESTING STATE LOAD ON NEW AUTHENTICATOR ═══\n");
+
+    // Create new storage with the persisted state
+    let loaded_state = state_arc
+        .lock()
+        .unwrap()
+        .clone()
+        .expect("State should exist");
+    let new_storage = MockPinStorage::with_state(loaded_state);
+    let load_count = new_storage.load_count.clone();
+
+    let callbacks2 = TestCallbacks::new();
+
+    let config2 = AuthenticatorConfig::builder()
+        .aaguid([
+            0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08, 0x09, 0x0a, 0x0b, 0x0c, 0x0d, 0x0e,
+            0x0f, 0x10,
+        ])
+        .options(
+            AuthenticatorOptions::new()
+                .with_resident_keys(true)
+                .with_user_presence(true)
+                .with_user_verification(Some(true))
+                .with_platform_device(false)
+                .with_client_pin(Some(false))
+                .with_credential_management(Some(true)),
+        )
+        .build();
+
+    let mut auth2 =
+        soft_fido2::Authenticator::with_config_and_pin_storage(callbacks2, config2, new_storage)
+            .expect("Failed to create second auth with PIN storage");
+
+    // Verify load was called
+    assert_eq!(
+        load_count.load(Ordering::SeqCst),
+        1,
+        "Load should be called once on construction"
+    );
+    eprintln!("[Test] ✓ PIN state loaded on authenticator construction");
+
+    // Verify we can authenticate with the loaded PIN by trying to get a PIN token
+    let get_key_agreement_cbor = build_get_key_agreement_request(2);
+    let mut ctap_request = vec![0x06];
+    ctap_request.extend_from_slice(&get_key_agreement_cbor);
+
+    let mut response = Vec::new();
+    auth2
+        .handle(&ctap_request, &mut response)
+        .expect("getKeyAgreement failed");
+
+    let auth_cose_key = extract_cose_key(&response).expect("Failed to extract COSE key");
+
+    let platform_secret = EphemeralSecret::random(&mut rng);
+    let platform_public = platform_secret.public_key();
+
+    let auth_key_value: Value = soft_fido2_ctap::cbor::decode(&auth_cose_key)
+        .expect("Failed to parse authenticator COSE key");
+
+    let (x_bytes, y_bytes) = if let Value::Map(map) = auth_key_value {
+        let mut x = None;
+        let mut y = None;
+        for (k, v) in map {
+            match k {
+                Value::Integer(i) if i == (-2).into() => {
+                    if let Value::Bytes(b) = v {
+                        x = Some(b);
+                    }
+                }
+                Value::Integer(i) if i == (-3).into() => {
+                    if let Value::Bytes(b) = v {
+                        y = Some(b);
+                    }
+                }
+                _ => {}
+            }
+        }
+        (
+            x.expect("Missing x coordinate"),
+            y.expect("Missing y coordinate"),
+        )
+    } else {
+        panic!("Invalid COSE key format");
+    };
+
+    let mut auth_pubkey_bytes = vec![0x04];
+    auth_pubkey_bytes.extend_from_slice(&x_bytes);
+    auth_pubkey_bytes.extend_from_slice(&y_bytes);
+    let auth_public = PublicKey::from_sec1_bytes(&auth_pubkey_bytes)
+        .expect("Failed to parse authenticator public key");
+
+    let shared_secret = platform_secret.diffie_hellman(&auth_public);
+    let shared_secret_bytes: &[u8; 32] = shared_secret
+        .raw_secret_bytes()
+        .as_slice()
+        .try_into()
+        .expect("Shared secret should be 32 bytes");
+
+    let enc_key = v2::derive_encryption_key(shared_secret_bytes);
+
+    let correct_pin_hash = Sha256::digest(pin.as_bytes());
+    let correct_pin_hash_enc =
+        v2::encrypt(&enc_key, &correct_pin_hash[..16]).expect("Failed to encrypt correct PIN hash");
+
+    let platform_pubkey_point = platform_public.to_encoded_point(false);
+    let platform_cose_key = Value::Map(vec![
+        (Value::Integer(1.into()), Value::Integer(2.into())),
+        (Value::Integer(3.into()), Value::Integer((-25).into())),
+        (Value::Integer((-1).into()), Value::Integer(1.into())),
+        (
+            Value::Integer((-2).into()),
+            Value::Bytes(platform_pubkey_point.x().unwrap().to_vec()),
+        ),
+        (
+            Value::Integer((-3).into()),
+            Value::Bytes(platform_pubkey_point.y().unwrap().to_vec()),
+        ),
+    ]);
+
+    let mut platform_cose_key_bytes = Vec::new();
+    soft_fido2_ctap::cbor::into_writer(&platform_cose_key, &mut platform_cose_key_bytes)
+        .expect("Failed to encode platform COSE key");
+
+    let get_pin_token_cbor = build_get_pin_uv_auth_token_using_pin_with_permissions_request(
+        2,
+        &platform_cose_key_bytes,
+        &correct_pin_hash_enc,
+        permissions,
+        None,
+    );
+    let mut ctap_request = vec![0x06];
+    ctap_request.extend_from_slice(&get_pin_token_cbor);
+
+    let mut response = Vec::new();
+    auth2
+        .handle(&ctap_request, &mut response)
+        .expect("getPinUvAuthToken call failed");
+
+    assert_eq!(
+        response[0], 0x00,
+        "getPinUvAuthToken with loaded PIN failed with status: 0x{:02x}",
+        response[0]
+    );
+
+    eprintln!("[Test] ✓ PIN authentication works with loaded state\n");
+
+    // ========================================
+    // VERIFICATION
+    // ========================================
+    eprintln!("╔════════════════════════════════════════════════╗");
+    eprintln!("║              ✓ Test Passed!                    ║");
+    eprintln!("╚════════════════════════════════════════════════╝\n");
+
+    eprintln!("Summary:");
+    eprintln!("  • PIN state correctly persisted via PinStorageCallbacks");
+    eprintln!("  • Failed PIN verification decrements and persists retries");
+    eprintln!("  • Successful PIN verification resets and persists retries");
+    eprintln!("  • New authenticator correctly loads PIN state from storage");
+    eprintln!("  • Full WebAuthn PIN flow works with persistent storage");
+}

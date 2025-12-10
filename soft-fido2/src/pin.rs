@@ -7,11 +7,13 @@ use crate::request::PinUvAuthProtocol;
 use crate::transport::Transport;
 
 use soft_fido2_crypto::pin_protocol;
+use soft_fido2_ctap::SecBytes;
 use soft_fido2_ctap::cbor::{MapBuilder, Value};
 
 use p256::elliptic_curve::sec1::ToEncodedPoint;
 use p256::{PublicKey as P256PublicKey, SecretKey as P256SecretKey};
 use rand::rngs::OsRng;
+use zeroize::Zeroizing;
 
 /// PIN protocol version
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -43,16 +45,16 @@ impl From<PinUvAuthProtocol> for PinProtocol {
 /// PIN/UV authentication encapsulation
 pub struct PinUvAuthEncapsulation {
     protocol: PinProtocol,
-    /// Platform's persistent key pair (for multiple operations)
-    /// P-256 secret key is 32 bytes, public key uncompressed is 65 bytes
-    platform_secret: Option<[u8; 32]>,
+    /// Platform's ECDH secret key (32 bytes, memory-protected)
+    platform_secret: Option<SecBytes>,
+    /// Platform's public key (65 bytes uncompressed, not secret)
     platform_public: Option<[u8; 65]>,
     /// Authenticator's public key (from getKeyAgreement)
     authenticator_key: Option<P256PublicKey>,
-    /// Shared secret derived from ECDH (32 bytes for P-256)
-    shared_secret: Option<[u8; 32]>,
-    /// PIN token (32 bytes for both V1 and V2)
-    pin_token: Option<[u8; 32]>,
+    /// Shared secret derived from ECDH (32 bytes, memory-protected)
+    shared_secret: Option<SecBytes>,
+    /// PIN token (32 bytes, memory-protected)
+    pin_token: Option<SecBytes>,
 }
 
 impl PinUvAuthEncapsulation {
@@ -87,8 +89,9 @@ impl PinUvAuthEncapsulation {
         let platform_public_key = platform_secret_key.public_key();
         let platform_public_point = platform_public_key.to_encoded_point(false);
 
-        // Store platform keys (using fixed-size arrays for zero allocation)
-        self.platform_secret = Some(*platform_secret_key.to_bytes().as_ref());
+        // Store platform secret key (memory-protected)
+        let secret_bytes: [u8; 32] = *platform_secret_key.to_bytes().as_ref();
+        self.platform_secret = Some(SecBytes::from_slice(&secret_bytes));
 
         let public_bytes = platform_public_point.as_bytes();
         let mut public_array = [0u8; 65];
@@ -141,12 +144,10 @@ impl PinUvAuthEncapsulation {
             authenticator_public_key.as_affine(),
         );
 
-        // Store authenticator key and shared secret (using fixed-size array)
+        // Store authenticator key and shared secret (memory-protected)
         self.authenticator_key = Some(authenticator_public_key);
         let shared_secret_bytes = shared_secret.raw_secret_bytes();
-        let mut secret_array = [0u8; 32];
-        secret_array.copy_from_slice(shared_secret_bytes.as_slice());
-        self.shared_secret = Some(secret_array);
+        self.shared_secret = Some(SecBytes::from_slice(shared_secret_bytes.as_slice()));
 
         Ok(())
     }
@@ -170,31 +171,27 @@ impl PinUvAuthEncapsulation {
     ) -> Result<Vec<u8>> {
         let shared_secret = self.shared_secret.as_ref().ok_or(Error::Other)?;
 
-        // Encrypt PIN with shared secret (using fixed-size array for zero allocation)
-        let pin_hash: [u8; 32] = {
+        // Compute PIN hash (zeroized on drop)
+        let pin_hash = Zeroizing::new({
             use sha2::{Digest, Sha256};
-            let mut hasher = Sha256::new();
-            hasher.update(pin.as_bytes());
-            hasher.finalize().into()
-        };
+            let hash: [u8; 32] = Sha256::digest(pin.as_bytes()).into();
+            hash
+        });
 
-        let pin_hash_enc = match self.protocol {
-            PinProtocol::V1 => {
-                // Derive encryption key for PIN protocol v1
-                let (enc_key, _) = pin_protocol::v1::derive_keys(shared_secret);
-                pin_protocol::v1::encrypt(&enc_key, &pin_hash[..16]).map_err(|_| Error::Other)?
-            }
-            PinProtocol::V2 => {
-                // Derive encryption key for PIN protocol v2
-                let enc_key = pin_protocol::v2::derive_encryption_key(shared_secret);
-                pin_protocol::v2::encrypt(&enc_key, &pin_hash[..16]).map_err(|_| Error::Other)?
-            }
-        };
+        // Derive keys (zeroized on drop)
+        let (enc_key, _hmac_key) = self.derive_keys_zeroized(shared_secret.as_slice())?;
 
-        // Get platform key agreement parameter (still returns Value for compatibility)
+        let pin_hash_enc =
+            match self.protocol {
+                PinProtocol::V1 => pin_protocol::v1::encrypt(&enc_key, &pin_hash[..16])
+                    .map_err(|_| Error::Other)?,
+                PinProtocol::V2 => pin_protocol::v2::encrypt(&enc_key, &pin_hash[..16])
+                    .map_err(|_| Error::Other)?,
+            };
+
+        // Get platform key agreement parameter
         let platform_key_agreement = self.get_key_agreement_cose()?;
 
-        // Build getPinUvAuthTokenUsingPinWithPermissions request using MapBuilder
         let protocol_version = match self.protocol {
             PinProtocol::V1 => 1u8,
             PinProtocol::V2 => 2u8,
@@ -202,38 +199,31 @@ impl PinUvAuthEncapsulation {
 
         let mut builder = MapBuilder::new();
         builder = builder
-            .insert(1, protocol_version) // pinUvAuthProtocol
+            .insert(1, protocol_version)
             .map_err(|_| Error::Other)?;
         builder = builder
-            .insert(2, 0x09u8) // subCommand (getPinUvAuthTokenUsingPinWithPermissions = 0x09)
+            .insert(2, 0x09u8) // subCommand (getPinUvAuthTokenUsingPinWithPermissions)
             .map_err(|_| Error::Other)?;
         builder = builder
-            .insert(3, &platform_key_agreement) // keyAgreement
+            .insert(3, &platform_key_agreement)
             .map_err(|_| Error::Other)?;
         builder = builder
-            .insert_bytes(6, &pin_hash_enc) // pinHashEnc (0x06)
+            .insert_bytes(6, &pin_hash_enc)
             .map_err(|_| Error::Other)?;
-        builder = builder
-            .insert(9, permissions) // permissions (0x09)
-            .map_err(|_| Error::Other)?;
+        builder = builder.insert(9, permissions).map_err(|_| Error::Other)?;
 
         if let Some(rp_id_str) = rp_id {
-            builder = builder
-                .insert(10, rp_id_str) // rpId (0x0A)
-                .map_err(|_| Error::Other)?;
+            builder = builder.insert(10, rp_id_str).map_err(|_| Error::Other)?;
         }
 
         let request_bytes = builder.build().map_err(|_| Error::Other)?;
 
-        // Send clientPin command (0x06) with 30s timeout
         let response = transport.send_ctap_command(0x06, &request_bytes, 30000)?;
 
-        // Transport layer already checked status byte and returns only CBOR data for success
         if response.is_empty() {
             return Err(Error::Other);
         }
 
-        // Parse CBOR response (entire response is CBOR data)
         let response_value: Value =
             soft_fido2_ctap::cbor::decode(&response).map_err(|_| Error::Other)?;
 
@@ -249,10 +239,9 @@ impl PinUvAuthEncapsulation {
             _ => return Err(Error::Other),
         };
 
-        // Decrypt PIN token (fixed-size array for zero allocation)
-        let pin_token: [u8; 32] = match self.protocol {
+        // Decrypt PIN token
+        let pin_token = Zeroizing::new(match self.protocol {
             PinProtocol::V1 => {
-                let (enc_key, _) = pin_protocol::v1::derive_keys(shared_secret);
                 let decrypted = pin_protocol::v1::decrypt(&enc_key, &pin_token_enc)
                     .map_err(|_| Error::Other)?;
                 let mut token = [0u8; 32];
@@ -260,17 +249,16 @@ impl PinUvAuthEncapsulation {
                 token
             }
             PinProtocol::V2 => {
-                let enc_key = pin_protocol::v2::derive_encryption_key(shared_secret);
                 let decrypted = pin_protocol::v2::decrypt(&enc_key, &pin_token_enc)
                     .map_err(|_| Error::Other)?;
                 let mut token = [0u8; 32];
                 token.copy_from_slice(&decrypted[..32]);
                 token
             }
-        };
+        });
 
-        // Store PIN token
-        self.pin_token = Some(pin_token);
+        // Store PIN token (memory-protected)
+        self.pin_token = Some(SecBytes::from_slice(&*pin_token));
 
         Ok(pin_token.to_vec())
     }
@@ -349,11 +337,13 @@ impl PinUvAuthEncapsulation {
             _ => return Err(Error::Other),
         };
 
-        // Decrypt PIN token
-        let pin_token: [u8; 32] = match self.protocol {
+        // Get shared secret and derive keys (zeroized on drop)
+        let shared_secret = self.shared_secret.as_ref().ok_or(Error::Other)?;
+        let (enc_key, _hmac_key) = self.derive_keys_zeroized(shared_secret.as_slice())?;
+
+        // Decrypt PIN token (zeroized on drop)
+        let pin_token = Zeroizing::new(match self.protocol {
             PinProtocol::V1 => {
-                let (enc_key, _) =
-                    pin_protocol::v1::derive_keys(self.shared_secret.as_ref().ok_or(Error::Other)?);
                 let decrypted = pin_protocol::v1::decrypt(&enc_key, &pin_token_enc)
                     .map_err(|_| Error::Other)?;
                 let mut token = [0u8; 32];
@@ -361,19 +351,16 @@ impl PinUvAuthEncapsulation {
                 token
             }
             PinProtocol::V2 => {
-                let enc_key = pin_protocol::v2::derive_encryption_key(
-                    self.shared_secret.as_ref().ok_or(Error::Other)?,
-                );
                 let decrypted = pin_protocol::v2::decrypt(&enc_key, &pin_token_enc)
                     .map_err(|_| Error::Other)?;
                 let mut token = [0u8; 32];
                 token.copy_from_slice(&decrypted[..32]);
                 token
             }
-        };
+        });
 
-        // Store PIN token
-        self.pin_token = Some(pin_token);
+        // Store PIN token (memory-protected)
+        self.pin_token = Some(SecBytes::from_slice(&*pin_token));
 
         Ok(pin_token.to_vec())
     }
@@ -397,8 +384,9 @@ impl PinUvAuthEncapsulation {
     /// Get the platform's key agreement parameter in COSE format
     fn get_key_agreement_cose(&self) -> Result<Value> {
         let secret_bytes = self.platform_secret.as_ref().ok_or(Error::Other)?;
+        let secret_arr = secret_bytes.to_array::<32>().ok_or(Error::Other)?;
         let secret_key =
-            P256SecretKey::from_bytes(secret_bytes.into()).map_err(|_| Error::Other)?;
+            P256SecretKey::from_bytes((&*secret_arr).into()).map_err(|_| Error::Other)?;
         let public_key = secret_key.public_key();
         let point = public_key.to_encoded_point(false);
 
@@ -417,6 +405,28 @@ impl PinUvAuthEncapsulation {
         ];
 
         Ok(Value::Map(key_map))
+    }
+
+    /// Derive encryption and HMAC keys from shared secret (zeroized on drop)
+    #[allow(clippy::type_complexity)]
+    fn derive_keys_zeroized(
+        &self,
+        shared_secret: &[u8],
+    ) -> Result<(Zeroizing<[u8; 32]>, Zeroizing<[u8; 32]>)> {
+        // Convert slice to fixed-size array
+        let secret_arr: &[u8; 32] = shared_secret.try_into().map_err(|_| Error::Other)?;
+
+        match self.protocol {
+            PinProtocol::V1 => {
+                let (enc, hmac) = pin_protocol::v1::derive_keys(secret_arr);
+                Ok((Zeroizing::new(enc), Zeroizing::new(hmac)))
+            }
+            PinProtocol::V2 => {
+                let enc = pin_protocol::v2::derive_encryption_key(secret_arr);
+                let hmac = pin_protocol::v2::derive_hmac_key(secret_arr);
+                Ok((Zeroizing::new(enc), Zeroizing::new(hmac)))
+            }
+        }
     }
 
     /// Parse a COSE key to extract P-256 public key
@@ -457,6 +467,253 @@ impl PinUvAuthEncapsulation {
         // CtOption::into() returns Option
         let public_key: Option<P256PublicKey> = P256PublicKey::from_encoded_point(&point).into();
         public_key.ok_or(Error::Other)
+    }
+
+    /// Set a new PIN on the authenticator
+    ///
+    /// This method sets the initial PIN on an authenticator that doesn't have one set.
+    /// The PIN must be 4-63 UTF-8 characters.
+    ///
+    /// # Arguments
+    ///
+    /// * `transport` - The transport to communicate with the authenticator
+    /// * `new_pin` - The new PIN to set (4-63 UTF-8 characters)
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if:
+    /// - A PIN is already set on the authenticator
+    /// - The PIN length is invalid (must be 4-63 characters)
+    /// - The shared secret hasn't been established (call initialize first)
+    /// - Communication with the authenticator fails
+    pub fn set_pin(&mut self, transport: &mut Transport, new_pin: &str) -> Result<()> {
+        let shared_secret = self.shared_secret.as_ref().ok_or(Error::Other)?;
+
+        // Validate PIN length (CTAP spec: 4-63 Unicode code points)
+        let pin_len = new_pin.chars().count();
+        if !(4..=63).contains(&pin_len) {
+            return Err(Error::InvalidPinLength);
+        }
+
+        // Pad PIN to 64 bytes with zeros (CTAP spec requirement, zeroized on drop)
+        let padded_pin = Zeroizing::new({
+            let mut buf = [0u8; 64];
+            let pin_bytes = new_pin.as_bytes();
+            if pin_bytes.len() > 64 {
+                return Err(Error::InvalidPinLength);
+            }
+            buf[..pin_bytes.len()].copy_from_slice(pin_bytes);
+            buf
+        });
+
+        // Derive keys (zeroized on drop)
+        let (enc_key, hmac_key) = self.derive_keys_zeroized(shared_secret.as_slice())?;
+
+        // Encrypt padded PIN
+        let new_pin_enc = match self.protocol {
+            PinProtocol::V1 => {
+                pin_protocol::v1::encrypt(&enc_key, &*padded_pin).map_err(|_| Error::Other)?
+            }
+            PinProtocol::V2 => {
+                pin_protocol::v2::encrypt(&enc_key, &*padded_pin).map_err(|_| Error::Other)?
+            }
+        };
+
+        // Compute pinUvAuthParam = HMAC(hmac_key, newPinEnc)
+        let pin_uv_auth_param = match self.protocol {
+            PinProtocol::V1 => pin_protocol::v1::authenticate(&hmac_key, &new_pin_enc).to_vec(),
+            PinProtocol::V2 => pin_protocol::v2::authenticate(&hmac_key, &new_pin_enc).to_vec(),
+        };
+
+        // Get platform key agreement parameter
+        let platform_key_agreement = self.get_key_agreement_cose()?;
+
+        // Build setPin request
+        let protocol_version = match self.protocol {
+            PinProtocol::V1 => 1u8,
+            PinProtocol::V2 => 2u8,
+        };
+
+        let request_bytes = MapBuilder::new()
+            .insert(1, protocol_version) // pinUvAuthProtocol
+            .map_err(|_| Error::Other)?
+            .insert(2, 0x03u8) // subCommand (setPin = 0x03)
+            .map_err(|_| Error::Other)?
+            .insert(3, &platform_key_agreement) // keyAgreement
+            .map_err(|_| Error::Other)?
+            .insert_bytes(4, &pin_uv_auth_param) // pinUvAuthParam
+            .map_err(|_| Error::Other)?
+            .insert_bytes(5, &new_pin_enc) // newPinEnc
+            .map_err(|_| Error::Other)?
+            .build()
+            .map_err(|_| Error::Other)?;
+
+        // Send clientPin command (0x06) with 30s timeout
+        let _response = transport.send_ctap_command(0x06, &request_bytes, 30000)?;
+
+        // Success - empty response means PIN was set
+        Ok(())
+    }
+
+    /// Change the PIN on the authenticator
+    ///
+    /// This method changes an existing PIN to a new one.
+    /// Both PINs must be 4-63 UTF-8 characters.
+    ///
+    /// # Arguments
+    ///
+    /// * `transport` - The transport to communicate with the authenticator
+    /// * `current_pin` - The current PIN
+    /// * `new_pin` - The new PIN to set (4-63 UTF-8 characters)
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if:
+    /// - No PIN is set on the authenticator
+    /// - The current PIN is incorrect
+    /// - The new PIN length is invalid (must be 4-63 characters)
+    /// - The shared secret hasn't been established (call initialize first)
+    /// - Communication with the authenticator fails
+    pub fn change_pin(
+        &mut self,
+        transport: &mut Transport,
+        current_pin: &str,
+        new_pin: &str,
+    ) -> Result<()> {
+        let shared_secret = self.shared_secret.as_ref().ok_or(Error::Other)?;
+
+        // Validate new PIN length (CTAP spec: 4-63 Unicode code points)
+        let pin_len = new_pin.chars().count();
+        if !(4..=63).contains(&pin_len) {
+            return Err(Error::InvalidPinLength);
+        }
+
+        // Compute current PIN hash (SHA-256, zeroized on drop)
+        let current_pin_hash = Zeroizing::new({
+            use sha2::{Digest, Sha256};
+            let hash: [u8; 32] = Sha256::digest(current_pin.as_bytes()).into();
+            hash
+        });
+
+        // Pad new PIN to 64 bytes with zeros (zeroized on drop)
+        let padded_new_pin = Zeroizing::new({
+            let mut buf = [0u8; 64];
+            let new_pin_bytes = new_pin.as_bytes();
+            if new_pin_bytes.len() > 64 {
+                return Err(Error::InvalidPinLength);
+            }
+            buf[..new_pin_bytes.len()].copy_from_slice(new_pin_bytes);
+            buf
+        });
+
+        // Derive keys (zeroized on drop)
+        let (enc_key, hmac_key) = self.derive_keys_zeroized(shared_secret.as_slice())?;
+
+        // Encrypt current PIN hash (first 16 bytes per CTAP spec)
+        let pin_hash_enc = match self.protocol {
+            PinProtocol::V1 => pin_protocol::v1::encrypt(&enc_key, &current_pin_hash[..16])
+                .map_err(|_| Error::Other)?,
+            PinProtocol::V2 => pin_protocol::v2::encrypt(&enc_key, &current_pin_hash[..16])
+                .map_err(|_| Error::Other)?,
+        };
+
+        // Encrypt new padded PIN
+        let new_pin_enc =
+            match self.protocol {
+                PinProtocol::V1 => pin_protocol::v1::encrypt(&enc_key, &*padded_new_pin)
+                    .map_err(|_| Error::Other)?,
+                PinProtocol::V2 => pin_protocol::v2::encrypt(&enc_key, &*padded_new_pin)
+                    .map_err(|_| Error::Other)?,
+            };
+
+        // Compute pinUvAuthParam = HMAC(hmac_key, newPinEnc || pinHashEnc)
+        let mut verify_data = new_pin_enc.clone();
+        verify_data.extend_from_slice(&pin_hash_enc);
+
+        let pin_uv_auth_param = match self.protocol {
+            PinProtocol::V1 => pin_protocol::v1::authenticate(&hmac_key, &verify_data).to_vec(),
+            PinProtocol::V2 => pin_protocol::v2::authenticate(&hmac_key, &verify_data).to_vec(),
+        };
+
+        // Get platform key agreement parameter
+        let platform_key_agreement = self.get_key_agreement_cose()?;
+
+        // Build changePin request
+        let protocol_version = match self.protocol {
+            PinProtocol::V1 => 1u8,
+            PinProtocol::V2 => 2u8,
+        };
+
+        let request_bytes = MapBuilder::new()
+            .insert(1, protocol_version) // pinUvAuthProtocol
+            .map_err(|_| Error::Other)?
+            .insert(2, 0x04u8) // subCommand (changePin = 0x04)
+            .map_err(|_| Error::Other)?
+            .insert(3, &platform_key_agreement) // keyAgreement
+            .map_err(|_| Error::Other)?
+            .insert_bytes(4, &pin_uv_auth_param) // pinUvAuthParam
+            .map_err(|_| Error::Other)?
+            .insert_bytes(5, &new_pin_enc) // newPinEnc
+            .map_err(|_| Error::Other)?
+            .insert_bytes(6, &pin_hash_enc) // pinHashEnc
+            .map_err(|_| Error::Other)?
+            .build()
+            .map_err(|_| Error::Other)?;
+
+        // Send clientPin command (0x06) with 30s timeout
+        let _response = transport.send_ctap_command(0x06, &request_bytes, 30000)?;
+
+        // Success - empty response means PIN was changed
+        Ok(())
+    }
+
+    /// Get PIN retries remaining
+    ///
+    /// Returns the number of PIN attempts remaining before the authenticator is blocked.
+    ///
+    /// # Arguments
+    ///
+    /// * `transport` - The transport to communicate with the authenticator
+    ///
+    /// # Returns
+    ///
+    /// The number of PIN retries remaining (typically 0-8)
+    pub fn get_pin_retries(&self, transport: &mut Transport) -> Result<u8> {
+        // Build getPinRetries request
+        let request_bytes = MapBuilder::new()
+            .insert(2, 0x01u8) // subCommand (getPinRetries = 0x01)
+            .map_err(|_| Error::Other)?
+            .build()
+            .map_err(|_| Error::Other)?;
+
+        // Send clientPin command (0x06) with 30s timeout
+        let response = transport.send_ctap_command(0x06, &request_bytes, 30000)?;
+
+        if response.is_empty() {
+            return Err(Error::Other);
+        }
+
+        // Parse CBOR response
+        let response_value: Value =
+            soft_fido2_ctap::cbor::decode(&response).map_err(|_| Error::Other)?;
+
+        // Extract pinRetries from response (key 0x03)
+        let retries = match response_value {
+            Value::Map(map) => map
+                .iter()
+                .find(|(k, _)| matches!(k, Value::Integer(i) if *i == 3.into()))
+                .and_then(|(_, v)| match v {
+                    Value::Integer(i) => {
+                        let val: i128 = *i;
+                        u8::try_from(val).ok()
+                    }
+                    _ => None,
+                })
+                .ok_or(Error::Other)?,
+            _ => return Err(Error::Other),
+        };
+
+        Ok(retries)
     }
 }
 

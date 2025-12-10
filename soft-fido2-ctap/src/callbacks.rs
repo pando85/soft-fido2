@@ -3,7 +3,8 @@
 //! These traits define the interface between the CTAP protocol implementation
 //! and the platform-specific user interaction and storage mechanisms.
 
-use crate::{StatusCode, types::Credential};
+use crate::StatusCode;
+use crate::types::{Credential, PinState};
 
 use alloc::string::String;
 use alloc::vec::Vec;
@@ -203,7 +204,16 @@ pub trait CredentialStorageCallbacks {
     fn credential_count(&self) -> Result<usize, StatusCode>;
 }
 
-/// Combined callbacks interface
+/// Callbacks for PIN state persistence
+pub trait PinStorageCallbacks {
+    /// Load PIN state from persistent storage
+    fn load_pin_state(&self) -> Result<PinState, StatusCode>;
+
+    /// Save PIN state to persistent storage
+    fn save_pin_state(&self, state: &PinState) -> Result<(), StatusCode>;
+}
+
+/// Combined callbacks interface for core authenticator operations
 ///
 /// Combines user interaction and credential storage callbacks.
 pub trait AuthenticatorCallbacks: UserInteractionCallbacks + CredentialStorageCallbacks {
@@ -304,6 +314,18 @@ mod tests {
         }
     }
 
+    impl PinStorageCallbacks for MockCallbacks {
+        fn load_pin_state(&self) -> Result<PinState, StatusCode> {
+            // Return default state (no PIN set)
+            Ok(PinState::new())
+        }
+
+        fn save_pin_state(&self, _state: &PinState) -> Result<(), StatusCode> {
+            // Mock: don't actually persist
+            Ok(())
+        }
+    }
+
     #[test]
     fn test_mock_callbacks() {
         let callbacks = MockCallbacks;
@@ -318,6 +340,19 @@ mod tests {
         // Test storage callbacks
         assert!(!callbacks.credential_exists(&[1, 2, 3]).unwrap());
         assert_eq!(callbacks.credential_count().unwrap(), 0);
+    }
+
+    #[test]
+    fn test_pin_storage_callbacks() {
+        let callbacks = MockCallbacks;
+
+        // Test PIN storage callbacks (optional trait)
+        let pin_state = callbacks.load_pin_state().unwrap();
+        assert!(!pin_state.is_pin_set());
+        assert!(!pin_state.is_blocked());
+        assert_eq!(pin_state.retries, 8);
+
+        callbacks.save_pin_state(&pin_state).unwrap();
     }
 
     #[test]
