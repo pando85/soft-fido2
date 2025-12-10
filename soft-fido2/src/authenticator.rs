@@ -10,11 +10,11 @@ use soft_fido2_ctap::authenticator::{
     Authenticator as CtapAuthenticator, AuthenticatorConfig as CtapConfig,
 };
 use soft_fido2_ctap::callbacks::{
-    CredentialStorageCallbacks, UpResult as CtapUpResult, UserInteractionCallbacks,
-    UvResult as CtapUvResult,
+    CredentialStorageCallbacks, PinStorageCallbacks, UpResult as CtapUpResult,
+    UserInteractionCallbacks, UvResult as CtapUvResult,
 };
 use soft_fido2_ctap::cbor::MAX_CTAP_MESSAGE_SIZE;
-use soft_fido2_ctap::types::Credential as CtapCredential;
+use soft_fido2_ctap::types::{Credential as CtapCredential, PinState};
 use soft_fido2_ctap::{CommandDispatcher, StatusCode};
 
 use alloc::string::String;
@@ -35,6 +35,19 @@ static PRESET_PIN_HASH: OnceLock<Mutex<Option<[u8; 32]>>> = OnceLock::new();
 /// Global PIN hash storage (no_std version, always initialized)
 #[cfg(not(feature = "std"))]
 static PRESET_PIN_HASH: Mutex<Option<[u8; 32]>> = Mutex::new(None);
+
+/// No-op PIN storage implementation used as type placeholder when no storage is configured
+struct NoOpPinStorage;
+
+impl PinStorageCallbacks for NoOpPinStorage {
+    fn load_pin_state(&self) -> core::result::Result<PinState, StatusCode> {
+        Err(StatusCode::Other)
+    }
+
+    fn save_pin_state(&self, _state: &PinState) -> core::result::Result<(), StatusCode> {
+        Ok(())
+    }
+}
 
 /// User presence result
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -555,6 +568,31 @@ impl<C: AuthenticatorCallbacks> Authenticator<C> {
     where
         C: 'static,
     {
+        Self::with_config_internal(callbacks, config, None::<NoOpPinStorage>)
+    }
+
+    /// Create a new authenticator with custom configuration and persistent PIN storage
+    pub fn with_config_and_pin_storage<P>(
+        callbacks: C,
+        config: AuthenticatorConfig,
+        pin_storage: P,
+    ) -> Result<Self>
+    where
+        C: 'static,
+        P: PinStorageCallbacks + Send + Sync + 'static,
+    {
+        Self::with_config_internal(callbacks, config, Some(pin_storage))
+    }
+
+    fn with_config_internal<P>(
+        callbacks: C,
+        config: AuthenticatorConfig,
+        pin_storage: Option<P>,
+    ) -> Result<Self>
+    where
+        C: 'static,
+        P: PinStorageCallbacks + Send + Sync + 'static,
+    {
         let adapter = CallbackAdapter {
             callbacks: Arc::new(callbacks),
         };
@@ -593,9 +631,18 @@ impl<C: AuthenticatorCallbacks> Authenticator<C> {
             ctap_config = ctap_config.with_options(ctap_options);
         }
 
-        let mut authenticator = CtapAuthenticator::new(ctap_config, adapter);
+        let authenticator = CtapAuthenticator::new(ctap_config, adapter);
+
+        // Apply PIN storage if provided
+        let authenticator = if let Some(storage) = pin_storage {
+            authenticator.with_pin_storage(storage)
+        } else {
+            authenticator
+        };
 
         // Apply preset PIN hash if available (std version)
+        #[cfg(feature = "std")]
+        let mut authenticator = authenticator;
         #[cfg(feature = "std")]
         if let Some(lock) = PRESET_PIN_HASH.get()
             && let Ok(mut guard) = lock.lock()
@@ -605,6 +652,8 @@ impl<C: AuthenticatorCallbacks> Authenticator<C> {
         }
 
         // Apply preset PIN hash if available (no_std version)
+        #[cfg(not(feature = "std"))]
+        let mut authenticator = authenticator;
         #[cfg(not(feature = "std"))]
         {
             let mut guard = PRESET_PIN_HASH.lock();

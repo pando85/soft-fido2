@@ -237,9 +237,171 @@ impl<'de> Deserialize<'de> for SecBytes {
     }
 }
 
+/// Secure PIN hash storage (32-byte SHA-256 hash)
+///
+/// Provides automatic memory zeroing on drop and constant-time comparison.
+#[derive(Clone, Serialize, Deserialize)]
+#[serde(try_from = "SecBytes", into = "SecBytes")]
+pub struct SecPinHash {
+    inner: SecBytes,
+}
+
+impl SecPinHash {
+    /// Create from a 32-byte PIN hash
+    pub fn new(hash: [u8; 32]) -> Self {
+        Self {
+            inner: SecBytes::from_array(hash),
+        }
+    }
+
+    /// Create from a slice (panics if not exactly 32 bytes)
+    pub fn from_slice(slice: &[u8]) -> Self {
+        assert_eq!(slice.len(), 32, "PIN hash must be 32 bytes");
+        let mut hash = [0u8; 32];
+        hash.copy_from_slice(slice);
+        Self::new(hash)
+    }
+
+    /// Verify PIN hash using constant-time comparison
+    pub fn verify(&self, expected: &[u8]) -> bool {
+        if expected.len() != 32 {
+            return false;
+        }
+        self.inner.as_slice().ct_eq(expected).into()
+    }
+
+    /// Verify first 16 bytes (per CTAP spec for PIN verification)
+    pub fn verify_first_16(&self, expected: &[u8]) -> bool {
+        if expected.len() < 16 {
+            return false;
+        }
+        self.inner.as_slice()[..16].ct_eq(&expected[..16]).into()
+    }
+
+    /// Get the full 32-byte hash
+    pub fn as_array(&self) -> [u8; 32] {
+        let mut arr = [0u8; 32];
+        arr.copy_from_slice(self.inner.as_slice());
+        arr
+    }
+
+    /// Perform operation with protected scope
+    pub fn with_bytes<F, R>(&self, f: F) -> R
+    where
+        F: FnOnce(&[u8; 32]) -> R,
+    {
+        let arr = self.as_array();
+        f(&arr)
+    }
+}
+
+impl core::fmt::Debug for SecPinHash {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        f.debug_struct("SecPinHash")
+            .field("data", &"<redacted>")
+            .finish()
+    }
+}
+
+impl PartialEq for SecPinHash {
+    fn eq(&self, other: &Self) -> bool {
+        self.inner == other.inner
+    }
+}
+
+impl Eq for SecPinHash {}
+
+// Conversion traits for serde
+impl TryFrom<SecBytes> for SecPinHash {
+    type Error = &'static str;
+
+    fn try_from(bytes: SecBytes) -> Result<Self, Self::Error> {
+        if bytes.len() != 32 {
+            return Err("PIN hash must be exactly 32 bytes");
+        }
+        Ok(Self { inner: bytes })
+    }
+}
+
+impl From<SecPinHash> for SecBytes {
+    fn from(hash: SecPinHash) -> Self {
+        hash.inner
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn test_sec_pin_hash_new() {
+        let hash = [0x42u8; 32];
+        let sec_hash = SecPinHash::new(hash);
+        assert!(sec_hash.verify(&hash));
+    }
+
+    #[test]
+    fn test_sec_pin_hash_from_slice() {
+        let hash = [0x42u8; 32];
+        let sec_hash = SecPinHash::from_slice(&hash);
+        assert!(sec_hash.verify(&hash));
+    }
+
+    #[test]
+    fn test_sec_pin_hash_verify_first_16() {
+        let hash = [0x42u8; 32];
+        let sec_hash = SecPinHash::new(hash);
+        assert!(sec_hash.verify_first_16(&hash[..16]));
+        assert!(!sec_hash.verify_first_16(&[0x43u8; 16]));
+    }
+
+    #[test]
+    fn test_sec_pin_hash_debug() {
+        let hash = [0x42u8; 32];
+        let sec_hash = SecPinHash::new(hash);
+        let debug_str = format!("{:?}", sec_hash);
+        assert!(debug_str.contains("redacted"));
+        assert!(!debug_str.contains("42"));
+    }
+
+    #[test]
+    fn test_sec_pin_hash_equality() {
+        let hash1 = [0x42u8; 32];
+        let hash2 = [0x42u8; 32];
+        let hash3 = [0x43u8; 32];
+        let sec1 = SecPinHash::new(hash1);
+        let sec2 = SecPinHash::new(hash2);
+        let sec3 = SecPinHash::new(hash3);
+        assert_eq!(sec1, sec2);
+        assert_ne!(sec1, sec3);
+    }
+
+    #[test]
+    fn test_sec_pin_hash_serialization() {
+        let hash = [0x42u8; 32];
+        let sec_hash = SecPinHash::new(hash);
+
+        // Serialize to CBOR
+        let buf = crate::cbor::encode(&sec_hash).unwrap();
+
+        // Deserialize back
+        let deserialized: SecPinHash = crate::cbor::decode(&buf).unwrap();
+
+        // Verify equality
+        assert_eq!(sec_hash, deserialized);
+        assert!(deserialized.verify(&hash));
+    }
+
+    #[test]
+    fn test_sec_pin_hash_serialization_wrong_length() {
+        // Create CBOR with wrong length (16 bytes instead of 32)
+        let short_bytes = SecBytes::from_slice(&[0x42u8; 16]);
+        let buf = crate::cbor::encode(&short_bytes).unwrap();
+
+        // Deserialize should fail
+        let result: Result<SecPinHash, _> = crate::cbor::decode(&buf);
+        assert!(result.is_err());
+    }
 
     #[test]
     fn test_new_and_access() {

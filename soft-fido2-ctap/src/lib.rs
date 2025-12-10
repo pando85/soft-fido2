@@ -27,14 +27,14 @@ pub use authenticator::{Authenticator, AuthenticatorConfig};
 #[cfg(feature = "transport")]
 pub use bridge::TransportBridge;
 pub use callbacks::{
-    AuthenticatorCallbacks, CredentialStorageCallbacks, UpResult, UserInteractionCallbacks,
-    UvResult,
+    AuthenticatorCallbacks, CredentialStorageCallbacks, PinStorageCallbacks, UpResult,
+    UserInteractionCallbacks, UvResult,
 };
 pub use dispatcher::CommandDispatcher;
 pub use pin_token::{Permission, PinToken, PinTokenManager};
-pub use sec_bytes::SecBytes;
+pub use sec_bytes::{SecBytes, SecPinHash};
 pub use status::{Result, StatusCode};
 pub use types::{
-    CoseAlgorithm, CredProtect, Credential, PublicKeyCredentialDescriptor,
+    CoseAlgorithm, CredProtect, Credential, PinState, PublicKeyCredentialDescriptor,
     PublicKeyCredentialParameters, RelyingParty, User,
 };

@@ -32,6 +32,7 @@ hmac.workspace = true
 hkdf.workspace = true
 hex.workspace = true
 smallvec.workspace = true
+zeroize.workspace = true
 secstr = { version = "0.5", optional = true }
 
 # no_std synchronization primitives

@@ -58,6 +58,8 @@ pub enum Error {
     CtapError(u8),
     /// IO error (from transport operations)
     IoError(String),
+    /// Invalid PIN length (must be 4-63 characters)
+    InvalidPinLength,
 }
 
 impl fmt::Display for Error {
@@ -86,6 +88,7 @@ impl fmt::Display for Error {
             Error::InvalidSubcommand => write!(f, "Invalid subcommand"),
             Error::CtapError(code) => write!(f, "CTAP error: 0x{:02X}", code),
             Error::IoError(msg) => write!(f, "IO error: {}", msg),
+            Error::InvalidPinLength => write!(f, "Invalid PIN length (must be 4-63 characters)"),
         }
     }
 }
@@ -197,6 +200,7 @@ impl From<Error> for soft_fido2_ctap::StatusCode {
                     _ => StatusCode::Other,
                 }
             }
+            Error::InvalidPinLength => StatusCode::PinPolicyViolation,
             _ => StatusCode::Other,
         }
     }

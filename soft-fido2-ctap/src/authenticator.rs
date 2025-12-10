@@ -4,10 +4,11 @@
 //! PIN management, and overall state coordination.
 
 use crate::{
-    CoseAlgorithm, SecBytes, StatusCode,
-    callbacks::AuthenticatorCallbacks,
+    CoseAlgorithm, SecBytes, SecPinHash, StatusCode,
+    callbacks::{AuthenticatorCallbacks, PinStorageCallbacks},
     cbor::MAX_CTAP_MESSAGE_SIZE,
     pin_token::{Permission, PinToken, PinTokenManager},
+    types::PinState,
 };
 
 use soft_fido2_crypto::pin_protocol::{self, v2};
@@ -285,20 +286,14 @@ pub struct Authenticator<C: AuthenticatorCallbacks> {
     /// Callbacks for user interaction and storage
     callbacks: Arc<C>,
 
-    /// PIN hash (SHA-256 of PIN, if set)
-    pin_hash: Option<[u8; 32]>,
+    /// PIN state (may be synced with persistent storage)
+    pin_state: PinState,
 
-    /// PIN retry counter
-    pin_retries: u8,
+    /// Optional persistent PIN storage
+    pin_storage: Option<Arc<dyn PinStorageCallbacks + Send + Sync>>,
 
     /// PIN token manager
     pin_tokens: PinTokenManager,
-
-    /// Force change PIN flag
-    force_change_pin: bool,
-
-    /// Minimum PIN length (4-63)
-    min_pin_length: usize,
 
     /// User verification retry counter
     uv_retries: u8,
@@ -346,11 +341,9 @@ impl<C: AuthenticatorCallbacks> Authenticator<C> {
         Self {
             config,
             callbacks: Arc::new(callbacks),
-            pin_hash: None,
-            pin_retries: MAX_PIN_RETRIES,
+            pin_state: PinState::new(),
+            pin_storage: None,
             pin_tokens: PinTokenManager::new(),
-            force_change_pin: false,
-            min_pin_length: 4,
             uv_retries: MAX_UV_RETRIES,
             custom_commands: BTreeMap::new(),
             pin_protocol_keypairs: BTreeMap::new(),
@@ -360,6 +353,32 @@ impl<C: AuthenticatorCallbacks> Authenticator<C> {
             credential_enumeration_state: None,
             credential_enumeration_index: 0,
         }
+    }
+
+    /// Enable persistent PIN storage
+    ///
+    /// Loads initial PIN state from storage and persists changes on every modification.
+    pub fn with_pin_storage<P>(mut self, storage: P) -> Self
+    where
+        P: PinStorageCallbacks + Send + Sync + 'static,
+    {
+        let storage = Arc::new(storage);
+
+        if let Ok(state) = storage.load_pin_state() {
+            self.pin_state = state;
+        }
+
+        self.pin_storage = Some(storage);
+        self
+    }
+
+    /// Save PIN state to persistent storage (if configured)
+    fn save_pin_state(&mut self) -> Result<(), StatusCode> {
+        if let Some(storage) = &self.pin_storage {
+            self.pin_state.increment_version();
+            storage.save_pin_state(&self.pin_state)?;
+        }
+        Ok(())
     }
 
     /// Get authenticator configuration
@@ -374,17 +393,17 @@ impl<C: AuthenticatorCallbacks> Authenticator<C> {
 
     /// Check if PIN is set
     pub fn is_pin_set(&self) -> bool {
-        self.pin_hash.is_some()
+        self.pin_state.is_pin_set()
     }
 
     /// Get PIN retry counter
     pub fn pin_retries(&self) -> u8 {
-        self.pin_retries
+        self.pin_state.retries
     }
 
     /// Check if PIN is blocked
     pub fn is_pin_blocked(&self) -> bool {
-        self.pin_retries == 0
+        self.pin_state.is_blocked()
     }
 
     /// Check if built-in user verification is enabled
@@ -420,19 +439,23 @@ impl<C: AuthenticatorCallbacks> Authenticator<C> {
     ///
     /// Success or error status
     pub fn set_pin(&mut self, new_pin: &str) -> Result<(), StatusCode> {
-        // Validate PIN length
+        // Validate PIN length against current minimum
         let pin_bytes = new_pin.as_bytes();
-        if pin_bytes.len() < self.min_pin_length || pin_bytes.len() > 63 {
+        let min_len = self.pin_state.min_pin_length as usize;
+        if pin_bytes.len() < min_len || pin_bytes.len() > 63 {
             return Err(StatusCode::PinPolicyViolation);
         }
 
         // Hash the PIN (according to CTAP spec, store SHA-256 of raw PIN, not padded)
-        let hash = Sha256::digest(pin_bytes);
-        self.pin_hash = Some(hash.into());
+        let hash: [u8; 32] = Sha256::digest(pin_bytes).into();
+        self.pin_state.pin_hash = Some(SecPinHash::new(hash));
 
-        // Reset retry counter
-        self.pin_retries = MAX_PIN_RETRIES;
-        self.force_change_pin = false;
+        // Reset retry counter and flags
+        self.pin_state.retries = MAX_PIN_RETRIES;
+        self.pin_state.force_pin_change = false;
+
+        // Persist if storage is configured
+        self.save_pin_state()?;
 
         Ok(())
     }
@@ -466,7 +489,11 @@ impl<C: AuthenticatorCallbacks> Authenticator<C> {
     /// Success or error status
     pub fn verify_pin(&mut self, pin: &str) -> Result<(), StatusCode> {
         // Check if PIN is set
-        let pin_hash = self.pin_hash.ok_or(StatusCode::PinNotSet)?;
+        let pin_hash = self
+            .pin_state
+            .pin_hash
+            .as_ref()
+            .ok_or(StatusCode::PinNotSet)?;
 
         // Check if blocked
         if self.is_pin_blocked() {
@@ -475,16 +502,18 @@ impl<C: AuthenticatorCallbacks> Authenticator<C> {
 
         // Hash the provided PIN (raw PIN, not padded, per CTAP spec)
         let pin_bytes = pin.as_bytes();
-        let hash = Sha256::digest(pin_bytes);
+        let hash: [u8; 32] = Sha256::digest(pin_bytes).into();
 
-        // Compare using constant-time comparison
-        if pin_hash.ct_eq(&hash[..]).into() {
+        // Compare using constant-time comparison via SecPinHash
+        if pin_hash.verify(&hash) {
             // PIN correct - reset retry counter
-            self.pin_retries = MAX_PIN_RETRIES;
+            self.pin_state.retries = MAX_PIN_RETRIES;
+            self.save_pin_state()?;
             Ok(())
         } else {
             // PIN incorrect - decrement retry counter
-            self.pin_retries = self.pin_retries.saturating_sub(1);
+            self.pin_state.retries = self.pin_state.retries.saturating_sub(1);
+            self.save_pin_state()?;
             if self.is_pin_blocked() {
                 Err(StatusCode::PinBlocked)
             } else {
@@ -493,28 +522,30 @@ impl<C: AuthenticatorCallbacks> Authenticator<C> {
         }
     }
 
-    /// Get stored PIN hash (for PIN protocol operations)
-    ///
-    /// Returns the full 32-byte SHA-256 hash of the PIN, if set.
-    pub(crate) fn pin_hash(&self) -> Option<[u8; 32]> {
-        self.pin_hash
+    /// Verify encrypted PIN hash against stored PIN hash (first 16 bytes per CTAP spec)
+    pub(crate) fn verify_pin_hash_first_16(&self, decrypted_pin_hash: &[u8]) -> bool {
+        match &self.pin_state.pin_hash {
+            Some(pin_hash) => pin_hash.verify_first_16(decrypted_pin_hash),
+            None => false,
+        }
     }
 
-    /// Set PIN hash directly for testing purposes
-    ///
-    /// This bypasses normal PIN validation and should only be used in tests.
-    ///
-    /// # Arguments
-    ///
-    /// * `hash` - The 32-byte PIN hash to set
+    /// Set PIN hash directly (for testing only)
     pub fn set_pin_hash_for_testing(&mut self, hash: [u8; 32]) {
-        self.pin_hash = Some(hash);
-        self.pin_retries = MAX_PIN_RETRIES;
+        self.pin_state.pin_hash = Some(SecPinHash::new(hash));
+        self.pin_state.retries = MAX_PIN_RETRIES;
     }
 
     /// Decrement PIN retry counter (for failed PIN attempts)
     pub(crate) fn decrement_pin_retries(&mut self) {
-        self.pin_retries = self.pin_retries.saturating_sub(1);
+        self.pin_state.retries = self.pin_state.retries.saturating_sub(1);
+        let _ = self.save_pin_state();
+    }
+
+    /// Reset PIN retry counter (for successful PIN verification)
+    pub(crate) fn reset_pin_retries(&mut self) {
+        self.pin_state.retries = MAX_PIN_RETRIES;
+        let _ = self.save_pin_state();
     }
 
     /// Get PIN token with permissions
@@ -643,15 +674,18 @@ impl<C: AuthenticatorCallbacks> Authenticator<C> {
 
     /// Get minimum PIN length
     pub fn min_pin_length(&self) -> usize {
-        self.min_pin_length
+        self.pin_state.min_pin_length as usize
     }
 
     /// Set minimum PIN length (4-63)
+    ///
+    /// This also persists the change if storage is configured.
     pub fn set_min_pin_length(&mut self, length: usize) -> Result<(), StatusCode> {
         if !(4..=63).contains(&length) {
             return Err(StatusCode::PinPolicyViolation);
         }
-        self.min_pin_length = length;
+        self.pin_state.min_pin_length = length as u8;
+        self.save_pin_state()?;
         Ok(())
     }
 
@@ -840,13 +874,13 @@ impl<C: AuthenticatorCallbacks> Authenticator<C> {
     ///
     /// This will clear all credentials, reset PIN, and clear tokens.
     pub fn reset(&mut self) -> Result<(), StatusCode> {
-        // Clear PIN state
-        self.pin_hash = None;
-        self.pin_retries = MAX_PIN_RETRIES;
+        // Reset PIN state to defaults
+        self.pin_state = PinState::new();
         self.pin_tokens.clear_token();
-        self.force_change_pin = false;
-        self.min_pin_length = 4;
         self.pin_protocol_keypairs.clear();
+
+        // Persist reset state if storage is configured
+        self.save_pin_state()?;
 
         // Delete all credentials via callbacks
         self.delete_all_credentials()?;
@@ -1686,5 +1720,187 @@ mod tests {
         let mut auth = Authenticator::new(config, MockCallbacks);
         auth.set_pin("1234").unwrap();
         assert!(auth.is_protected_by_uv());
+    }
+
+    #[test]
+    fn test_pin_storage_persistence() {
+        use alloc::sync::Arc;
+        use core::sync::atomic::{AtomicUsize, Ordering};
+
+        #[cfg(feature = "std")]
+        use std::sync::Mutex;
+
+        #[cfg(not(feature = "std"))]
+        use spin::Mutex;
+
+        /// Mock PIN storage that tracks save/load calls
+        struct MockPinStorage {
+            state: Arc<Mutex<Option<PinState>>>,
+            save_count: Arc<AtomicUsize>,
+            load_count: Arc<AtomicUsize>,
+        }
+
+        impl MockPinStorage {
+            fn new() -> Self {
+                Self {
+                    state: Arc::new(Mutex::new(None)),
+                    save_count: Arc::new(AtomicUsize::new(0)),
+                    load_count: Arc::new(AtomicUsize::new(0)),
+                }
+            }
+
+            fn with_state(state: PinState) -> Self {
+                Self {
+                    state: Arc::new(Mutex::new(Some(state))),
+                    save_count: Arc::new(AtomicUsize::new(0)),
+                    load_count: Arc::new(AtomicUsize::new(0)),
+                }
+            }
+        }
+
+        impl crate::callbacks::PinStorageCallbacks for MockPinStorage {
+            fn load_pin_state(&self) -> Result<PinState, StatusCode> {
+                self.load_count.fetch_add(1, Ordering::SeqCst);
+
+                #[cfg(feature = "std")]
+                let guard = self.state.lock().unwrap();
+
+                #[cfg(not(feature = "std"))]
+                let guard = self.state.lock();
+
+                guard.clone().ok_or(StatusCode::Other)
+            }
+
+            fn save_pin_state(&self, state: &PinState) -> Result<(), StatusCode> {
+                self.save_count.fetch_add(1, Ordering::SeqCst);
+
+                #[cfg(feature = "std")]
+                let mut guard = self.state.lock().unwrap();
+
+                #[cfg(not(feature = "std"))]
+                let mut guard = self.state.lock();
+
+                *guard = Some(state.clone());
+                Ok(())
+            }
+        }
+
+        // Test 1: Storage is called when setting PIN
+        let storage = MockPinStorage::new();
+        let save_count = storage.save_count.clone();
+        let state = storage.state.clone();
+
+        let config = AuthenticatorConfig::new();
+        let mut auth = Authenticator::new(config, MockCallbacks).with_pin_storage(storage);
+
+        assert!(!auth.is_pin_set());
+        auth.set_pin("1234").unwrap();
+        assert!(auth.is_pin_set());
+
+        // Verify save was called (once for set_pin)
+        assert_eq!(save_count.load(Ordering::SeqCst), 1);
+
+        // Verify state was persisted
+        #[cfg(feature = "std")]
+        let persisted = state.lock().unwrap().clone().unwrap();
+
+        #[cfg(not(feature = "std"))]
+        let persisted = state.lock().clone().unwrap();
+
+        assert!(persisted.is_pin_set());
+        assert_eq!(persisted.retries, MAX_PIN_RETRIES);
+        assert_eq!(persisted.version, 1);
+
+        // Test 2: Storage is loaded on construction
+        let mut initial_state = PinState::new();
+        initial_state.pin_hash = Some(SecPinHash::new([0x42u8; 32]));
+        initial_state.retries = 5;
+        initial_state.min_pin_length = 6;
+        initial_state.version = 10;
+
+        let storage = MockPinStorage::with_state(initial_state);
+        let load_count = storage.load_count.clone();
+
+        let config = AuthenticatorConfig::new();
+        let auth = Authenticator::new(config, MockCallbacks).with_pin_storage(storage);
+
+        // Verify load was called
+        assert_eq!(load_count.load(Ordering::SeqCst), 1);
+
+        // Verify state was loaded
+        assert!(auth.is_pin_set());
+        assert_eq!(auth.pin_retries(), 5);
+        assert_eq!(auth.min_pin_length(), 6);
+
+        // Test 3: Failed PIN verification decrements retries and persists
+        let mut initial_state = PinState::new();
+        // Set a known PIN hash (SHA-256 of "1234")
+        let hash = sha2::Sha256::digest(b"1234");
+        initial_state.pin_hash = Some(SecPinHash::new(hash.into()));
+        initial_state.retries = MAX_PIN_RETRIES;
+
+        let storage = MockPinStorage::with_state(initial_state);
+        let save_count = storage.save_count.clone();
+        let state = storage.state.clone();
+
+        let config = AuthenticatorConfig::new();
+        let mut auth = Authenticator::new(config, MockCallbacks).with_pin_storage(storage);
+
+        // Wrong PIN should decrement retries
+        let result = auth.verify_pin("wrong");
+        assert_eq!(result, Err(StatusCode::PinInvalid));
+        assert_eq!(auth.pin_retries(), MAX_PIN_RETRIES - 1);
+
+        // Verify save was called
+        assert!(save_count.load(Ordering::SeqCst) >= 1);
+
+        // Verify persisted state has decremented retries
+        #[cfg(feature = "std")]
+        let persisted = state.lock().unwrap().clone().unwrap();
+
+        #[cfg(not(feature = "std"))]
+        let persisted = state.lock().clone().unwrap();
+
+        assert_eq!(persisted.retries, MAX_PIN_RETRIES - 1);
+
+        // Test 4: Successful PIN verification resets retries and persists
+        let result = auth.verify_pin("1234");
+        assert!(result.is_ok());
+        assert_eq!(auth.pin_retries(), MAX_PIN_RETRIES);
+
+        #[cfg(feature = "std")]
+        let persisted = state.lock().unwrap().clone().unwrap();
+
+        #[cfg(not(feature = "std"))]
+        let persisted = state.lock().clone().unwrap();
+
+        assert_eq!(persisted.retries, MAX_PIN_RETRIES);
+
+        // Test 5: Reset clears PIN state and persists
+        let mut initial_state = PinState::new();
+        let hash = sha2::Sha256::digest(b"1234");
+        initial_state.pin_hash = Some(SecPinHash::new(hash.into()));
+        initial_state.retries = 3;
+        initial_state.min_pin_length = 8;
+
+        let storage = MockPinStorage::with_state(initial_state);
+        let state = storage.state.clone();
+
+        let config = AuthenticatorConfig::new();
+        let mut auth = Authenticator::new(config, MockCallbacks).with_pin_storage(storage);
+
+        assert!(auth.is_pin_set());
+        auth.reset().unwrap();
+        assert!(!auth.is_pin_set());
+
+        #[cfg(feature = "std")]
+        let persisted = state.lock().unwrap().clone().unwrap();
+
+        #[cfg(not(feature = "std"))]
+        let persisted = state.lock().clone().unwrap();
+
+        assert!(!persisted.is_pin_set());
+        assert_eq!(persisted.retries, MAX_PIN_RETRIES);
+        assert_eq!(persisted.min_pin_length, 4); // Reset to default
     }
 }
