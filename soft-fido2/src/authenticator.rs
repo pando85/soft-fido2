@@ -2,7 +2,9 @@
 //!
 //! Provides a high-level FIDO2 authenticator with trait-based callbacks for user interaction.
 
-use crate::error::{Error, Result};
+#[cfg(feature = "std")]
+use crate::error::Error;
+use crate::error::Result;
 use crate::types::{Credential, CredentialRef};
 use soft_fido2_ctap::authenticator::{
     Authenticator as CtapAuthenticator, AuthenticatorConfig as CtapConfig,
@@ -15,7 +17,9 @@ use soft_fido2_ctap::cbor::MAX_CTAP_MESSAGE_SIZE;
 use soft_fido2_ctap::types::Credential as CtapCredential;
 use soft_fido2_ctap::{CommandDispatcher, StatusCode};
 
+use alloc::string::String;
 use alloc::sync::Arc;
+use alloc::vec;
 use alloc::vec::Vec;
 
 #[cfg(feature = "std")]
@@ -627,7 +631,10 @@ impl<C: AuthenticatorCallbacks> Authenticator<C> {
     ///
     /// Number of bytes written to response buffer
     pub fn handle(&mut self, request: &[u8], response: &mut Vec<u8>) -> Result<usize> {
+        #[cfg(feature = "std")]
         let mut dispatcher = self.dispatcher.lock().map_err(|_| Error::Other)?;
+        #[cfg(not(feature = "std"))]
+        let mut dispatcher = self.dispatcher.lock();
 
         // Dispatch command
         match dispatcher.dispatch(request) {
@@ -678,10 +685,13 @@ impl<C: AuthenticatorCallbacks> Authenticator<C> {
     where
         F: Fn(&[u8]) -> core::result::Result<Vec<u8>, StatusCode> + Send + Sync + 'static,
     {
+        #[cfg(feature = "std")]
         let mut dispatcher = self
             .dispatcher
             .lock()
             .expect("Failed to lock dispatcher for custom command registration");
+        #[cfg(not(feature = "std"))]
+        let mut dispatcher = self.dispatcher.lock();
 
         dispatcher
             .authenticator_mut()

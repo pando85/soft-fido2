@@ -7,6 +7,9 @@ use crate::error::{Error, Result};
 use soft_fido2_ctap::cbor::{MapParser, Value};
 use soft_fido2_ctap::types::{PublicKeyCredentialDescriptor, User};
 
+use alloc::string::String;
+use alloc::vec::Vec;
+
 /// Response from authenticatorCredentialManagement - getCredsMetadata (0x01)
 ///
 /// Returns metadata about credential storage on the authenticator.

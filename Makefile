@@ -49,9 +49,13 @@ lint: fmt-check clippy ## run all linting checks (fmt + clippy)
 .PHONY: lint-fix
 lint-fix: fmt clippy-fix ## run all linting with automatic fixes
 
+.PHONY: test-nostd
+test-nostd:	## run no_std tests
+	cargo test --test nostd_comprehensive_test --no-default-features
+
 .PHONY: test
 test:	## run tests
-test: lint
+test: lint test-nostd
 	cargo test
 
 .PHONY: test-e2e

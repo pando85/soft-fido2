@@ -1,6 +1,12 @@
 //! Error types for CTAP operations
 
+#[cfg(feature = "std")]
 use std::fmt;
+
+#[cfg(not(feature = "std"))]
+use core::fmt;
+
+use alloc::string::String;
 
 /// Error type for CTAP operations
 #[derive(Debug, Clone, PartialEq)]
@@ -84,6 +90,7 @@ impl fmt::Display for Error {
     }
 }
 
+#[cfg(feature = "std")]
 impl std::error::Error for Error {}
 
 impl From<i32> for Error {
@@ -196,6 +203,7 @@ impl From<Error> for soft_fido2_ctap::StatusCode {
 }
 
 // Conversion from IO errors
+#[cfg(feature = "std")]
 impl From<std::io::Error> for Error {
     fn from(error: std::io::Error) -> Self {
         Error::IoError(error.to_string())
@@ -227,4 +235,8 @@ impl Error {
 }
 
 /// Result type alias for common operations
+#[cfg(feature = "std")]
 pub type Result<T> = std::result::Result<T, Error>;
+
+#[cfg(not(feature = "std"))]
+pub type Result<T> = core::result::Result<T, Error>;

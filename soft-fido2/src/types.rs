@@ -55,7 +55,10 @@ use crate::error::{Error, Result};
 
 use soft_fido2_ctap::SecBytes;
 
+use alloc::borrow::ToOwned;
+use alloc::string::ToString;
 use alloc::vec::Vec;
+
 use serde::{Deserialize, Serialize};
 
 pub use soft_fido2_ctap::types::{RelyingParty, User};
