@@ -6,6 +6,7 @@
 //!
 //! Reference: FIDO2 CTAP 2.1 specification, Section 6.5.5.7
 
+use crate::SecBytes;
 use crate::StatusCode;
 
 use alloc::string::String;
@@ -79,10 +80,10 @@ impl Permission {
 ///
 /// Represents an authorization token obtained after successful PIN verification.
 /// The token has limited lifetime and specific permissions.
-#[derive(Debug, Clone)]
+#[derive(Clone)]
 pub struct PinToken {
-    /// The token value (32 random bytes)
-    token: [u8; 32],
+    /// The token value (32 random bytes, mlock + zeroed on drop)
+    token: SecBytes,
 
     /// Permission bitmask
     permissions: u8,
@@ -112,7 +113,7 @@ impl PinToken {
     pub fn new(token: [u8; 32], permissions: u8, rp_id: Option<String>) -> Self {
         let now = current_timestamp_ms();
         Self {
-            token,
+            token: SecBytes::from_array(token),
             permissions,
             rp_id,
             created_at: now,
@@ -120,9 +121,17 @@ impl PinToken {
         }
     }
 
-    /// Get the token value
+    /// Get the token value as a fixed-size array reference
+    ///
+    /// # Panics
+    ///
+    /// Panics if the internal token is not exactly 32 bytes (should never happen
+    /// since tokens are always created with 32 bytes).
     pub fn value(&self) -> &[u8; 32] {
-        &self.token
+        self.token
+            .as_slice()
+            .try_into()
+            .expect("PinToken always contains exactly 32 bytes")
     }
 
     /// Get the permission bitmask
@@ -217,6 +226,18 @@ impl PinToken {
         // Authorization successful - update last used
         self.mark_used();
         Ok(())
+    }
+}
+
+impl core::fmt::Debug for PinToken {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        f.debug_struct("PinToken")
+            .field("token", &"<redacted>")
+            .field("permissions", &self.permissions)
+            .field("rp_id", &self.rp_id)
+            .field("created_at", &self.created_at)
+            .field("last_used", &self.last_used)
+            .finish()
     }
 }
 

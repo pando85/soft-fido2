@@ -18,6 +18,7 @@ use cbc::{Decryptor, Encryptor};
 use hmac::{Hmac, Mac};
 use sha2::{Digest, Sha256};
 use subtle::ConstantTimeEq;
+use zeroize::Zeroizing;
 
 type HmacSha256 = Hmac<Sha256>;
 type Aes256CbcEnc = Encryptor<Aes256>;
@@ -184,7 +185,7 @@ pub mod v1 {
     ///
     /// # Returns
     ///
-    /// (encryption_key, hmac_key) - both 32 bytes
+    /// (encryption_key, hmac_key) - both 32 bytes, wrapped in Zeroizing for automatic zeroing
     ///
     /// # Examples
     ///
@@ -197,17 +198,17 @@ pub mod v1 {
     /// assert_eq!(enc_key.len(), 32);
     /// assert_eq!(hmac_key.len(), 32);
     /// ```
-    pub fn derive_keys(shared_secret: &[u8; 32]) -> ([u8; 32], [u8; 32]) {
+    pub fn derive_keys(shared_secret: &[u8; 32]) -> (Zeroizing<[u8; 32]>, Zeroizing<[u8; 32]>) {
         // Both keys are SHA-256(sharedSecret)
         let mut hasher = Sha256::new();
         hasher.update(shared_secret);
         let hash = hasher.finalize();
 
-        let mut key = [0u8; 32];
+        let mut key = Zeroizing::new([0u8; 32]);
         key.copy_from_slice(&hash);
 
         // In V1, both encryption and HMAC use the same derived key
-        (key, key)
+        (key.clone(), key)
     }
 }
 
@@ -299,7 +300,7 @@ pub mod v2 {
     ///
     /// # Returns
     ///
-    /// 32-byte HMAC key
+    /// 32-byte HMAC key wrapped in Zeroizing for automatic zeroing
     ///
     /// # Examples
     ///
@@ -311,7 +312,7 @@ pub mod v2 {
     ///
     /// assert_eq!(hmac_key.len(), 32);
     /// ```
-    pub fn derive_hmac_key(shared_secret: &[u8; 32]) -> [u8; 32] {
+    pub fn derive_hmac_key(shared_secret: &[u8; 32]) -> Zeroizing<[u8; 32]> {
         use hkdf::Hkdf;
 
         // Per CTAP 2.1 spec: HKDF-SHA-256 with 32-byte zero salt
@@ -319,8 +320,8 @@ pub mod v2 {
         let info = b"CTAP2 HMAC key";
 
         let hkdf = Hkdf::<Sha256>::new(Some(&salt), shared_secret);
-        let mut key = [0u8; 32];
-        hkdf.expand(info, &mut key)
+        let mut key = Zeroizing::new([0u8; 32]);
+        hkdf.expand(info, &mut *key)
             .expect("32 bytes is valid length for HKDF-SHA-256");
 
         key
@@ -461,8 +462,8 @@ pub mod v2 {
     ///
     /// # Returns
     ///
-    /// 32-byte encryption key
-    pub fn derive_encryption_key(shared_secret: &[u8; 32]) -> [u8; 32] {
+    /// 32-byte encryption key wrapped in Zeroizing for automatic zeroing
+    pub fn derive_encryption_key(shared_secret: &[u8; 32]) -> Zeroizing<[u8; 32]> {
         use hkdf::Hkdf;
 
         // Per CTAP 2.1 spec: HKDF-SHA-256 with 32-byte zero salt
@@ -470,8 +471,8 @@ pub mod v2 {
         let info = b"CTAP2 AES key";
 
         let hkdf = Hkdf::<Sha256>::new(Some(&salt), shared_secret);
-        let mut key = [0u8; 32];
-        hkdf.expand(info, &mut key)
+        let mut key = Zeroizing::new([0u8; 32]);
+        hkdf.expand(info, &mut *key)
             .expect("32 bytes is valid length for HKDF-SHA-256");
 
         key
@@ -531,11 +532,11 @@ mod tests {
         assert_eq!(hmac_key.len(), 32);
 
         // In V1, both keys are the same
-        assert_eq!(enc_key, hmac_key);
+        assert_eq!(*enc_key, *hmac_key);
 
         // Keys should be deterministic
         let (enc_key2, _) = v1::derive_keys(&shared_secret);
-        assert_eq!(enc_key, enc_key2);
+        assert_eq!(*enc_key, *enc_key2);
     }
 
     #[test]
@@ -572,7 +573,7 @@ mod tests {
         assert_eq!(enc_key.len(), 32);
 
         // In V2, keys should be different
-        assert_ne!(hmac_key, enc_key);
+        assert_ne!(*hmac_key, *enc_key);
     }
 
     #[test]

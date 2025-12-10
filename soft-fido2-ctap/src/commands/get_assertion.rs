@@ -24,6 +24,7 @@ use alloc::{
 };
 
 use sha2::{Digest, Sha256};
+use zeroize::Zeroizing;
 
 /// GetAssertion request parameter keys
 mod req_keys {
@@ -579,11 +580,12 @@ pub fn handle<C: AuthenticatorCallbacks>(
         return Err(StatusCode::InvalidCredential);
     }
 
-    let priv_key_array = {
+    // Copy private key to Zeroizing wrapper (zeroed on drop)
+    let priv_key_array = Zeroizing::new({
         let mut arr = [0u8; 32];
         arr.copy_from_slice(key_bytes);
         arr
-    };
+    });
 
     let signature = ecdsa::sign(&priv_key_array, &sig_data)?;
 

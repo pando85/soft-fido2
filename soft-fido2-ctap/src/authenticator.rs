@@ -306,8 +306,8 @@ pub struct Authenticator<C: AuthenticatorCallbacks> {
     pin_protocol_keypairs: BTreeMap<u8, soft_fido2_crypto::ecdh::KeyPair>,
 
     /// Credential wrapping key for non-resident credentials
-    /// Generated at runtime if not provided in config
-    credential_wrapping_key: [u8; 32],
+    /// Generated at runtime if not provided in config (mlock + zeroed on drop)
+    credential_wrapping_key: SecBytes,
 
     /// RP enumeration state (for enumerateRPsBegin/GetNext)
     /// Format: Vec<(rp_id, rp_name, credential_count)>
@@ -331,12 +331,13 @@ impl<C: AuthenticatorCallbacks> Authenticator<C> {
     /// * `config` - Authenticator configuration
     /// * `callbacks` - User interaction and storage callbacks
     pub fn new(config: AuthenticatorConfig, callbacks: C) -> Self {
-        // Generate or use provided wrapping key
-        let credential_wrapping_key = config.credential_wrapping_key.unwrap_or_else(|| {
-            let mut key = [0u8; 32];
-            rand::thread_rng().fill_bytes(&mut key);
-            key
-        });
+        // Generate or use provided wrapping key (mlock + zeroed on drop)
+        let credential_wrapping_key =
+            SecBytes::from_array(config.credential_wrapping_key.unwrap_or_else(|| {
+                let mut key = [0u8; 32];
+                rand::thread_rng().fill_bytes(&mut key);
+                key
+            }));
 
         Self {
             config,
@@ -924,9 +925,15 @@ impl<C: AuthenticatorCallbacks> Authenticator<C> {
             plaintext.push(0);
         }
 
+        // Get wrapping key as fixed-size array reference
+        let wrapping_key: &[u8; 32] = self
+            .credential_wrapping_key
+            .as_slice()
+            .try_into()
+            .expect("credential_wrapping_key is always 32 bytes");
+
         // Encrypt using PIN protocol V2 (AES-256-CBC with random IV)
-        let encrypted = v2::encrypt(&self.credential_wrapping_key, &plaintext)
-            .map_err(|_| StatusCode::Other)?;
+        let encrypted = v2::encrypt(wrapping_key, &plaintext).map_err(|_| StatusCode::Other)?;
 
         // Build credential ID: version || encrypted_data
         let mut credential_id = Vec::new();
@@ -934,7 +941,7 @@ impl<C: AuthenticatorCallbacks> Authenticator<C> {
         credential_id.extend_from_slice(&encrypted);
 
         // Add HMAC for integrity
-        let hmac = v2::authenticate(&self.credential_wrapping_key, &credential_id);
+        let hmac = v2::authenticate(wrapping_key, &credential_id);
         credential_id.extend_from_slice(&hmac[..16]); // First 16 bytes of HMAC
 
         Ok(credential_id)
@@ -966,8 +973,15 @@ impl<C: AuthenticatorCallbacks> Authenticator<C> {
             return Err(StatusCode::InvalidParameter);
         }
 
+        // Get wrapping key as fixed-size array reference
+        let wrapping_key: &[u8; 32] = self
+            .credential_wrapping_key
+            .as_slice()
+            .try_into()
+            .expect("credential_wrapping_key is always 32 bytes");
+
         // Verify HMAC
-        let hmac_computed = v2::authenticate(&self.credential_wrapping_key, data_with_version);
+        let hmac_computed = v2::authenticate(wrapping_key, data_with_version);
         let hmac_valid: bool = hmac_computed[..16].ct_eq(hmac_received).into();
         if !hmac_valid {
             return Err(StatusCode::InvalidParameter);
@@ -976,8 +990,7 @@ impl<C: AuthenticatorCallbacks> Authenticator<C> {
         // Decrypt with protected buffer
         let encrypted = &credential_id[1..hmac_start];
         let plaintext = Zeroizing::new(
-            v2::decrypt(&self.credential_wrapping_key, encrypted)
-                .map_err(|_| StatusCode::InvalidParameter)?,
+            v2::decrypt(wrapping_key, encrypted).map_err(|_| StatusCode::InvalidParameter)?,
         );
 
         // Parse plaintext: private_key(32) || rp_id_len(1) || rp_id || algorithm(4)

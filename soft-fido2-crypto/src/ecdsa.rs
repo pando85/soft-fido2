@@ -16,11 +16,12 @@ use alloc::vec::Vec;
 use p256::ecdsa::signature::{Signer, Verifier};
 use p256::ecdsa::{Signature, SigningKey, VerifyingKey};
 use rand::rngs::OsRng;
+use zeroize::Zeroizing;
 
 /// Generate new random ES256 key pair
 ///
 /// Returns (private_key, public_key) where:
-/// - private_key: 32-byte scalar
+/// - private_key: 32-byte scalar wrapped in Zeroizing for automatic zeroing
 /// - public_key: 65-byte uncompressed SEC1 format (0x04 || x || y)
 ///
 /// # Examples
@@ -33,11 +34,12 @@ use rand::rngs::OsRng;
 /// assert_eq!(public_key.len(), 65);
 /// assert_eq!(public_key[0], 0x04);
 /// ```
-pub fn generate_keypair() -> ([u8; 32], Vec<u8>) {
+pub fn generate_keypair() -> (Zeroizing<[u8; 32]>, Vec<u8>) {
     let signing_key = SigningKey::random(&mut OsRng);
     let verifying_key = signing_key.verifying_key();
 
-    let private_key: [u8; 32] = signing_key.to_bytes().into();
+    let mut private_key = Zeroizing::new([0u8; 32]);
+    private_key.copy_from_slice(&signing_key.to_bytes());
 
     // Public key in uncompressed SEC1 format
     let public_key = verifying_key.to_encoded_point(false).as_bytes().to_vec();
@@ -238,7 +240,7 @@ mod tests {
         assert_eq!(public_key[0], 0x04); // Uncompressed point marker
 
         // Private key should not be all zeros
-        assert_ne!(private_key, [0u8; 32]);
+        assert_ne!(*private_key, [0u8; 32]);
     }
 
     #[test]

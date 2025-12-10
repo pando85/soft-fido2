@@ -11,6 +11,7 @@ use alloc::vec::Vec;
 use p256::elliptic_curve::sec1::ToEncodedPoint;
 use p256::{PublicKey, SecretKey};
 use rand::rngs::OsRng;
+use zeroize::Zeroizing;
 
 /// P-256 key pair for ECDH key agreement
 pub struct KeyPair {
@@ -93,7 +94,7 @@ impl KeyPair {
     ///
     /// # Returns
     ///
-    /// 32-byte shared secret (x-coordinate of ECDH result)
+    /// 32-byte shared secret (x-coordinate of ECDH result) wrapped in Zeroizing for automatic zeroing
     ///
     /// # Examples
     ///
@@ -106,9 +107,9 @@ impl KeyPair {
     /// let alice_shared = alice.shared_secret(&bob.public_key_bytes()).unwrap();
     /// let bob_shared = bob.shared_secret(&alice.public_key_bytes()).unwrap();
     ///
-    /// assert_eq!(alice_shared, bob_shared);
+    /// assert_eq!(*alice_shared, *bob_shared);
     /// ```
-    pub fn shared_secret(&self, peer_public_key: &[u8]) -> Result<[u8; 32]> {
+    pub fn shared_secret(&self, peer_public_key: &[u8]) -> Result<Zeroizing<[u8; 32]>> {
         // Parse peer's public key from SEC1 encoding
         let peer_public = PublicKey::from_sec1_bytes(peer_public_key)
             .map_err(|_| CryptoError::InvalidPublicKey)?;
@@ -118,7 +119,7 @@ impl KeyPair {
             p256::ecdh::diffie_hellman(self.secret.to_nonzero_scalar(), peer_public.as_affine());
 
         // Return x-coordinate as shared secret (per FIDO2 spec)
-        let mut secret = [0u8; 32];
+        let mut secret = Zeroizing::new([0u8; 32]);
         secret.copy_from_slice(shared.raw_secret_bytes());
         Ok(secret)
     }
@@ -185,11 +186,11 @@ mod tests {
         let bob_shared = bob.shared_secret(&alice.public_key_bytes()).unwrap();
 
         // Shared secrets must match
-        assert_eq!(alice_shared, bob_shared);
+        assert_eq!(*alice_shared, *bob_shared);
         assert_eq!(alice_shared.len(), 32);
 
         // Shared secret should not be all zeros
-        assert_ne!(alice_shared, [0u8; 32]);
+        assert_ne!(*alice_shared, [0u8; 32]);
     }
 
     #[test]
@@ -202,7 +203,7 @@ mod tests {
         let alice_charlie = alice.shared_secret(&charlie.public_key_bytes()).unwrap();
 
         // Different peers should produce different shared secrets
-        assert_ne!(alice_bob, alice_charlie);
+        assert_ne!(*alice_bob, *alice_charlie);
     }
 
     #[test]

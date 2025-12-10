@@ -23,6 +23,7 @@ aes.workspace = true
 cbc.workspace = true
 rand.workspace = true
 subtle.workspace = true
+zeroize.workspace = true
 thiserror.workspace = true
 
 [dev-dependencies]

@@ -18,3 +18,6 @@ pub mod pin_protocol;
 
 // Re-export commonly used types
 pub use error::{CryptoError, Result};
+
+// Re-export zeroize for callers to use with sensitive data
+pub use zeroize::Zeroizing;
