@@ -5,6 +5,24 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/), and this project
 adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [v0.9.0](https://github.com/pando85/soft-fido2/tree/v0.9.0) - 2025-12-10
+
+### Added
+
+- Add full pin support ([39078ff](https://github.com/pando85/soft-fido2/commit/39078fff3291f54efa3f2a3dd2813d35b3f20d62))
+
+### Fixed
+
+- Add zeroized to short live secrets ([7d65c22](https://github.com/pando85/soft-fido2/commit/7d65c22b9a6bdd7eb1b78080ee863e12b5e07e21))
+
+### Refactor
+
+- Add descriptive names to commands and keys in cred mgmt ([8092786](https://github.com/pando85/soft-fido2/commit/809278640adea55b89dc9966dd38b1300e632144))
+
+### Testing
+
+- Add nostd suite ([593b1b2](https://github.com/pando85/soft-fido2/commit/593b1b29cd1563bf6f199bf58bd00010835a9e3a))
+
 ## [v0.8.0](https://github.com/pando85/soft-fido2/tree/v0.8.0) - 2025-12-10
 
 ### Fixed

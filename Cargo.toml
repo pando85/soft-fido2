@@ -4,7 +4,7 @@ resolver = "2"
 
 
 [workspace.package]
-version = "0.8.0"
+version = "0.9.0"
 authors = ["Pando85 <pando855@gmail.com>"]
 rust-version = "1.91"
 edition = "2024"
@@ -13,9 +13,9 @@ repository = "https://github.com/pando85/soft-fido2"
 readme = "README.md"
 
 [workspace.dependencies]
-soft-fido2-crypto = { path = "soft-fido2-crypto", default-features = false, version = "0.8.0" }
-soft-fido2-ctap = { path = "soft-fido2-ctap", default-features = false, version = "0.8.0" }
-soft-fido2-transport = { path = "soft-fido2-transport", version = "0.8.0" }
+soft-fido2-crypto = { path = "soft-fido2-crypto", default-features = false, version = "0.9.0" }
+soft-fido2-ctap = { path = "soft-fido2-ctap", default-features = false, version = "0.9.0" }
+soft-fido2-transport = { path = "soft-fido2-transport", version = "0.9.0" }
 
 # Cryptography (well-audited crates)
 p256 = { version = "0.13", features = ["ecdsa", "ecdh"] }
