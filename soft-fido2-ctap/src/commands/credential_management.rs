@@ -35,7 +35,7 @@ enum SubCommand {
 impl TryFrom<u8> for SubCommand {
     type Error = StatusCode;
 
-    fn try_from(value: u8) -> std::result::Result<Self, Self::Error> {
+    fn try_from(value: u8) -> core::result::Result<Self, Self::Error> {
         match value {
             0x01 => Ok(SubCommand::GetCredsMetadata),
             0x02 => Ok(SubCommand::EnumerateRPsBegin),

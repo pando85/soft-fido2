@@ -89,6 +89,7 @@ pub use response::{
 };
 
 // std-only re-exports
+#[cfg(feature = "std")]
 pub use client::{Client, compute_rp_id_hash};
 #[cfg(feature = "std")]
 pub use pin::{PinProtocol, PinUvAuthEncapsulation};

@@ -1,3 +1,12 @@
+#[cfg(feature = "std")]
+use std::fmt;
+
+#[cfg(not(feature = "std"))]
+use core::fmt;
+
+use alloc::vec;
+use alloc::vec::Vec;
+
 /// CTAP 2.1 Command Codes
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 #[repr(u8)]
@@ -68,8 +77,8 @@ impl From<CtapCommand> for u8 {
     }
 }
 
-impl std::fmt::Display for CtapCommand {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+impl fmt::Display for CtapCommand {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             Self::MakeCredential => write!(f, "MakeCredential(0x01)"),
             Self::GetAssertion => write!(f, "GetAssertion(0x02)"),

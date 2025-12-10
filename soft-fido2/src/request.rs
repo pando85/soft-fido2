@@ -4,6 +4,9 @@ use crate::error::{Error, Result};
 
 use soft_fido2_ctap::types::{RelyingParty, User};
 
+use alloc::string::String;
+use alloc::vec::Vec;
+
 /// A validated client data hash (must be exactly 32 bytes)
 ///
 /// This newtype ensures that client data hashes are always the correct length,
