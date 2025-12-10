@@ -85,14 +85,9 @@ impl AuthenticatorCallbacks for UvTestCallbacks {
         Ok(UvResult::Accepted)
     }
 
-    fn write_credential(
-        &self,
-        cred_id: &[u8],
-        _rp_id: &str,
-        cred: &CredentialRef,
-    ) -> SoftFido2Result<()> {
+    fn write_credential(&self, cred: &CredentialRef) -> SoftFido2Result<()> {
         let mut store = self.credentials.lock().unwrap();
-        store.insert(cred_id.to_vec(), cred.to_owned());
+        store.insert(cred.id.to_vec(), cred.to_owned());
 
         // Track user -> credential mapping
         if let Some(user_name) = cred.user_name
@@ -102,14 +97,14 @@ impl AuthenticatorCallbacks for UvTestCallbacks {
             mappings
                 .entry(user_name.to_string())
                 .or_default()
-                .push(cred_id.to_vec());
+                .push(cred.id.to_vec());
         }
 
         eprintln!("    [Auth] Stored credential (total: {})", store.len());
         Ok(())
     }
 
-    fn read_credential(&self, cred_id: &[u8], _rp_id: &str) -> SoftFido2Result<Option<Credential>> {
+    fn read_credential(&self, cred_id: &[u8]) -> SoftFido2Result<Option<Credential>> {
         let store = self.credentials.lock().unwrap();
         Ok(store.get(cred_id).cloned())
     }
@@ -213,18 +208,13 @@ impl AuthenticatorCallbacks for UpOnlyTestCallbacks {
         Ok(UvResult::Denied)
     }
 
-    fn write_credential(
-        &self,
-        cred_id: &[u8],
-        _rp_id: &str,
-        cred: &CredentialRef,
-    ) -> SoftFido2Result<()> {
+    fn write_credential(&self, cred: &CredentialRef) -> SoftFido2Result<()> {
         let mut store = self.credentials.lock().unwrap();
-        store.insert(cred_id.to_vec(), cred.to_owned());
+        store.insert(cred.id.to_vec(), cred.to_owned());
         Ok(())
     }
 
-    fn read_credential(&self, cred_id: &[u8], _rp_id: &str) -> SoftFido2Result<Option<Credential>> {
+    fn read_credential(&self, cred_id: &[u8]) -> SoftFido2Result<Option<Credential>> {
         let store = self.credentials.lock().unwrap();
         Ok(store.get(cred_id).cloned())
     }

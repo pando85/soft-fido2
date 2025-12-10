@@ -53,13 +53,13 @@ impl AuthenticatorCallbacks for TestCallbacks {
         Ok(UvResult::Accepted)
     }
 
-    fn write_credential(&self, cred_id: &[u8], _rp_id: &str, cred: &CredentialRef) -> Result<()> {
+    fn write_credential(&self, cred: &CredentialRef) -> Result<()> {
         let mut store = self.credentials.lock().unwrap();
-        store.insert(cred_id.to_vec(), cred.to_owned());
+        store.insert(cred.id.to_vec(), cred.to_owned());
         Ok(())
     }
 
-    fn read_credential(&self, cred_id: &[u8], _rp_id: &str) -> Result<Option<Credential>> {
+    fn read_credential(&self, cred_id: &[u8]) -> Result<Option<Credential>> {
         let store = self.credentials.lock().unwrap();
         Ok(store.get(cred_id).cloned())
     }
@@ -142,22 +142,20 @@ impl AuthenticatorCallbacks for VerboseTestCallbacks {
         self.inner.request_uv(info, user, rp)
     }
 
-    fn write_credential(&self, cred_id: &[u8], rp_id: &str, cred: &CredentialRef) -> Result<()> {
+    fn write_credential(&self, cred: &CredentialRef) -> Result<()> {
         eprintln!(
-            "[Callback] write_credential: cred_id={}, rp_id='{}', user_name={:?}",
-            hex::encode(cred_id),
-            rp_id,
+            "[Callback] write_credential: cred_id={}, user_name={:?}",
+            hex::encode(cred.id),
             cred.user_name
         );
-        self.inner.write_credential(cred_id, rp_id, cred)
+        self.inner.write_credential(cred)
     }
 
-    fn read_credential(&self, cred_id: &[u8], rp_id: &str) -> Result<Option<Credential>> {
-        let result = self.inner.read_credential(cred_id, rp_id)?;
+    fn read_credential(&self, cred_id: &[u8]) -> Result<Option<Credential>> {
+        let result = self.inner.read_credential(cred_id)?;
         eprintln!(
-            "[Callback] read_credential: cred_id={}, rp_id='{}', found={}",
+            "[Callback] read_credential: cred_id={}, found={}",
             hex::encode(cred_id),
-            rp_id,
             result.is_some()
         );
         Ok(result)
