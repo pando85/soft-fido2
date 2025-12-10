@@ -17,6 +17,7 @@ use crate::{
 };
 
 use alloc::{string::String, vec::Vec};
+use zeroize::Zeroizing;
 
 /// ClientPIN subcommand codes
 #[repr(u8)]
@@ -188,11 +189,11 @@ fn handle_set_pin<C: AuthenticatorCallbacks>(
     }
 
     // Decrypt new PIN
-    let decrypted_pin = match protocol {
+    let decrypted_pin: Zeroizing<Vec<u8>> = Zeroizing::new(match protocol {
         1 => soft_fido2_crypto::pin_protocol::v1::decrypt(&enc_key, &new_pin_enc)?,
         2 => soft_fido2_crypto::pin_protocol::v2::decrypt(&enc_key, &new_pin_enc)?,
         _ => return Err(StatusCode::InvalidParameter),
-    };
+    });
 
     // PIN is padded to 64 bytes with trailing zeros, find actual length
     let pin_len = decrypted_pin
@@ -279,11 +280,11 @@ fn handle_change_pin<C: AuthenticatorCallbacks>(
     }
 
     // Decrypt and verify old PIN hash (first 16 bytes of SHA-256(PIN))
-    let decrypted_pin_hash = match protocol {
+    let decrypted_pin_hash: Zeroizing<Vec<u8>> = Zeroizing::new(match protocol {
         1 => soft_fido2_crypto::pin_protocol::v1::decrypt(&enc_key, &pin_hash_enc)?,
         2 => soft_fido2_crypto::pin_protocol::v2::decrypt(&enc_key, &pin_hash_enc)?,
         _ => return Err(StatusCode::InvalidParameter),
-    };
+    });
 
     // Verify old PIN hash matches (first 16 bytes per CTAP spec)
     if decrypted_pin_hash.len() < 16 {
@@ -301,11 +302,11 @@ fn handle_change_pin<C: AuthenticatorCallbacks>(
     }
 
     // Decrypt new PIN
-    let decrypted_new_pin = match protocol {
+    let decrypted_new_pin: Zeroizing<Vec<u8>> = Zeroizing::new(match protocol {
         1 => soft_fido2_crypto::pin_protocol::v1::decrypt(&enc_key, &new_pin_enc)?,
         2 => soft_fido2_crypto::pin_protocol::v2::decrypt(&enc_key, &new_pin_enc)?,
         _ => return Err(StatusCode::InvalidParameter),
-    };
+    });
 
     // PIN is padded to 64 bytes with trailing zeros, find actual length
     let pin_len = decrypted_new_pin
@@ -362,11 +363,11 @@ fn handle_get_pin_token<C: AuthenticatorCallbacks>(
     };
 
     // Decrypt PIN hash (first 16 bytes of SHA-256(PIN))
-    let decrypted_pin_hash = match protocol {
+    let decrypted_pin_hash: Zeroizing<Vec<u8>> = Zeroizing::new(match protocol {
         1 => soft_fido2_crypto::pin_protocol::v1::decrypt(&enc_key, &pin_hash_enc)?,
         2 => soft_fido2_crypto::pin_protocol::v2::decrypt(&enc_key, &pin_hash_enc)?,
         _ => return Err(StatusCode::InvalidParameter),
-    };
+    });
 
     if decrypted_pin_hash.len() < 16 {
         return Err(StatusCode::PinAuthInvalid);
@@ -443,13 +444,13 @@ fn handle_get_pin_uv_auth_token_using_pin_with_permissions<C: AuthenticatorCallb
     };
 
     // Decrypt PIN hash (first 16 bytes of SHA-256(PIN))
-    let decrypted_pin_hash = match protocol {
+    let decrypted_pin_hash: Zeroizing<Vec<u8>> = Zeroizing::new(match protocol {
         1 => soft_fido2_crypto::pin_protocol::v1::decrypt(&enc_key, &pin_hash_enc)
             .map_err(|_| StatusCode::PinAuthInvalid)?,
         2 => soft_fido2_crypto::pin_protocol::v2::decrypt(&enc_key, &pin_hash_enc)
             .map_err(|_| StatusCode::PinAuthInvalid)?,
         _ => return Err(StatusCode::InvalidParameter),
-    };
+    });
 
     if decrypted_pin_hash.len() < 16 {
         return Err(StatusCode::PinAuthInvalid);
@@ -917,7 +918,10 @@ mod tests {
     fn setup_key_agreement(
         auth: &mut Authenticator<MockCallbacks>,
         protocol: u8,
-    ) -> (soft_fido2_crypto::ecdh::KeyPair, [u8; 32]) {
+    ) -> (
+        soft_fido2_crypto::ecdh::KeyPair,
+        soft_fido2_crypto::Zeroizing<[u8; 32]>,
+    ) {
         // Get key agreement from authenticator
         let get_key_req = MapBuilder::new()
             .insert(req_keys::SUBCOMMAND, 0x02u8)

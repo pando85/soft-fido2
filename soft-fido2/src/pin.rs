@@ -419,12 +419,12 @@ impl PinUvAuthEncapsulation {
         match self.protocol {
             PinProtocol::V1 => {
                 let (enc, hmac) = pin_protocol::v1::derive_keys(secret_arr);
-                Ok((Zeroizing::new(enc), Zeroizing::new(hmac)))
+                Ok((enc, hmac))
             }
             PinProtocol::V2 => {
                 let enc = pin_protocol::v2::derive_encryption_key(secret_arr);
                 let hmac = pin_protocol::v2::derive_hmac_key(secret_arr);
-                Ok((Zeroizing::new(enc), Zeroizing::new(hmac)))
+                Ok((enc, hmac))
             }
         }
     }

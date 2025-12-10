@@ -328,7 +328,7 @@ pub fn handle<C: AuthenticatorCallbacks>(
         &options,
         &extensions,
         &response_state,
-        private_key,
+        &private_key,
         &rp,
         &user,
         alg,
@@ -609,7 +609,7 @@ fn create_credential<C: AuthenticatorCallbacks>(
     options: &MakeCredentialOptions,
     extensions: &MakeCredentialExtensions,
     response_state: &ResponseState,
-    private_key: [u8; 32],
+    private_key: &[u8; 32],
     rp: &RelyingParty,
     user: &User,
     algorithm: i32,
@@ -637,7 +637,7 @@ fn create_credential<C: AuthenticatorCallbacks>(
             user_id: user.id.clone(),
             user_name: user.name.clone(),
             user_display_name: user.display_name.clone(),
-            private_key: SecBytes::from_array(private_key),
+            private_key: SecBytes::from_array(*private_key),
             algorithm,
             sign_count: 0,
             created: current_timestamp(),
@@ -650,7 +650,7 @@ fn create_credential<C: AuthenticatorCallbacks>(
         Ok(id)
     } else {
         // Create non-discoverable credential
-        auth.wrap_credential(&private_key, &rp.id, algorithm)
+        auth.wrap_credential(private_key, &rp.id, algorithm)
     }
 }
 
