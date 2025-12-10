@@ -2,6 +2,7 @@ use super::auth::calculate_auth_param;
 use super::cbor_helpers::build_credential_descriptor;
 
 use crate::Transport;
+use crate::ctap::CtapCommand;
 use crate::error::Result;
 use crate::request::{
     CredentialManagementRequest, DeleteCredentialRequest, EnumerateCredentialsRequest,
@@ -14,6 +15,34 @@ use crate::response::{
 
 use soft_fido2_ctap::cbor::MapBuilder;
 
+/// Credential Management subcommand codes
+#[repr(u8)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum SubCommand {
+    GetCredsMetadata = 0x01,
+    EnumerateRPsBegin = 0x02,
+    EnumerateRPsGetNextRP = 0x03,
+    EnumerateCredentialsBegin = 0x04,
+    EnumerateCredentialsGetNextCredential = 0x05,
+    DeleteCredential = 0x06,
+    UpdateUserInformation = 0x07,
+}
+
+/// Request parameter keys
+mod req_keys {
+    pub const SUBCOMMAND: i32 = 0x01;
+    pub const SUBCOMMAND_PARAMS: i32 = 0x02;
+    pub const PIN_UV_AUTH_PROTOCOL: i32 = 0x03;
+    pub const PIN_UV_AUTH_PARAM: i32 = 0x04;
+}
+
+/// Subcommand parameter keys
+mod subparam_keys {
+    pub const RP_ID_HASH: i32 = 0x01;
+    pub const CREDENTIAL_ID: i32 = 0x02;
+    pub const USER: i32 = 0x03;
+}
+
 /// Get credentials metadata (total count and remaining slots)
 ///
 /// Returns information about stored discoverable credentials.
@@ -22,26 +51,30 @@ pub fn get_credentials_metadata(
     transport: &mut Transport,
     request: CredentialManagementRequest,
 ) -> Result<CredentialsMetadata> {
-    let message = vec![0x01u8];
+    let message = vec![SubCommand::GetCredsMetadata as u8];
 
     let request_bytes = if let Some(pin_auth) = request.pin_uv_auth() {
         let pin_uv_auth_param =
             calculate_auth_param(pin_auth.param(), pin_auth.protocol(), &message)?;
 
         MapBuilder::new()
-            .insert(0x01, 0x01u8)?
-            .insert(0x03, pin_auth.protocol_u8())?
-            .insert_bytes(0x04, &pin_uv_auth_param)?
+            .insert(req_keys::SUBCOMMAND, SubCommand::GetCredsMetadata as u8)?
+            .insert(req_keys::PIN_UV_AUTH_PROTOCOL, pin_auth.protocol_u8())?
+            .insert_bytes(req_keys::PIN_UV_AUTH_PARAM, &pin_uv_auth_param)?
             .build()
             .map_err(|_| crate::error::Error::Other)?
     } else {
         MapBuilder::new()
-            .insert(0x01, 0x01u8)?
+            .insert(req_keys::SUBCOMMAND, SubCommand::GetCredsMetadata as u8)?
             .build()
             .map_err(|_| crate::error::Error::Other)?
     };
 
-    let response = transport.send_ctap_command(0x0A, &request_bytes, 30000)?;
+    let response = transport.send_ctap_command(
+        CtapCommand::CredentialManagement.as_u8(),
+        &request_bytes,
+        30000,
+    )?;
     CredentialsMetadata::from_cbor(&response)
 }
 
@@ -54,26 +87,30 @@ pub fn enumerate_rps_begin(
     transport: &mut Transport,
     request: CredentialManagementRequest,
 ) -> Result<RpEnumerationBeginResponse> {
-    let message = vec![0x02u8];
+    let message = vec![SubCommand::EnumerateRPsBegin as u8];
 
     let request_bytes = if let Some(pin_auth) = request.pin_uv_auth() {
         let pin_uv_auth_param =
             calculate_auth_param(pin_auth.param(), pin_auth.protocol(), &message)?;
 
         MapBuilder::new()
-            .insert(0x01, 0x02u8)?
-            .insert(0x03, pin_auth.protocol_u8())?
-            .insert_bytes(0x04, &pin_uv_auth_param)?
+            .insert(req_keys::SUBCOMMAND, SubCommand::EnumerateRPsBegin as u8)?
+            .insert(req_keys::PIN_UV_AUTH_PROTOCOL, pin_auth.protocol_u8())?
+            .insert_bytes(req_keys::PIN_UV_AUTH_PARAM, &pin_uv_auth_param)?
             .build()
             .map_err(|_| crate::error::Error::Other)?
     } else {
         MapBuilder::new()
-            .insert(0x01, 0x02u8)?
+            .insert(req_keys::SUBCOMMAND, SubCommand::EnumerateRPsBegin as u8)?
             .build()
             .map_err(|_| crate::error::Error::Other)?
     };
 
-    let response = transport.send_ctap_command(0x0A, &request_bytes, 30000)?;
+    let response = transport.send_ctap_command(
+        CtapCommand::CredentialManagement.as_u8(),
+        &request_bytes,
+        30000,
+    )?;
     RpEnumerationBeginResponse::from_cbor(&response)
 }
 
@@ -83,11 +120,18 @@ pub fn enumerate_rps_begin(
 /// Call (total_rps - 1) times to retrieve all remaining RPs.
 pub fn enumerate_rps_get_next(transport: &mut Transport) -> Result<RpInfo> {
     let request_bytes = MapBuilder::new()
-        .insert(0x01, 0x03u8)?
+        .insert(
+            req_keys::SUBCOMMAND,
+            SubCommand::EnumerateRPsGetNextRP as u8,
+        )?
         .build()
         .map_err(|_| crate::error::Error::Other)?;
 
-    let response = transport.send_ctap_command(0x0A, &request_bytes, 30000)?;
+    let response = transport.send_ctap_command(
+        CtapCommand::CredentialManagement.as_u8(),
+        &request_bytes,
+        30000,
+    )?;
     crate::response::RpEnumerationNextResponse::from_cbor(&response)
 }
 
@@ -122,11 +166,11 @@ pub fn enumerate_credentials_begin(
     request: EnumerateCredentialsRequest,
 ) -> Result<CredentialEnumerationBeginResponse> {
     let sub_params = MapBuilder::new()
-        .insert_bytes(0x01, request.rp_id_hash())?
+        .insert_bytes(subparam_keys::RP_ID_HASH, request.rp_id_hash())?
         .build()
         .map_err(|_| crate::error::Error::Other)?;
 
-    let mut message = vec![0x04u8];
+    let mut message = vec![SubCommand::EnumerateCredentialsBegin as u8];
     message.extend_from_slice(&sub_params);
 
     let request_bytes = if let Some(pin_auth) = request.pin_uv_auth() {
@@ -138,10 +182,13 @@ pub fn enumerate_credentials_begin(
                 .map_err(|_| crate::error::Error::Other)?;
 
         MapBuilder::new()
-            .insert(0x01, 0x04u8)?
-            .insert(0x02, sub_params_value)?
-            .insert(0x03, pin_auth.protocol_u8())?
-            .insert_bytes(0x04, &pin_uv_auth_param)?
+            .insert(
+                req_keys::SUBCOMMAND,
+                SubCommand::EnumerateCredentialsBegin as u8,
+            )?
+            .insert(req_keys::SUBCOMMAND_PARAMS, sub_params_value)?
+            .insert(req_keys::PIN_UV_AUTH_PROTOCOL, pin_auth.protocol_u8())?
+            .insert_bytes(req_keys::PIN_UV_AUTH_PARAM, &pin_uv_auth_param)?
             .build()
             .map_err(|_| crate::error::Error::Other)?
     } else {
@@ -150,13 +197,20 @@ pub fn enumerate_credentials_begin(
                 .map_err(|_| crate::error::Error::Other)?;
 
         MapBuilder::new()
-            .insert(0x01, 0x04u8)?
-            .insert(0x02, sub_params_value)?
+            .insert(
+                req_keys::SUBCOMMAND,
+                SubCommand::EnumerateCredentialsBegin as u8,
+            )?
+            .insert(req_keys::SUBCOMMAND_PARAMS, sub_params_value)?
             .build()
             .map_err(|_| crate::error::Error::Other)?
     };
 
-    let response = transport.send_ctap_command(0x0A, &request_bytes, 30000)?;
+    let response = transport.send_ctap_command(
+        CtapCommand::CredentialManagement.as_u8(),
+        &request_bytes,
+        30000,
+    )?;
     CredentialEnumerationBeginResponse::from_cbor(&response)
 }
 
@@ -166,11 +220,18 @@ pub fn enumerate_credentials_begin(
 /// Call (total_credentials - 1) times to retrieve all remaining credentials.
 pub fn enumerate_credentials_get_next(transport: &mut Transport) -> Result<CredentialInfo> {
     let request_bytes = MapBuilder::new()
-        .insert(0x01, 0x05u8)?
+        .insert(
+            req_keys::SUBCOMMAND,
+            SubCommand::EnumerateCredentialsGetNextCredential as u8,
+        )?
         .build()
         .map_err(|_| crate::error::Error::Other)?;
 
-    let response = transport.send_ctap_command(0x0A, &request_bytes, 30000)?;
+    let response = transport.send_ctap_command(
+        CtapCommand::CredentialManagement.as_u8(),
+        &request_bytes,
+        30000,
+    )?;
     crate::response::CredentialEnumerationNextResponse::from_cbor(&response)
 }
 
@@ -204,11 +265,11 @@ pub fn delete_credential(
     let cred_descriptor = build_credential_descriptor(request.credential_id())?;
 
     let sub_params = MapBuilder::new()
-        .insert(0x02, cred_descriptor)?
+        .insert(subparam_keys::CREDENTIAL_ID, cred_descriptor)?
         .build()
         .map_err(|_| crate::error::Error::Other)?;
 
-    let mut message = vec![0x06u8];
+    let mut message = vec![SubCommand::DeleteCredential as u8];
     message.extend_from_slice(&sub_params);
 
     let request_bytes = if let Some(pin_auth) = request.pin_uv_auth() {
@@ -220,10 +281,10 @@ pub fn delete_credential(
                 .map_err(|_| crate::error::Error::Other)?;
 
         MapBuilder::new()
-            .insert(0x01, 0x06u8)?
-            .insert(0x02, sub_params_value)?
-            .insert(0x03, pin_auth.protocol_u8())?
-            .insert_bytes(0x04, &pin_uv_auth_param)?
+            .insert(req_keys::SUBCOMMAND, SubCommand::DeleteCredential as u8)?
+            .insert(req_keys::SUBCOMMAND_PARAMS, sub_params_value)?
+            .insert(req_keys::PIN_UV_AUTH_PROTOCOL, pin_auth.protocol_u8())?
+            .insert_bytes(req_keys::PIN_UV_AUTH_PARAM, &pin_uv_auth_param)?
             .build()
             .map_err(|_| crate::error::Error::Other)?
     } else {
@@ -232,13 +293,17 @@ pub fn delete_credential(
                 .map_err(|_| crate::error::Error::Other)?;
 
         MapBuilder::new()
-            .insert(0x01, 0x06u8)?
-            .insert(0x02, sub_params_value)?
+            .insert(req_keys::SUBCOMMAND, SubCommand::DeleteCredential as u8)?
+            .insert(req_keys::SUBCOMMAND_PARAMS, sub_params_value)?
             .build()
             .map_err(|_| crate::error::Error::Other)?
     };
 
-    let _response = transport.send_ctap_command(0x0A, &request_bytes, 30000)?;
+    let _response = transport.send_ctap_command(
+        CtapCommand::CredentialManagement.as_u8(),
+        &request_bytes,
+        30000,
+    )?;
     Ok(())
 }
 
@@ -252,12 +317,12 @@ pub fn update_user_information(
     let cred_descriptor = build_credential_descriptor(request.credential_id())?;
 
     let sub_params = MapBuilder::new()
-        .insert(0x02, cred_descriptor)?
-        .insert(0x03, request.user())?
+        .insert(subparam_keys::CREDENTIAL_ID, cred_descriptor)?
+        .insert(subparam_keys::USER, request.user())?
         .build()
         .map_err(|_| crate::error::Error::Other)?;
 
-    let mut message = vec![0x07u8];
+    let mut message = vec![SubCommand::UpdateUserInformation as u8];
     message.extend_from_slice(&sub_params);
 
     let request_bytes = if let Some(pin_auth) = request.pin_uv_auth() {
@@ -269,10 +334,13 @@ pub fn update_user_information(
                 .map_err(|_| crate::error::Error::Other)?;
 
         MapBuilder::new()
-            .insert(0x01, 0x07u8)?
-            .insert(0x02, sub_params_value)?
-            .insert(0x03, pin_auth.protocol_u8())?
-            .insert_bytes(0x04, &pin_uv_auth_param)?
+            .insert(
+                req_keys::SUBCOMMAND,
+                SubCommand::UpdateUserInformation as u8,
+            )?
+            .insert(req_keys::SUBCOMMAND_PARAMS, sub_params_value)?
+            .insert(req_keys::PIN_UV_AUTH_PROTOCOL, pin_auth.protocol_u8())?
+            .insert_bytes(req_keys::PIN_UV_AUTH_PARAM, &pin_uv_auth_param)?
             .build()
             .map_err(|_| crate::error::Error::Other)?
     } else {
@@ -281,12 +349,19 @@ pub fn update_user_information(
                 .map_err(|_| crate::error::Error::Other)?;
 
         MapBuilder::new()
-            .insert(0x01, 0x07u8)?
-            .insert(0x02, sub_params_value)?
+            .insert(
+                req_keys::SUBCOMMAND,
+                SubCommand::UpdateUserInformation as u8,
+            )?
+            .insert(req_keys::SUBCOMMAND_PARAMS, sub_params_value)?
             .build()
             .map_err(|_| crate::error::Error::Other)?
     };
 
-    let _response = transport.send_ctap_command(0x0A, &request_bytes, 30000)?;
+    let _response = transport.send_ctap_command(
+        CtapCommand::CredentialManagement.as_u8(),
+        &request_bytes,
+        30000,
+    )?;
     Ok(())
 }
