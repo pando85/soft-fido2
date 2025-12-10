@@ -5,6 +5,13 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/), and this project
 adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [v0.8.0](https://github.com/pando85/soft-fido2/tree/v0.8.0) - 2025-12-10
+
+### Fixed
+
+- Clean callbacks interface ([a184b8f](https://github.com/pando85/soft-fido2/commit/a184b8f701a9553c6bc3ec0fb6c5a89423c1ccec))
+  - **BREAKING**: `write_credential` and `read_credential` fingerprints have being updated.
+
 ## [v0.7.0](https://github.com/pando85/soft-fido2/tree/v0.7.0) - 2025-12-08
 
 ### Added
