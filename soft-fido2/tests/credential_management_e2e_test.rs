@@ -172,22 +172,13 @@ impl AuthenticatorCallbacks for TestCallbacks {
         Ok(UvResult::Accepted)
     }
 
-    fn write_credential(
-        &self,
-        cred_id: &[u8],
-        _rp_id: &str,
-        cred: &CredentialRef,
-    ) -> soft_fido2::Result<()> {
+    fn write_credential(&self, cred: &CredentialRef) -> soft_fido2::Result<()> {
         let mut store = self.credentials.lock().unwrap();
-        store.insert(cred_id.to_vec(), cred.to_owned());
+        store.insert(cred.id.to_vec(), cred.to_owned());
         Ok(())
     }
 
-    fn read_credential(
-        &self,
-        cred_id: &[u8],
-        _rp_id: &str,
-    ) -> soft_fido2::Result<Option<Credential>> {
+    fn read_credential(&self, cred_id: &[u8]) -> soft_fido2::Result<Option<Credential>> {
         let store = self.credentials.lock().unwrap();
         Ok(store.get(cred_id).cloned())
     }

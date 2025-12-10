@@ -71,13 +71,13 @@ impl AuthenticatorCallbacks for SimpleCallbacks {
         Ok(UvResult::Accepted)
     }
 
-    fn write_credential(&self, cred_id: &[u8], _rp_id: &str, cred: &CredentialRef) -> Result<()> {
+    fn write_credential(&self, cred: &CredentialRef) -> Result<()> {
         let mut store = self.credentials.lock().unwrap();
-        store.insert(cred_id.to_vec(), cred.to_owned());
+        store.insert(cred.id.to_vec(), cred.to_owned());
         Ok(())
     }
 
-    fn read_credential(&self, cred_id: &[u8], _rp_id: &str) -> Result<Option<Credential>> {
+    fn read_credential(&self, cred_id: &[u8]) -> Result<Option<Credential>> {
         let store = self.credentials.lock().unwrap();
         let result = store.get(cred_id).cloned();
         Ok(result)

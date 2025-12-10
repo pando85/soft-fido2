@@ -114,12 +114,12 @@ impl From<CtapUvResult> for UvResult {
 ///         Ok(UvResult::Accepted)
 ///     }
 ///
-///     fn write_credential(&self, cred_id: &[u8], _rp_id: &str, cred: &CredentialRef) -> soft_fido2::Result<()> {
+///     fn write_credential(&self, cred: &CredentialRef) -> soft_fido2::Result<()> {
 ///         // Store credential
 ///         Ok(())
 ///     }
 ///
-///     fn read_credential(&self, cred_id: &[u8], _rp_id: &str) -> soft_fido2::Result<Option<Credential>> {
+///     fn read_credential(&self, cred_id: &[u8]) -> soft_fido2::Result<Option<Credential>> {
 ///         // Retrieve credential
 ///         Ok(None)
 ///     }
@@ -147,80 +147,24 @@ impl From<CtapUvResult> for UvResult {
 /// ```
 pub trait AuthenticatorCallbacks: Send + Sync {
     /// Request user presence (e.g., tap security key, press button)
-    ///
-    /// # Arguments
-    ///
-    /// * `info` - Information about the request
-    /// * `user_name` - Optional user name
-    /// * `rp_id` - Relying party identifier
     fn request_up(&self, info: &str, user_name: Option<&str>, rp_id: &str) -> Result<UpResult>;
 
     /// Request user verification (e.g., PIN, biometric, password)
-    ///
-    /// # Arguments
-    ///
-    /// * `info` - Information about the request
-    /// * `user_name` - Optional user name
-    /// * `rp_id` - Relying party identifier
     fn request_uv(&self, info: &str, user_name: Option<&str>, rp_id: &str) -> Result<UvResult>;
 
     /// Store a credential
-    ///
-    /// # Arguments
-    ///
-    /// * `cred_id` - Credential ID (binary data)
-    /// * `rp_id` - Relying party identifier
-    /// * `credential` - Credential data to store
-    fn write_credential(
-        &self,
-        cred_id: &[u8],
-        rp_id: &str,
-        credential: &CredentialRef,
-    ) -> Result<()>;
+    fn write_credential(&self, credential: &CredentialRef) -> Result<()>;
 
     /// Read a specific credential
-    ///
-    /// # Arguments
-    ///
-    /// * `cred_id` - Credential ID (binary data)
-    /// * `rp_id` - Relying party identifier
-    ///
-    /// # Returns
-    ///
-    /// The credential if found, None otherwise
-    fn read_credential(&self, cred_id: &[u8], rp_id: &str) -> Result<Option<Credential>>;
+    fn read_credential(&self, cred_id: &[u8]) -> Result<Option<Credential>>;
 
     /// Delete a credential
-    ///
-    /// # Arguments
-    ///
-    /// * `cred_id` - Credential ID (binary data)
     fn delete_credential(&self, cred_id: &[u8]) -> Result<()>;
 
     /// List all credentials for a relying party
-    ///
-    /// # Arguments
-    ///
-    /// * `rp_id` - Relying party identifier
-    /// * `user_id` - Optional user ID to filter by
-    ///
-    /// # Returns
-    ///
-    /// Vector of credentials matching the filter criteria
     fn list_credentials(&self, rp_id: &str, user_id: Option<&[u8]>) -> Result<Vec<Credential>>;
 
     /// Select which credential to use from multiple matches
-    ///
-    /// Default implementation returns the first credential (index 0).
-    ///
-    /// # Arguments
-    ///
-    /// * `rp_id` - Relying party identifier
-    /// * `credentials` - Available credentials to choose from
-    ///
-    /// # Returns
-    ///
-    /// Index of the selected credential
     fn select_credential(&self, _rp_id: &str, _credentials: &[Credential]) -> Result<usize> {
         Ok(0)
     }
@@ -311,7 +255,7 @@ impl<C: AuthenticatorCallbacks> CredentialStorageCallbacks for CallbackAdapter<C
         };
 
         self.callbacks
-            .write_credential(&credential.id, &credential.rp_id, &cred_ref)
+            .write_credential(&cred_ref)
             .map_err(|_| StatusCode::Other)
     }
 
@@ -336,7 +280,7 @@ impl<C: AuthenticatorCallbacks> CredentialStorageCallbacks for CallbackAdapter<C
     fn credential_exists(&self, credential_id: &[u8]) -> soft_fido2_ctap::Result<bool> {
         // Try to read the credential with a placeholder RP ID
         // Note: This is a limitation of the current design
-        match self.callbacks.read_credential(credential_id, "") {
+        match self.callbacks.read_credential(credential_id) {
             Ok(Some(_)) => Ok(true),
             Ok(None) => Ok(false),
             Err(_) => Ok(false),
@@ -348,7 +292,7 @@ impl<C: AuthenticatorCallbacks> CredentialStorageCallbacks for CallbackAdapter<C
         // Note: This is a limitation of the current design
         let cred = self
             .callbacks
-            .read_credential(credential_id, "")
+            .read_credential(credential_id)
             .map_err(|_| StatusCode::NoCredentials)?
             .ok_or(StatusCode::NoCredentials)?;
         Ok(cred.into())
@@ -714,8 +658,8 @@ impl<C: AuthenticatorCallbacks> Authenticator<C> {
     /// # impl AuthenticatorCallbacks for MyCallbacks {
     /// #     fn request_up(&self, _: &str, _: Option<&str>, _: &str) -> soft_fido2::Result<UpResult> { Ok(UpResult::Accepted) }
     /// #     fn request_uv(&self, _: &str, _: Option<&str>, _: &str) -> soft_fido2::Result<UvResult> { Ok(UvResult::Accepted) }
-    /// #     fn write_credential(&self, _: &[u8], _: &str, _: &CredentialRef) -> soft_fido2::Result<()> { Ok(()) }
-    /// #     fn read_credential(&self, _: &[u8], _: &str) -> soft_fido2::Result<Option<Credential>> { Ok(None) }
+    /// #     fn write_credential(&self, _: &CredentialRef) -> soft_fido2::Result<()> { Ok(()) }
+    /// #     fn read_credential(&self, _: &[u8],) -> soft_fido2::Result<Option<Credential>> { Ok(None) }
     /// #     fn delete_credential(&self, _: &[u8]) -> soft_fido2::Result<()> { Ok(()) }
     /// #     fn list_credentials(&self, _: &str, _: Option<&[u8]>) -> soft_fido2::Result<Vec<Credential>> { Ok(vec![]) }
     /// #     fn enumerate_rps(&self) -> soft_fido2::Result<Vec<(String, Option<String>, usize)>> { Ok(vec![]) }
@@ -761,11 +705,11 @@ mod tests {
             Ok(UvResult::Accepted)
         }
 
-        fn write_credential(&self, _: &[u8], _: &str, _: &CredentialRef) -> Result<()> {
+        fn write_credential(&self, _: &CredentialRef) -> Result<()> {
             Ok(())
         }
 
-        fn read_credential(&self, _: &[u8], _: &str) -> Result<Option<Credential>> {
+        fn read_credential(&self, _: &[u8]) -> Result<Option<Credential>> {
             Ok(None)
         }
 
