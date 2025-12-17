@@ -5,6 +5,12 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/), and this project
 adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [v0.10.0](https://github.com/pando85/soft-fido2/tree/v0.10.0) - 2025-12-17
+
+### Fixed
+
+- Security hardening on PIN protocol v2 implementation ([2ed87b6](https://github.com/pando85/soft-fido2/commit/2ed87b66588572fa46b5d6ba044a62301f06426e), [097bf3e](https://github.com/pando85/soft-fido2/commit/097bf3eb7a3ca2995bcb57646b20603b7938d839) and [3dad6df](https://github.com/pando85/soft-fido2/commit/3dad6dffdde61e0b213c306acc4e9bf342e67fae))
+
 ## [v0.9.0](https://github.com/pando85/soft-fido2/tree/v0.9.0) - 2025-12-10
 
 ### Added
