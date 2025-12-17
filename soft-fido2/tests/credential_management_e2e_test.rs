@@ -226,6 +226,13 @@ impl AuthenticatorCallbacks for TestCallbacks {
         let store = self.credentials.lock().unwrap();
         Ok(store.values().filter(|c| c.discoverable).count())
     }
+
+    fn get_timestamp_ms(&self) -> u64 {
+        std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_millis() as u64
+    }
 }
 
 /// Set up a transport connection with USB HID authenticator

@@ -201,11 +201,23 @@ pub trait AuthenticatorCallbacks: Send + Sync {
     ///
     /// Total count of all discoverable credentials across all RPs
     fn credential_count(&self) -> Result<usize>;
+
+    /// Get current timestamp in milliseconds since UNIX epoch
+    ///
+    /// Used for PIN token expiration and other time-sensitive operations.
+    /// In no_std environments, this must be provided by the platform.
+    fn get_timestamp_ms(&self) -> u64;
 }
 
 /// Callback adapter that implements soft-fido2-ctap traits
 struct CallbackAdapter<C: AuthenticatorCallbacks> {
     callbacks: Arc<C>,
+}
+
+impl<C: AuthenticatorCallbacks> soft_fido2_ctap::callbacks::PlatformCallbacks for CallbackAdapter<C> {
+    fn get_timestamp_ms(&self) -> u64 {
+        self.callbacks.get_timestamp_ms()
+    }
 }
 
 impl<C: AuthenticatorCallbacks> UserInteractionCallbacks for CallbackAdapter<C> {
@@ -786,6 +798,10 @@ mod tests {
 
         fn credential_count(&self) -> Result<usize> {
             Ok(0)
+        }
+
+        fn get_timestamp_ms(&self) -> u64 {
+            0
         }
     }
 

@@ -201,6 +201,20 @@ impl AuthenticatorCallbacks for TestCallbacks {
             Ok(self.credentials.lock().len())
         }
     }
+
+    fn get_timestamp_ms(&self) -> u64 {
+        #[cfg(feature = "std")]
+        {
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap_or_default()
+                .as_millis() as u64
+        }
+        #[cfg(not(feature = "std"))]
+        {
+            0
+        }
+    }
 }
 
 /// Test callbacks with verbose logging for debugging
@@ -294,5 +308,9 @@ impl AuthenticatorCallbacks for VerboseTestCallbacks {
         let count = self.inner.credentials.lock().unwrap().len();
         eprintln!("[Callback] credential_count: {}", count);
         Ok(count)
+    }
+
+    fn get_timestamp_ms(&self) -> u64 {
+        self.inner.get_timestamp_ms()
     }
 }

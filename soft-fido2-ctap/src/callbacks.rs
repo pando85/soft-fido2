@@ -213,15 +213,25 @@ pub trait PinStorageCallbacks {
     fn save_pin_state(&self, state: &PinState) -> Result<(), StatusCode>;
 }
 
-/// Combined callbacks interface for core authenticator operations
-///
-/// Combines user interaction and credential storage callbacks.
-pub trait AuthenticatorCallbacks: UserInteractionCallbacks + CredentialStorageCallbacks {
-    // This trait is intentionally empty - it just combines the two callback traits
+/// Callbacks for platform capabilities
+pub trait PlatformCallbacks {
+    /// Get current timestamp in milliseconds since UNIX epoch
+    ///
+    /// This is used for PIN token expiration and other time-sensitive operations.
+    /// In `no_std` environments, this must be implemented using a hardware timer
+    /// or other time source.
+    fn get_timestamp_ms(&self) -> u64;
 }
 
-// Blanket implementation: any type implementing both traits also implements AuthenticatorCallbacks
-impl<T> AuthenticatorCallbacks for T where T: UserInteractionCallbacks + CredentialStorageCallbacks {}
+/// Combined callbacks interface for core authenticator operations
+///
+/// Combines user interaction, credential storage, and platform callbacks.
+pub trait AuthenticatorCallbacks: UserInteractionCallbacks + CredentialStorageCallbacks + PlatformCallbacks {
+    // This trait is intentionally empty - it just combines the callback traits
+}
+
+// Blanket implementation: any type implementing all traits also implements AuthenticatorCallbacks
+impl<T> AuthenticatorCallbacks for T where T: UserInteractionCallbacks + CredentialStorageCallbacks + PlatformCallbacks {}
 
 #[cfg(test)]
 mod tests {
@@ -247,6 +257,12 @@ mod tests {
 
     // Mock implementation for testing
     pub struct MockCallbacks;
+
+    impl PlatformCallbacks for MockCallbacks {
+        fn get_timestamp_ms(&self) -> u64 {
+            0
+        }
+    }
 
     impl UserInteractionCallbacks for MockCallbacks {
         fn request_up(

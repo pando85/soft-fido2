@@ -601,7 +601,8 @@ impl<C: AuthenticatorCallbacks> Authenticator<C> {
         rand::thread_rng().fill_bytes(&mut token_bytes);
 
         // Create and store token
-        let token = PinToken::new(token_bytes, permissions, rp_id);
+        let now = self.callbacks.get_timestamp_ms();
+        let token = PinToken::new(token_bytes, permissions, rp_id, now);
         let value = *token.value();
         self.pin_tokens.set_token(token);
 
@@ -623,7 +624,8 @@ impl<C: AuthenticatorCallbacks> Authenticator<C> {
         permission: Permission,
         rp_id: Option<&str>,
     ) -> Result<(), StatusCode> {
-        self.pin_tokens.verify_permission(permission, rp_id)
+        let now = self.callbacks.get_timestamp_ms();
+        self.pin_tokens.verify_permission(permission, rp_id, now)
     }
 
     /// Verify PIN/UV auth parameter
@@ -644,7 +646,8 @@ impl<C: AuthenticatorCallbacks> Authenticator<C> {
         client_data_hash: &[u8],
     ) -> Result<(), StatusCode> {
         // Get current PIN token
-        let token = self.pin_tokens.get_token().ok_or(StatusCode::PinRequired)?;
+        let now = self.callbacks.get_timestamp_ms();
+        let token = self.pin_tokens.get_token(now).ok_or(StatusCode::PinRequired)?;
 
         // Verify based on protocol version
         // Protocol v1 uses 16-byte HMAC, v2 uses 32-byte HMAC
@@ -1051,14 +1054,16 @@ impl<C: AuthenticatorCallbacks> Authenticator<C> {
     ///
     /// Returns true if a PIN token exists and is within its validity window.
     pub fn has_valid_pin_token(&self) -> bool {
-        self.pin_tokens.has_valid_token()
+        let now = self.callbacks.get_timestamp_ms();
+        self.pin_tokens.has_valid_token(now)
     }
 
     /// Check if there is a valid PIN token within usage window
     ///
     /// Returns true if a PIN token exists and is within the 19-second usage window.
     pub fn has_valid_pin_token_within_usage_window(&self) -> bool {
-        self.pin_tokens.has_valid_token_within_usage_window()
+        let now = self.callbacks.get_timestamp_ms();
+        self.pin_tokens.has_valid_token_within_usage_window(now)
     }
 }
 
@@ -1068,12 +1073,18 @@ mod tests {
 
     use crate::{
         UpResult, UvResult,
-        callbacks::{CredentialStorageCallbacks, UserInteractionCallbacks},
+        callbacks::{CredentialStorageCallbacks, PlatformCallbacks, UserInteractionCallbacks},
         types::Credential,
     };
 
     // Mock callbacks for testing
     struct MockCallbacks;
+
+    impl PlatformCallbacks for MockCallbacks {
+        fn get_timestamp_ms(&self) -> u64 {
+            0
+        }
+    }
 
     impl UserInteractionCallbacks for MockCallbacks {
         fn request_up(
@@ -1296,6 +1307,12 @@ mod tests {
             delete_count: Arc<AtomicUsize>,
         }
 
+        impl PlatformCallbacks for TrackingCallbacks {
+            fn get_timestamp_ms(&self) -> u64 {
+                0
+            }
+        }
+
         impl UserInteractionCallbacks for TrackingCallbacks {
             fn request_up(
                 &self,
@@ -1512,6 +1529,12 @@ mod tests {
         // Mock callbacks with credential storage
         struct StorageCallbacks {
             credentials: Arc<Mutex<BTreeMap<Vec<u8>, Credential>>>,
+        }
+
+        impl PlatformCallbacks for StorageCallbacks {
+            fn get_timestamp_ms(&self) -> u64 {
+                0
+            }
         }
 
         impl UserInteractionCallbacks for StorageCallbacks {

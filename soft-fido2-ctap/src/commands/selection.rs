@@ -49,6 +49,12 @@ mod tests {
 
     struct AcceptingCallbacks;
 
+    impl crate::callbacks::PlatformCallbacks for AcceptingCallbacks {
+        fn get_timestamp_ms(&self) -> u64 {
+            0
+        }
+    }
+
     impl UserInteractionCallbacks for AcceptingCallbacks {
         fn request_up(
             &self,
@@ -112,6 +118,12 @@ mod tests {
     }
 
     struct DenyingCallbacks;
+
+    impl crate::callbacks::PlatformCallbacks for DenyingCallbacks {
+        fn get_timestamp_ms(&self) -> u64 {
+            0
+        }
+    }
 
     impl UserInteractionCallbacks for DenyingCallbacks {
         fn request_up(
