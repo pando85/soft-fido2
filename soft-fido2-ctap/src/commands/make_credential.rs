@@ -909,6 +909,12 @@ mod tests {
         // Mock callbacks for testing
         struct MockCallbacks;
 
+        impl crate::callbacks::PlatformCallbacks for MockCallbacks {
+            fn get_timestamp_ms(&self) -> u64 {
+                0
+            }
+        }
+
         impl crate::callbacks::UserInteractionCallbacks for MockCallbacks {
             fn request_up(
                 &self,
@@ -1002,6 +1008,12 @@ mod tests {
 
         // Mock callbacks for testing
         struct MockCallbacks;
+
+        impl crate::callbacks::PlatformCallbacks for MockCallbacks {
+            fn get_timestamp_ms(&self) -> u64 {
+                0
+            }
+        }
 
         impl crate::callbacks::UserInteractionCallbacks for MockCallbacks {
             fn request_up(

@@ -157,6 +157,13 @@ impl AuthenticatorCallbacks for UvTestCallbacks {
         let store = self.credentials.lock().unwrap();
         Ok(store.len())
     }
+
+    fn get_timestamp_ms(&self) -> u64 {
+        std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_millis() as u64
+    }
 }
 
 /// Helper to create test authenticator with user verification
@@ -261,6 +268,13 @@ impl AuthenticatorCallbacks for UpOnlyTestCallbacks {
     fn credential_count(&self) -> SoftFido2Result<usize> {
         let store = self.credentials.lock().unwrap();
         Ok(store.len())
+    }
+
+    fn get_timestamp_ms(&self) -> u64 {
+        std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_millis() as u64
     }
 }
 

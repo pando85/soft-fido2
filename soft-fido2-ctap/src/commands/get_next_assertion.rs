@@ -39,11 +39,17 @@ mod tests {
     use crate::{
         UpResult, UvResult,
         authenticator::{Authenticator, AuthenticatorConfig},
-        callbacks::{CredentialStorageCallbacks, UserInteractionCallbacks},
+        callbacks::{CredentialStorageCallbacks, PlatformCallbacks, UserInteractionCallbacks},
         types::Credential,
     };
 
     struct MockCallbacks;
+
+    impl PlatformCallbacks for MockCallbacks {
+        fn get_timestamp_ms(&self) -> u64 {
+            0
+        }
+    }
 
     impl UserInteractionCallbacks for MockCallbacks {
         fn request_up(

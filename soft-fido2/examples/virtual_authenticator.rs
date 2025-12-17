@@ -320,6 +320,13 @@ impl AuthenticatorCallbacks for VirtualAuthCallbacks {
         println!("  [COUNT] Total credentials stored: {}", count);
         Ok(count)
     }
+
+    fn get_timestamp_ms(&self) -> u64 {
+        std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_millis() as u64
+    }
 }
 
 fn main() -> Result<()> {

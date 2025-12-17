@@ -30,9 +30,6 @@ use crate::StatusCode;
 
 use alloc::string::String;
 
-#[cfg(feature = "std")]
-use std::time::{SystemTime, UNIX_EPOCH};
-
 /// PIN token usage window in milliseconds (19 seconds)
 ///
 /// Per FIDO2 spec, a PIN token must be used within 19 seconds of generation,
@@ -125,12 +122,12 @@ impl PinToken {
     /// * `token` - Random 32-byte token value
     /// * `permissions` - Permission bitmask
     /// * `rp_id` - Optional RP ID for RP-scoped permissions
+    /// * `now` - Current timestamp in milliseconds
     ///
     /// # Returns
     ///
     /// New PIN token with current timestamp
-    pub fn new(token: [u8; 32], permissions: u8, rp_id: Option<String>) -> Self {
-        let now = current_timestamp_ms();
+    pub fn new(token: [u8; 32], permissions: u8, rp_id: Option<String>, now: u64) -> Self {
         Self {
             token: SecBytes::from_array(token),
             permissions,
@@ -169,8 +166,7 @@ impl PinToken {
     }
 
     /// Check if token is still valid (within lifetime)
-    pub fn is_valid(&self) -> bool {
-        let now = current_timestamp_ms();
+    pub fn is_valid(&self, now: u64) -> bool {
         let age = now.saturating_sub(self.created_at);
         age < LIFETIME_MS
     }
@@ -180,8 +176,7 @@ impl PinToken {
     /// Per FIDO2 spec, a token can only be used to start new operations
     /// within 19 seconds of creation, but operations started within that
     /// window can continue until the token's full lifetime expires.
-    pub fn is_within_usage_window(&self) -> bool {
-        let now = current_timestamp_ms();
+    pub fn is_within_usage_window(&self, now: u64) -> bool {
         let age = now.saturating_sub(self.created_at);
         age < USAGE_WINDOW_MS
     }
@@ -189,8 +184,8 @@ impl PinToken {
     /// Update the last used timestamp
     ///
     /// Should be called when the token is used to authorize an operation.
-    pub fn mark_used(&mut self) {
-        self.last_used = current_timestamp_ms();
+    pub fn mark_used(&mut self, now: u64) {
+        self.last_used = now;
     }
 
     /// Verify token can authorize an operation with given permission and RP ID
@@ -199,6 +194,7 @@ impl PinToken {
     ///
     /// * `permission` - Required permission
     /// * `rp_id` - RP ID for the operation (if applicable)
+    /// * `now` - Current timestamp in milliseconds
     ///
     /// # Returns
     ///
@@ -207,14 +203,15 @@ impl PinToken {
         &mut self,
         permission: Permission,
         rp_id: Option<&str>,
+        now: u64,
     ) -> Result<(), StatusCode> {
         // Check token is still valid
-        if !self.is_valid() {
+        if !self.is_valid(now) {
             return Err(StatusCode::PinTokenExpired);
         }
 
         // Check usage window for new operations
-        if !self.is_within_usage_window() {
+        if !self.is_within_usage_window(now) {
             return Err(StatusCode::PinTokenExpired);
         }
 
@@ -243,7 +240,7 @@ impl PinToken {
         }
 
         // Authorization successful - update last used
-        self.mark_used();
+        self.mark_used(now);
         Ok(())
     }
 }
@@ -292,14 +289,14 @@ impl PinTokenManager {
     /// Get the current token if valid
     ///
     /// Returns None if no token exists or if the token has expired.
-    pub fn get_token(&self) -> Option<&PinToken> {
-        self.current_token.as_ref().filter(|token| token.is_valid())
+    pub fn get_token(&self, now: u64) -> Option<&PinToken> {
+        self.current_token.as_ref().filter(|token| token.is_valid(now))
     }
 
     /// Get mutable reference to current token if valid
-    pub fn get_token_mut(&mut self) -> Option<&mut PinToken> {
+    pub fn get_token_mut(&mut self, now: u64) -> Option<&mut PinToken> {
         if let Some(token) = &self.current_token
-            && !token.is_valid()
+            && !token.is_valid(now)
         {
             self.current_token = None;
             return None;
@@ -313,6 +310,7 @@ impl PinTokenManager {
     ///
     /// * `permission` - Required permission
     /// * `rp_id` - RP ID for the operation (if applicable)
+    /// * `now` - Current timestamp in milliseconds
     ///
     /// # Returns
     ///
@@ -321,22 +319,23 @@ impl PinTokenManager {
         &mut self,
         permission: Permission,
         rp_id: Option<&str>,
+        now: u64,
     ) -> Result<(), StatusCode> {
-        match self.get_token_mut() {
-            Some(token) => token.verify_permission(permission, rp_id),
+        match self.get_token_mut(now) {
+            Some(token) => token.verify_permission(permission, rp_id, now),
             None => Err(StatusCode::PinRequired),
         }
     }
 
     /// Check if a valid token exists
-    pub fn has_valid_token(&self) -> bool {
-        self.get_token().is_some()
+    pub fn has_valid_token(&self, now: u64) -> bool {
+        self.get_token(now).is_some()
     }
 
     /// Check if a valid token exists within the usage window (19 seconds)
-    pub fn has_valid_token_within_usage_window(&self) -> bool {
+    pub fn has_valid_token_within_usage_window(&self, now: u64) -> bool {
         match &self.current_token {
-            Some(token) => token.is_valid() && token.is_within_usage_window(),
+            Some(token) => token.is_valid(now) && token.is_within_usage_window(now),
             None => false,
         }
     }
@@ -359,21 +358,6 @@ impl Default for PinTokenManager {
     }
 }
 
-/// Get current timestamp in milliseconds since UNIX epoch
-#[cfg(feature = "std")]
-fn current_timestamp_ms() -> u64 {
-    SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .unwrap_or_default()
-        .as_millis() as u64
-}
-
-/// Get current timestamp (no_std: always returns 0, tokens don't expire)
-#[cfg(not(feature = "std"))]
-fn current_timestamp_ms() -> u64 {
-    0
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -381,10 +365,10 @@ mod tests {
     use std::{thread, time::Duration};
 
     /// Create a test token with default values
-    fn create_test_token() -> PinToken {
+    fn create_test_token(now: u64) -> PinToken {
         let token = [0x42u8; 32];
         let permissions = Permission::MakeCredential.to_u8() | Permission::GetAssertion.to_u8();
-        PinToken::new(token, permissions, Some("example.com".to_string()))
+        PinToken::new(token, permissions, Some("example.com".to_string()), now)
     }
 
     #[test]
@@ -407,17 +391,19 @@ mod tests {
 
     #[test]
     fn test_token_creation() {
-        let token = create_test_token();
+        let now = 1000;
+        let token = create_test_token(now);
         assert_eq!(token.value(), &[0x42u8; 32]);
         assert_eq!(token.permissions(), 0x03);
         assert_eq!(token.rp_id(), Some("example.com"));
-        assert!(token.is_valid());
-        assert!(token.is_within_usage_window());
+        assert!(token.is_valid(now));
+        assert!(token.is_within_usage_window(now));
     }
 
     #[test]
     fn test_token_has_permission() {
-        let token = create_test_token();
+        let now = 1000;
+        let token = create_test_token(now);
         assert!(token.has_permission(Permission::MakeCredential));
         assert!(token.has_permission(Permission::GetAssertion));
         assert!(!token.has_permission(Permission::CredentialManagement));
@@ -425,144 +411,154 @@ mod tests {
 
     #[test]
     fn test_token_verify_permission_success() {
-        let mut token = create_test_token();
+        let now = 1000;
+        let mut token = create_test_token(now);
         assert!(
             token
-                .verify_permission(Permission::MakeCredential, Some("example.com"))
+                .verify_permission(Permission::MakeCredential, Some("example.com"), now)
                 .is_ok()
         );
         assert!(
             token
-                .verify_permission(Permission::GetAssertion, Some("example.com"))
+                .verify_permission(Permission::GetAssertion, Some("example.com"), now)
                 .is_ok()
         );
     }
 
     #[test]
     fn test_token_verify_permission_wrong_rp() {
-        let mut token = create_test_token();
-        let result = token.verify_permission(Permission::MakeCredential, Some("other.com"));
+        let now = 1000;
+        let mut token = create_test_token(now);
+        let result = token.verify_permission(Permission::MakeCredential, Some("other.com"), now);
         assert_eq!(result, Err(StatusCode::UnauthorizedPermission));
     }
 
     #[test]
     fn test_token_verify_permission_no_permission() {
-        let mut token = create_test_token();
-        let result = token.verify_permission(Permission::CredentialManagement, None);
+        let now = 1000;
+        let mut token = create_test_token(now);
+        let result = token.verify_permission(Permission::CredentialManagement, None, now);
         assert_eq!(result, Err(StatusCode::UnauthorizedPermission));
     }
 
     #[test]
     fn test_token_no_rp_restriction() {
+        let now = 1000;
         let token_data = [0x42u8; 32];
         let permissions = Permission::MakeCredential.to_u8();
-        let mut token = PinToken::new(token_data, permissions, None);
+        let mut token = PinToken::new(token_data, permissions, None, now);
 
         // Token without RP ID should allow any RP
         assert!(
             token
-                .verify_permission(Permission::MakeCredential, Some("example.com"))
+                .verify_permission(Permission::MakeCredential, Some("example.com"), now)
                 .is_ok()
         );
         assert!(
             token
-                .verify_permission(Permission::MakeCredential, Some("other.com"))
+                .verify_permission(Permission::MakeCredential, Some("other.com"), now)
                 .is_ok()
         );
     }
 
     #[test]
     fn test_token_usage_window_expiry() {
+        let now = 1000;
         let token_data = [0x42u8; 32];
         let permissions = Permission::MakeCredential.to_u8();
-        let mut token = PinToken::new(token_data, permissions, None);
+        let mut token = PinToken::new(token_data, permissions, None, now);
 
         // Simulate time passing beyond usage window
-        token.created_at = current_timestamp_ms() - (USAGE_WINDOW_MS + 1000);
+        let later = now + USAGE_WINDOW_MS + 1000;
 
-        assert!(token.is_valid()); // Still within lifetime
-        assert!(!token.is_within_usage_window()); // But usage window expired
+        assert!(token.is_valid(later)); // Still within lifetime
+        assert!(!token.is_within_usage_window(later)); // But usage window expired
 
-        let result = token.verify_permission(Permission::MakeCredential, None);
+        let result = token.verify_permission(Permission::MakeCredential, None, later);
         assert_eq!(result, Err(StatusCode::PinTokenExpired));
     }
 
     #[test]
     fn test_token_lifetime_expiry() {
+        let now = 1000;
         let token_data = [0x42u8; 32];
         let permissions = Permission::MakeCredential.to_u8();
-        let mut token = PinToken::new(token_data, permissions, None);
+        let mut token = PinToken::new(token_data, permissions, None, now);
 
         // Simulate time passing beyond lifetime
-        token.created_at = current_timestamp_ms() - (LIFETIME_MS + 1000);
+        let later = now + LIFETIME_MS + 1000;
 
-        assert!(!token.is_valid());
+        assert!(!token.is_valid(later));
 
-        let result = token.verify_permission(Permission::MakeCredential, None);
+        let result = token.verify_permission(Permission::MakeCredential, None, later);
         assert_eq!(result, Err(StatusCode::PinTokenExpired));
     }
 
     #[test]
     fn test_token_manager_basic() {
+        let now = 1000;
         let mut manager = PinTokenManager::new();
-        assert!(!manager.has_valid_token());
-        assert!(manager.get_token().is_none());
+        assert!(!manager.has_valid_token(now));
+        assert!(manager.get_token(now).is_none());
 
-        let token = create_test_token();
+        let token = create_test_token(now);
         manager.set_token(token);
-        assert!(manager.has_valid_token());
-        assert!(manager.get_token().is_some());
+        assert!(manager.has_valid_token(now));
+        assert!(manager.get_token(now).is_some());
 
         manager.clear_token();
-        assert!(!manager.has_valid_token());
+        assert!(!manager.has_valid_token(now));
     }
 
     #[test]
     fn test_token_manager_verify_permission() {
+        let now = 1000;
         let mut manager = PinTokenManager::new();
 
         // No token - should fail
-        let result = manager.verify_permission(Permission::MakeCredential, Some("example.com"));
+        let result = manager.verify_permission(Permission::MakeCredential, Some("example.com"), now);
         assert_eq!(result, Err(StatusCode::PinRequired));
 
         // Set valid token
-        manager.set_token(create_test_token());
+        manager.set_token(create_test_token(now));
 
         // Should succeed
         assert!(
             manager
-                .verify_permission(Permission::MakeCredential, Some("example.com"))
+                .verify_permission(Permission::MakeCredential, Some("example.com"), now)
                 .is_ok()
         );
 
         // Wrong permission
-        let result = manager.verify_permission(Permission::CredentialManagement, None);
+        let result = manager.verify_permission(Permission::CredentialManagement, None, now);
         assert_eq!(result, Err(StatusCode::UnauthorizedPermission));
     }
 
     #[test]
     fn test_token_manager_expired_token() {
+        let now = 1000;
         let mut manager = PinTokenManager::new();
-        let mut token = create_test_token();
+        let token = create_test_token(now);
 
         // Expire the token
-        token.created_at = current_timestamp_ms() - (LIFETIME_MS + 1000);
+        let later = now + LIFETIME_MS + 1000;
         manager.set_token(token);
 
         // Should be treated as no token
-        assert!(!manager.has_valid_token());
-        assert!(manager.get_token().is_none());
+        assert!(!manager.has_valid_token(later));
+        assert!(manager.get_token(later).is_none());
     }
 
     #[test]
     fn test_token_mark_used() {
-        let mut token = create_test_token();
+        let now = 1000;
+        let mut token = create_test_token(now);
         let initial_last_used = token.last_used;
 
-        // Small delay to ensure timestamp changes
-        thread::sleep(Duration::from_millis(10));
+        // Simulate time passing
+        let later = now + 100;
 
-        token.mark_used();
+        token.mark_used(later);
         assert!(token.last_used > initial_last_used);
     }
 }
