@@ -84,6 +84,12 @@ pub fn handle<C: AuthenticatorCallbacks>(
     }
 
     let rp: RelyingParty = parser.get(req_keys::RP)?;
+    
+    // Validate RP ID is not empty (empty RP ID could cause credential management issues)
+    if rp.id.is_empty() {
+        return Err(StatusCode::InvalidParameter);
+    }
+    
     let user = parse_user(&parser, req_keys::USER)?;
 
     let params_value: crate::cbor::Value = parser.get(req_keys::PUB_KEY_CRED_PARAMS)?;
@@ -463,12 +469,19 @@ fn perform_built_in_uv<C: AuthenticatorCallbacks>(
         .callbacks()
         .request_uv(&info, user.name.as_deref(), &rp.id)?
     {
-        UvResult::Accepted | UvResult::AcceptedWithUp => Ok(true),
+        UvResult::Accepted | UvResult::AcceptedWithUp => {
+            // UV succeeded - reset retry counter
+            auth.reset_uv_retries();
+            Ok(true)
+        }
         UvResult::Timeout => Err(StatusCode::UserActionTimeout),
         UvResult::Denied => {
-            // Check retry counter
-            if auth.uv_retries() == 0 {
-                return Err(StatusCode::PinBlocked);
+            // UV failed - decrement retry counter
+            auth.decrement_uv_retries();
+
+            // Check if UV is now blocked
+            if auth.is_uv_blocked() {
+                return Err(StatusCode::UvBlocked);
             }
 
             if auth.config().options.client_pin.unwrap_or(false)
@@ -483,22 +496,28 @@ fn perform_built_in_uv<C: AuthenticatorCallbacks>(
 }
 
 /// Get user verified flag value from PIN token state
+///
+/// Per FIDO2 spec, this returns true only if a valid PIN token exists
+/// that was obtained via PIN verification (getPinToken or
+/// getPinUvAuthTokenUsingPinWithPermissions).
 pub(crate) fn get_user_verified_flag_value<C: AuthenticatorCallbacks>(
-    _auth: &Authenticator<C>,
+    auth: &Authenticator<C>,
 ) -> bool {
-    // Per spec, if PIN token was obtained via getPinToken/getPinUvAuthTokenUsingPinWithPermissions,
-    // then UV flag should be true
-    // For simplicity, we return true when a valid PIN token exists
-    true
+    // Check if there is a valid PIN token with UV flag set
+    // The token must exist and be within its validity window
+    auth.has_valid_pin_token()
 }
 
 /// Get user present flag value
+///
+/// Per FIDO2 spec, this returns true if user presence was confirmed
+/// during the current PIN token session.
 pub(crate) fn get_user_present_flag_value<C: AuthenticatorCallbacks>(
     auth: &Authenticator<C>,
 ) -> bool {
-    // Check if there's a valid PIN token with recent usage
-    // For simplicity, return true if token exists
-    auth.pin_retries() > 0
+    // User presence is confirmed if there's a valid PIN token
+    // that was recently used (within usage window)
+    auth.has_valid_pin_token_within_usage_window()
 }
 
 /// Step 12: Check excludeList for credential exclusion

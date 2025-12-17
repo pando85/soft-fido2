@@ -15,6 +15,12 @@ use std::time::{Duration, Instant};
 /// Transaction timeout (500ms per CTAP spec)
 const TRANSACTION_TIMEOUT: Duration = Duration::from_millis(500);
 
+/// Maximum number of concurrent active channels
+///
+/// Prevents memory exhaustion DoS attacks via rapid INIT command flooding.
+/// Per CTAP spec, authenticators may limit the number of concurrent transactions.
+const MAX_ACTIVE_CHANNELS: usize = 8;
+
 /// Channel state for message assembly
 #[derive(Debug)]
 struct ChannelState {
@@ -146,6 +152,12 @@ impl ChannelManager {
             if payload_len as usize <= 57 {
                 // Complete message in one packet
                 return Ok(Some(Message::from_packets(&[packet], None)?));
+            }
+
+            // Check channel limit before starting new multi-packet transaction
+            // This prevents DoS via rapid INIT command flooding
+            if self.channels.len() >= MAX_ACTIVE_CHANNELS {
+                return Err(Error::ChannelBusy);
             }
 
             // Start multi-packet transaction

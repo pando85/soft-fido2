@@ -1,7 +1,9 @@
 use crate::error::{Error, Result};
 
+#[cfg(feature = "std")]
+use soft_fido2_transport::{Cmd, Message, Packet};
 #[cfg(target_os = "linux")]
-use soft_fido2_transport::{Message, Packet, UhidDevice};
+use soft_fido2_transport::UhidDevice;
 #[cfg(feature = "usb")]
 use soft_fido2_transport::{UsbTransport as RawUsbTransport, enumerate_devices, init_usb};
 
@@ -187,8 +189,6 @@ impl Transport {
     ///
     /// Returns the allocated channel ID.
     fn init_channel(&mut self) -> Result<u32> {
-        use soft_fido2_transport::Cmd;
-
         // Generate 8-byte nonce for INIT
         let nonce: [u8; 8] = rand::random();
 
@@ -313,8 +313,6 @@ impl Transport {
         response: &mut [u8],
         timeout_ms: i32,
     ) -> Result<usize> {
-        use soft_fido2_transport::Cmd;
-
         // CTAP authenticator commands are sent via CTAP HID Cbor (0x10) command
         // Payload format: [ctap_cmd, ...cbor_data]
         // Use SmallVec: most CTAP requests are <256 bytes (getInfo, PIN ops, etc.)
