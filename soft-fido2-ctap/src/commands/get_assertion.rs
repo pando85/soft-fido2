@@ -81,6 +81,12 @@ pub fn handle<C: AuthenticatorCallbacks>(
 
     // Required parameters
     let rp_id: String = parser.get(req_keys::RP_ID)?;
+    
+    // Validate RP ID is not empty (empty RP ID could match unintended credentials)
+    if rp_id.is_empty() {
+        return Err(StatusCode::InvalidParameter);
+    }
+    
     let client_data_hash: Vec<u8> = parser.get_bytes(req_keys::CLIENT_DATA_HASH)?;
     if client_data_hash.len() != 32 {
         return Err(StatusCode::InvalidParameter);
@@ -370,9 +376,13 @@ pub fn handle<C: AuthenticatorCallbacks>(
             let info = format!("Verify for {}", rp_id);
             match auth.callbacks().request_uv(&info, None, &rp_id)? {
                 UvResult::Accepted => {
+                    // UV succeeded - reset retry counter
+                    auth.reset_uv_retries();
                     response_state.uv = true;
                 }
                 UvResult::AcceptedWithUp => {
+                    // UV succeeded - reset retry counter
+                    auth.reset_uv_retries();
                     response_state.uv = true;
                     response_state.up = true;
                 }
@@ -381,10 +391,12 @@ pub fn handle<C: AuthenticatorCallbacks>(
                     return Err(StatusCode::UserActionTimeout);
                 }
                 UvResult::Denied => {
-                    // UV failed
-                    // Check UV retry counter
-                    if auth.uv_retries() == 0 {
-                        return Err(StatusCode::PinBlocked);
+                    // UV failed - decrement retry counter
+                    auth.decrement_uv_retries();
+
+                    // Check if UV is now blocked
+                    if auth.is_uv_blocked() {
+                        return Err(StatusCode::UvBlocked);
                     }
 
                     // Check if clientPin is supported and noMcGaPermissionsWithClientPin is absent/false

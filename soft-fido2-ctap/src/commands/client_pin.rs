@@ -294,7 +294,7 @@ fn handle_change_pin<C: AuthenticatorCallbacks>(
     // Use constant-time comparison for PIN hash verification
     if !auth.verify_pin_hash_first_16(&decrypted_pin_hash) {
         // Decrement retry counter on failed verification
-        auth.decrement_pin_retries();
+        auth.decrement_pin_retries()?;
         if auth.is_pin_blocked() {
             return Err(StatusCode::PinBlocked);
         }
@@ -375,7 +375,7 @@ fn handle_get_pin_token<C: AuthenticatorCallbacks>(
 
     // Verify PIN hash (first 16 bytes per CTAP spec)
     if !auth.verify_pin_hash_first_16(&decrypted_pin_hash) {
-        auth.decrement_pin_retries();
+        auth.decrement_pin_retries()?;
         if auth.is_pin_blocked() {
             return Err(StatusCode::PinBlocked);
         }
@@ -383,7 +383,7 @@ fn handle_get_pin_token<C: AuthenticatorCallbacks>(
     }
 
     // PIN verified - reset retry counter
-    auth.reset_pin_retries();
+    auth.reset_pin_retries()?;
 
     // Get PIN token (CTAP 2.0 uses all permissions)
     let token = auth.get_pin_token_after_verification(0xFF, None)?;
@@ -458,7 +458,7 @@ fn handle_get_pin_uv_auth_token_using_pin_with_permissions<C: AuthenticatorCallb
 
     // Verify PIN hash (first 16 bytes per CTAP spec)
     if !auth.verify_pin_hash_first_16(&decrypted_pin_hash) {
-        auth.decrement_pin_retries();
+        auth.decrement_pin_retries()?;
         if auth.is_pin_blocked() {
             return Err(StatusCode::PinBlocked);
         }
@@ -466,7 +466,7 @@ fn handle_get_pin_uv_auth_token_using_pin_with_permissions<C: AuthenticatorCallb
     }
 
     // PIN verified - reset retry counter and get token
-    auth.reset_pin_retries();
+    auth.reset_pin_retries()?;
     let token = auth.get_pin_token_after_verification(permissions, rp_id)?;
 
     // Encrypt the token
@@ -556,8 +556,10 @@ fn handle_get_pin_uv_auth_token_using_uv_with_permissions<C: AuthenticatorCallba
         return Err(StatusCode::NotAllowed);
     }
 
-    // TODO: Check uvRetries counter (not yet implemented)
-    // If uvRetries == 0, return CTAP2_ERR_UV_BLOCKED
+    // Check if UV is blocked (retries exhausted)
+    if auth.is_uv_blocked() {
+        return Err(StatusCode::UvBlocked);
+    }
 
     // Parse platform key agreement key
     let platform_public_key = parse_cose_key(&key_agreement)?;
@@ -594,10 +596,22 @@ fn handle_get_pin_uv_auth_token_using_uv_with_permissions<C: AuthenticatorCallba
     )?;
 
     match uv_result {
-        crate::UvResult::AcceptedWithUp => true,
-        crate::UvResult::Accepted => false,
+        crate::UvResult::AcceptedWithUp => {
+            // UV succeeded - reset retry counter
+            auth.reset_uv_retries();
+            true
+        }
+        crate::UvResult::Accepted => {
+            // UV succeeded - reset retry counter
+            auth.reset_uv_retries();
+            false
+        }
         crate::UvResult::Denied => {
-            // TODO: Decrement uvRetries counter
+            // UV failed - decrement retry counter
+            auth.decrement_uv_retries();
+            if auth.is_uv_blocked() {
+                return Err(StatusCode::UvBlocked);
+            }
             return Err(StatusCode::OperationDenied);
         }
         crate::UvResult::Timeout => {

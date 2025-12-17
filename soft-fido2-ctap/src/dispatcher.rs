@@ -62,9 +62,20 @@ impl<C: AuthenticatorCallbacks> CommandDispatcher<C> {
                 crate::commands::client_pin::handle(&mut self.authenticator, command_data)
             }
             CommandCode::Reset => {
-                // Reset requires user confirmation
-                self.authenticator.reset()?;
-                Ok(vec![]) // Empty response on success
+                // Per CTAP spec, reset requires user presence confirmation
+                use crate::UpResult;
+                match self.authenticator.callbacks().request_up(
+                    "Factory Reset - All credentials will be deleted",
+                    None,
+                    "authenticator",
+                )? {
+                    UpResult::Accepted => {
+                        self.authenticator.reset()?;
+                        Ok(vec![]) // Empty response on success
+                    }
+                    UpResult::Denied => Err(StatusCode::OperationDenied),
+                    UpResult::Timeout => Err(StatusCode::UserActionTimeout),
+                }
             }
             CommandCode::GetNextAssertion => {
                 crate::commands::get_next_assertion::handle(&mut self.authenticator, command_data)

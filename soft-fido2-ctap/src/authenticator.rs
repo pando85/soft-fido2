@@ -538,15 +538,21 @@ impl<C: AuthenticatorCallbacks> Authenticator<C> {
     }
 
     /// Decrement PIN retry counter (for failed PIN attempts)
-    pub(crate) fn decrement_pin_retries(&mut self) {
+    ///
+    /// Updates in-memory state immediately, then attempts to persist.
+    /// Persistence errors are propagated to allow callers to handle storage failures.
+    pub(crate) fn decrement_pin_retries(&mut self) -> Result<(), StatusCode> {
         self.pin_state.retries = self.pin_state.retries.saturating_sub(1);
-        let _ = self.save_pin_state();
+        self.save_pin_state()
     }
 
     /// Reset PIN retry counter (for successful PIN verification)
-    pub(crate) fn reset_pin_retries(&mut self) {
+    ///
+    /// Updates in-memory state immediately, then attempts to persist.
+    /// Persistence errors are propagated to allow callers to handle storage failures.
+    pub(crate) fn reset_pin_retries(&mut self) -> Result<(), StatusCode> {
         self.pin_state.retries = MAX_PIN_RETRIES;
-        let _ = self.save_pin_state();
+        self.save_pin_state()
     }
 
     /// Get PIN token with permissions
@@ -1023,8 +1029,36 @@ impl<C: AuthenticatorCallbacks> Authenticator<C> {
 
     /// Get the number of UV retries remaining.
     pub fn uv_retries(&self) -> u8 {
-        // TODO: implement UV retry tracking
         self.uv_retries
+    }
+
+    /// Check if UV is blocked (retries exhausted)
+    pub fn is_uv_blocked(&self) -> bool {
+        self.uv_retries == 0
+    }
+
+    /// Decrement UV retry counter on failed verification
+    pub fn decrement_uv_retries(&mut self) {
+        self.uv_retries = self.uv_retries.saturating_sub(1);
+    }
+
+    /// Reset UV retry counter on successful verification
+    pub fn reset_uv_retries(&mut self) {
+        self.uv_retries = MAX_UV_RETRIES;
+    }
+
+    /// Check if there is a valid PIN token
+    ///
+    /// Returns true if a PIN token exists and is within its validity window.
+    pub fn has_valid_pin_token(&self) -> bool {
+        self.pin_tokens.has_valid_token()
+    }
+
+    /// Check if there is a valid PIN token within usage window
+    ///
+    /// Returns true if a PIN token exists and is within the 19-second usage window.
+    pub fn has_valid_pin_token_within_usage_window(&self) -> bool {
+        self.pin_tokens.has_valid_token_within_usage_window()
     }
 }
 

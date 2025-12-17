@@ -4,6 +4,25 @@
 //! They have a limited lifetime and specific permissions that control which operations
 //! can be performed.
 //!
+//! # Token Lifetime
+//!
+//! - **Usage Window**: 19 seconds from creation (for starting new operations)
+//! - **Maximum Lifetime**: 10 minutes from creation (absolute expiration)
+//!
+//! # SECURITY WARNING: no_std Builds
+//!
+//! In `no_std` builds without a real-time clock, `current_timestamp_ms()` returns 0,
+//! which means **PIN tokens never expire**. This creates a security risk:
+//!
+//! - Captured tokens can be replayed indefinitely
+//! - The 19-second usage window is not enforced
+//! - The 10-minute lifetime is not enforced
+//!
+//! **Mitigation for no_std integrators:**
+//! 1. Provide a custom time source by implementing a platform-specific `current_timestamp_ms()`
+//! 2. Implement session-based token invalidation at the transport layer
+//! 3. Limit token usage to single operations where possible
+//!
 //! Reference: FIDO2 CTAP 2.1 specification, Section 6.5.5.7
 
 use crate::SecBytes;
@@ -312,6 +331,14 @@ impl PinTokenManager {
     /// Check if a valid token exists
     pub fn has_valid_token(&self) -> bool {
         self.get_token().is_some()
+    }
+
+    /// Check if a valid token exists within the usage window (19 seconds)
+    pub fn has_valid_token_within_usage_window(&self) -> bool {
+        match &self.current_token {
+            Some(token) => token.is_valid() && token.is_within_usage_window(),
+            None => false,
+        }
     }
 
     /// Clear PIN/UV auth token permissions except large blob write (lbw)
