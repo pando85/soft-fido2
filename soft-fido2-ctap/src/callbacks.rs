@@ -226,12 +226,17 @@ pub trait PlatformCallbacks {
 /// Combined callbacks interface for core authenticator operations
 ///
 /// Combines user interaction, credential storage, and platform callbacks.
-pub trait AuthenticatorCallbacks: UserInteractionCallbacks + CredentialStorageCallbacks + PlatformCallbacks {
+pub trait AuthenticatorCallbacks:
+    UserInteractionCallbacks + CredentialStorageCallbacks + PlatformCallbacks
+{
     // This trait is intentionally empty - it just combines the callback traits
 }
 
 // Blanket implementation: any type implementing all traits also implements AuthenticatorCallbacks
-impl<T> AuthenticatorCallbacks for T where T: UserInteractionCallbacks + CredentialStorageCallbacks + PlatformCallbacks {}
+impl<T> AuthenticatorCallbacks for T where
+    T: UserInteractionCallbacks + CredentialStorageCallbacks + PlatformCallbacks
+{
+}
 
 #[cfg(test)]
 mod tests {

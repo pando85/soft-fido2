@@ -290,7 +290,9 @@ impl PinTokenManager {
     ///
     /// Returns None if no token exists or if the token has expired.
     pub fn get_token(&self, now: u64) -> Option<&PinToken> {
-        self.current_token.as_ref().filter(|token| token.is_valid(now))
+        self.current_token
+            .as_ref()
+            .filter(|token| token.is_valid(now))
     }
 
     /// Get mutable reference to current token if valid
@@ -361,8 +363,6 @@ impl Default for PinTokenManager {
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    use std::{thread, time::Duration};
 
     /// Create a test token with default values
     fn create_test_token(now: u64) -> PinToken {
@@ -516,7 +516,8 @@ mod tests {
         let mut manager = PinTokenManager::new();
 
         // No token - should fail
-        let result = manager.verify_permission(Permission::MakeCredential, Some("example.com"), now);
+        let result =
+            manager.verify_permission(Permission::MakeCredential, Some("example.com"), now);
         assert_eq!(result, Err(StatusCode::PinRequired));
 
         // Set valid token

@@ -19,6 +19,36 @@ use crate::{
 use alloc::{string::String, vec::Vec};
 use zeroize::Zeroizing;
 
+/// Find the length of a null-terminated string in constant time
+///
+/// This function always processes all bytes to avoid timing side-channels
+/// that could leak PIN length information.
+///
+/// # Arguments
+///
+/// * `data` - The buffer containing a null-padded string
+///
+/// # Returns
+///
+/// The index of the first null byte, or the buffer length if no null is found
+fn find_null_terminator_constant_time(data: &[u8]) -> usize {
+    let mut first_null_idx = data.len();
+    let mut found = false;
+
+    // Always iterate through all bytes to maintain constant time
+    for (i, &byte) in data.iter().enumerate() {
+        // Only update if this is a null byte AND we haven't found one yet
+        let is_null = byte == 0;
+        let should_update = is_null && !found;
+        if should_update {
+            first_null_idx = i;
+            found = true;
+        }
+    }
+
+    first_null_idx
+}
+
 /// ClientPIN subcommand codes
 #[repr(u8)]
 #[derive(Debug, Clone, Copy)]
@@ -196,10 +226,8 @@ fn handle_set_pin<C: AuthenticatorCallbacks>(
     });
 
     // PIN is padded to 64 bytes with trailing zeros, find actual length
-    let pin_len = decrypted_pin
-        .iter()
-        .position(|&b| b == 0)
-        .unwrap_or(decrypted_pin.len());
+    // Uses constant-time search to avoid timing side-channel leaking PIN length
+    let pin_len = find_null_terminator_constant_time(&decrypted_pin);
     let pin_str = core::str::from_utf8(&decrypted_pin[..pin_len])
         .map_err(|_| StatusCode::PinPolicyViolation)?;
 
@@ -309,10 +337,8 @@ fn handle_change_pin<C: AuthenticatorCallbacks>(
     });
 
     // PIN is padded to 64 bytes with trailing zeros, find actual length
-    let pin_len = decrypted_new_pin
-        .iter()
-        .position(|&b| b == 0)
-        .unwrap_or(decrypted_new_pin.len());
+    // Uses constant-time search to avoid timing side-channel leaking PIN length
+    let pin_len = find_null_terminator_constant_time(&decrypted_new_pin);
     let new_pin_str = core::str::from_utf8(&decrypted_new_pin[..pin_len])
         .map_err(|_| StatusCode::PinPolicyViolation)?;
 
@@ -1420,5 +1446,37 @@ mod tests {
 
         // PIN retries should be reset to max
         assert_eq!(auth.pin_retries(), 8);
+    }
+
+    #[test]
+    fn test_find_null_terminator_constant_time() {
+        // Test with null in middle
+        let data = [0x41, 0x42, 0x43, 0x00, 0x00, 0x00];
+        assert_eq!(find_null_terminator_constant_time(&data), 3);
+
+        // Test with no null
+        let data = [0x41, 0x42, 0x43, 0x44];
+        assert_eq!(find_null_terminator_constant_time(&data), 4);
+
+        // Test with null at start
+        let data = [0x00, 0x41, 0x42, 0x43];
+        assert_eq!(find_null_terminator_constant_time(&data), 0);
+
+        // Test with null at end
+        let data = [0x41, 0x42, 0x43, 0x00];
+        assert_eq!(find_null_terminator_constant_time(&data), 3);
+
+        // Test empty
+        let data: [u8; 0] = [];
+        assert_eq!(find_null_terminator_constant_time(&data), 0);
+
+        // Test all nulls
+        let data = [0x00, 0x00, 0x00, 0x00];
+        assert_eq!(find_null_terminator_constant_time(&data), 0);
+
+        // Test 64-byte padded PIN (typical CTAP PIN format)
+        let mut pin_buffer = [0u8; 64];
+        pin_buffer[..6].copy_from_slice(b"123456");
+        assert_eq!(find_null_terminator_constant_time(&pin_buffer), 6);
     }
 }

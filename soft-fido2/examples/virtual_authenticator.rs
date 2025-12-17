@@ -51,22 +51,35 @@
 //! - Extension support (credProtect, hmac-secret)
 //! - Custom USB device IDs (vendor ID, product ID, device name)
 
+// This example only works on Linux (requires UHID)
+#[cfg(not(target_os = "linux"))]
+fn main() {
+    eprintln!("This example requires Linux with UHID support.");
+}
+
+#[cfg(target_os = "linux")]
 use soft_fido2::{
     Authenticator, AuthenticatorCallbacks, AuthenticatorConfig, AuthenticatorOptions, Credential,
     CredentialRef, Error, Result, UpResult, UvResult,
 };
 
+#[cfg(target_os = "linux")]
 use soft_fido2_transport::{CommandHandler, UhidDevice};
 
+#[cfg(target_os = "linux")]
 use std::collections::HashMap;
+#[cfg(target_os = "linux")]
 use std::sync::{Arc, Mutex};
+#[cfg(target_os = "linux")]
 use std::time::Duration;
 
 /// Wrapper that implements CommandHandler for the high-level Authenticator
+#[cfg(target_os = "linux")]
 struct AuthenticatorHandler<C: AuthenticatorCallbacks> {
     authenticator: Mutex<Authenticator<C>>,
 }
 
+#[cfg(target_os = "linux")]
 impl<C: AuthenticatorCallbacks> AuthenticatorHandler<C> {
     fn new(authenticator: Authenticator<C>) -> Self {
         Self {
@@ -75,6 +88,7 @@ impl<C: AuthenticatorCallbacks> AuthenticatorHandler<C> {
     }
 }
 
+#[cfg(target_os = "linux")]
 impl<C: AuthenticatorCallbacks> CommandHandler for AuthenticatorHandler<C> {
     fn handle_command(
         &mut self,
@@ -101,11 +115,13 @@ impl<C: AuthenticatorCallbacks> CommandHandler for AuthenticatorHandler<C> {
 /// UHID Virtual Authenticator Runner
 ///
 /// Manages the complete stack: UHID I/O → CTAP HID protocol → Authenticator
+#[cfg(target_os = "linux")]
 struct UhidAuthenticator<C: AuthenticatorCallbacks> {
     device: UhidDevice,
     handler: soft_fido2_transport::CtapHidHandler<AuthenticatorHandler<C>>,
 }
 
+#[cfg(target_os = "linux")]
 impl<C: AuthenticatorCallbacks> UhidAuthenticator<C> {
     fn new(authenticator: Authenticator<C>, config: &AuthenticatorConfig) -> Result<Self> {
         let device = UhidDevice::create_fido_device_with_ids(
@@ -185,10 +201,12 @@ impl<C: AuthenticatorCallbacks> UhidAuthenticator<C> {
 }
 
 /// Virtual authenticator callbacks with user-friendly logging
+#[cfg(target_os = "linux")]
 struct VirtualAuthCallbacks {
     credentials: Arc<Mutex<HashMap<Vec<u8>, Credential>>>,
 }
 
+#[cfg(target_os = "linux")]
 impl VirtualAuthCallbacks {
     fn new() -> Self {
         Self {
@@ -197,6 +215,7 @@ impl VirtualAuthCallbacks {
     }
 }
 
+#[cfg(target_os = "linux")]
 impl AuthenticatorCallbacks for VirtualAuthCallbacks {
     fn request_up(&self, info: &str, user: Option<&str>, rp: &str) -> Result<UpResult> {
         println!("\n  [UP] 👆 User Presence Requested");
@@ -329,6 +348,7 @@ impl AuthenticatorCallbacks for VirtualAuthCallbacks {
     }
 }
 
+#[cfg(target_os = "linux")]
 fn main() -> Result<()> {
     println!("╔═══════════════════════════════════════════════════════════╗");
     println!("║  Virtual FIDO2 Authenticator (UHID)                      ║");

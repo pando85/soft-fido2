@@ -20,19 +20,32 @@
 //!
 //! The authenticator will run until you press Ctrl+C.
 
+// This example only works on Linux (requires UHID)
+#[cfg(not(target_os = "linux"))]
+fn main() {
+    eprintln!("This example requires Linux with UHID support.");
+}
+
+#[cfg(target_os = "linux")]
 use soft_fido2::{
     Authenticator, AuthenticatorCallbacks, AuthenticatorConfig, AuthenticatorOptions, Credential,
     CredentialRef, CtapCommand, Result, Uhid, UpResult, UvResult,
 };
 
+#[cfg(target_os = "linux")]
 use soft_fido2_transport::{Cmd, Message, Packet};
 
+#[cfg(target_os = "linux")]
 use std::collections::HashMap;
+#[cfg(target_os = "linux")]
 use std::sync::{Arc, Mutex};
+#[cfg(target_os = "linux")]
 use std::time::Duration;
 
+#[cfg(target_os = "linux")]
 use sha2::{Digest, Sha256};
 
+#[cfg(target_os = "linux")]
 const UHID_ERROR_MESSAGE: &str = "Make sure you have the uhid kernel module loaded and proper permissions.\n\
 Run the following commands as root:\n\
   modprobe uhid\n\
@@ -42,6 +55,7 @@ Run the following commands as root:\n\
   udevadm control --reload-rules && udevadm trigger";
 
 // PIN configuration - "123456" hashed with SHA-256
+#[cfg(target_os = "linux")]
 #[allow(dead_code)]
 fn get_pin_hash() -> [u8; 32] {
     let mut hasher = Sha256::new();
@@ -50,10 +64,12 @@ fn get_pin_hash() -> [u8; 32] {
 }
 
 /// Simple authenticator callbacks for testing
+#[cfg(target_os = "linux")]
 struct SimpleCallbacks {
     credentials: Arc<Mutex<HashMap<Vec<u8>, Credential>>>,
 }
 
+#[cfg(target_os = "linux")]
 impl SimpleCallbacks {
     fn new() -> Self {
         Self {
@@ -62,6 +78,7 @@ impl SimpleCallbacks {
     }
 }
 
+#[cfg(target_os = "linux")]
 impl AuthenticatorCallbacks for SimpleCallbacks {
     fn request_up(&self, _info: &str, _user: Option<&str>, _rp: &str) -> Result<UpResult> {
         Ok(UpResult::Accepted)
@@ -132,6 +149,7 @@ impl AuthenticatorCallbacks for SimpleCallbacks {
     }
 }
 
+#[cfg(target_os = "linux")]
 fn main() -> Result<()> {
     println!("╔════════════════════════════════════════════════╗");
     println!("║     Virtual FIDO2 Authenticator                ║");
@@ -271,6 +289,7 @@ fn main() -> Result<()> {
 }
 
 /// Process a complete CTAP HID message
+#[cfg(target_os = "linux")]
 fn process_message<C: AuthenticatorCallbacks>(
     auth: &mut Authenticator<C>,
     uhid: &Uhid,
@@ -352,6 +371,7 @@ fn process_message<C: AuthenticatorCallbacks>(
 }
 
 /// Send a CTAP HID message via UHID
+#[cfg(target_os = "linux")]
 fn send_message(uhid: &Uhid, message: &Message) -> Result<()> {
     let packets = message
         .to_packets()

@@ -81,12 +81,12 @@ pub fn handle<C: AuthenticatorCallbacks>(
 
     // Required parameters
     let rp_id: String = parser.get(req_keys::RP_ID)?;
-    
+
     // Validate RP ID is not empty (empty RP ID could match unintended credentials)
     if rp_id.is_empty() {
         return Err(StatusCode::InvalidParameter);
     }
-    
+
     let client_data_hash: Vec<u8> = parser.get_bytes(req_keys::CLIENT_DATA_HASH)?;
     if client_data_hash.len() != 32 {
         return Err(StatusCode::InvalidParameter);

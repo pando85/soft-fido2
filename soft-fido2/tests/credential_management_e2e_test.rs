@@ -1,6 +1,11 @@
 //! End-to-end tests for credential management client API
 //!
 //! These tests use USB HID transport with a virtual authenticator running in a background thread.
+//!
+//! Note: These tests only run on Linux as they require UHID support.
+
+// This test module only compiles on Linux (requires UHID)
+#![cfg(target_os = "linux")]
 
 use soft_fido2::{
     Authenticator, AuthenticatorCallbacks, AuthenticatorConfig, AuthenticatorOptions, Client,
