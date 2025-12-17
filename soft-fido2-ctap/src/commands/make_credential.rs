@@ -84,12 +84,12 @@ pub fn handle<C: AuthenticatorCallbacks>(
     }
 
     let rp: RelyingParty = parser.get(req_keys::RP)?;
-    
+
     // Validate RP ID is not empty (empty RP ID could cause credential management issues)
     if rp.id.is_empty() {
         return Err(StatusCode::InvalidParameter);
     }
-    
+
     let user = parse_user(&parser, req_keys::USER)?;
 
     let params_value: crate::cbor::Value = parser.get(req_keys::PUB_KEY_CRED_PARAMS)?;

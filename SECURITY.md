@@ -485,6 +485,18 @@ audit_log!(
    echo "kernel.core_pattern=|/bin/false" >> /etc/sysctl.conf
    ```
 
+7. **Provide and persist the credential wrapping key**
+   ```rust
+   // For production: generate once, store securely, reuse across restarts
+   let wrapping_key = load_from_secure_storage()?; // 32 random bytes
+
+   let config = AuthenticatorConfig::new()
+       .with_credential_wrapping_key(wrapping_key);
+   ```
+
+   Without a persistent wrapping key, non-resident credentials (rk=false)
+   become unrecoverable after authenticator restart.
+
 #### ❌ DON'T
 
 1. **Don't call `.to_vec()` on SecBytes unnecessarily**

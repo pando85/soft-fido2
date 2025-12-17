@@ -8,7 +8,7 @@ use crate::{
     callbacks::{AuthenticatorCallbacks, PinStorageCallbacks},
     cbor::MAX_CTAP_MESSAGE_SIZE,
     pin_token::{Permission, PinToken, PinTokenManager},
-    types::PinState,
+    types::{MAX_UV_RETRIES, PinState},
 };
 
 use soft_fido2_crypto::pin_protocol::{self, v2};
@@ -30,9 +30,6 @@ use subtle::ConstantTimeEq;
 
 /// Maximum PIN retries before blocking
 const MAX_PIN_RETRIES: u8 = 8;
-
-/// Maximum UV retries before blocking
-const MAX_UV_RETRIES: u8 = 3;
 
 /// Type alias for custom command handlers
 type CustomCommandHandler = Box<dyn Fn(&[u8]) -> Result<Vec<u8>, StatusCode> + Send + Sync>;
@@ -84,6 +81,21 @@ pub struct AuthenticatorConfig {
     ///
     /// Used to encrypt private keys into credential IDs when rk=false.
     /// If None, a random key will be generated at runtime.
+    ///
+    /// # Security Warning
+    ///
+    /// **For production use, you MUST provide and persist this key.**
+    ///
+    /// If not provided, a random key is generated at runtime which means:
+    /// - Non-resident credentials become **unrecoverable** after authenticator restart
+    /// - Users cannot authenticate with credentials created before the restart
+    ///
+    /// The key must be:
+    /// - 32 cryptographically random bytes
+    /// - Stored in secure, persistent storage (e.g., TPM, HSM, encrypted file)
+    /// - Never exposed or logged
+    ///
+    /// For testing/development, leaving this as None is acceptable.
     pub credential_wrapping_key: Option<[u8; 32]>,
 
     /// Force all credentials to be resident keys (for testing)
@@ -366,6 +378,8 @@ impl<C: AuthenticatorCallbacks> Authenticator<C> {
         let storage = Arc::new(storage);
 
         if let Ok(state) = storage.load_pin_state() {
+            // Synchronize UV retries from persistent state
+            self.uv_retries = state.uv_retries;
             self.pin_state = state;
         }
 
@@ -647,7 +661,10 @@ impl<C: AuthenticatorCallbacks> Authenticator<C> {
     ) -> Result<(), StatusCode> {
         // Get current PIN token
         let now = self.callbacks.get_timestamp_ms();
-        let token = self.pin_tokens.get_token(now).ok_or(StatusCode::PinRequired)?;
+        let token = self
+            .pin_tokens
+            .get_token(now)
+            .ok_or(StatusCode::PinRequired)?;
 
         // Verify based on protocol version
         // Protocol v1 uses 16-byte HMAC, v2 uses 32-byte HMAC
@@ -1041,13 +1058,23 @@ impl<C: AuthenticatorCallbacks> Authenticator<C> {
     }
 
     /// Decrement UV retry counter on failed verification
+    ///
+    /// Persists the updated UV retry count to prevent bypass via device restart.
     pub fn decrement_uv_retries(&mut self) {
         self.uv_retries = self.uv_retries.saturating_sub(1);
+        // Synchronize and persist to prevent brute-force bypass via restart
+        self.pin_state.uv_retries = self.uv_retries;
+        let _ = self.save_pin_state();
     }
 
     /// Reset UV retry counter on successful verification
+    ///
+    /// Persists the updated UV retry count.
     pub fn reset_uv_retries(&mut self) {
         self.uv_retries = MAX_UV_RETRIES;
+        // Synchronize and persist
+        self.pin_state.uv_retries = self.uv_retries;
+        let _ = self.save_pin_state();
     }
 
     /// Check if there is a valid PIN token

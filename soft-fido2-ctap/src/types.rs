@@ -392,6 +392,9 @@ impl AuthenticatorTransport {
 /// Maximum PIN retry attempts before blocking
 pub const MAX_PIN_RETRIES: u8 = 8;
 
+/// Maximum UV retry attempts before blocking
+pub const MAX_UV_RETRIES: u8 = 3;
+
 /// Default minimum PIN length (Unicode code points)
 pub const DEFAULT_MIN_PIN_LENGTH: u8 = 4;
 
@@ -404,6 +407,13 @@ pub struct PinState {
     /// Remaining PIN retry attempts (0-8)
     pub retries: u8,
 
+    /// Remaining UV retry attempts (0-3)
+    ///
+    /// This is persisted to prevent brute-force bypass via device restart.
+    /// Uses serde default for backwards compatibility with existing stored state.
+    #[serde(default = "default_uv_retries")]
+    pub uv_retries: u8,
+
     /// Minimum PIN length in Unicode code points (4-63)
     pub min_pin_length: u8,
 
@@ -412,6 +422,11 @@ pub struct PinState {
 
     /// Force PIN change flag
     pub force_pin_change: bool,
+}
+
+/// Default value for UV retries for serde deserialization
+fn default_uv_retries() -> u8 {
+    MAX_UV_RETRIES
 }
 
 impl Default for PinState {
@@ -426,6 +441,7 @@ impl PinState {
         Self {
             pin_hash: None,
             retries: MAX_PIN_RETRIES,
+            uv_retries: MAX_UV_RETRIES,
             min_pin_length: DEFAULT_MIN_PIN_LENGTH,
             version: 0,
             force_pin_change: false,
@@ -440,6 +456,11 @@ impl PinState {
     /// Check if PIN is blocked (no retries remaining)
     pub fn is_blocked(&self) -> bool {
         self.retries == 0
+    }
+
+    /// Check if UV is blocked (no UV retries remaining)
+    pub fn is_uv_blocked(&self) -> bool {
+        self.uv_retries == 0
     }
 
     /// Increment version for state change
@@ -550,5 +571,38 @@ mod tests {
         let mut buf = Vec::new();
         let result = crate::cbor::into_writer(&rp, &mut buf);
         assert!(result.is_ok());
+    }
+
+    #[test]
+    fn test_pin_state_uv_retries() {
+        // Default state should have MAX_UV_RETRIES
+        let state = PinState::new();
+        assert_eq!(state.uv_retries, MAX_UV_RETRIES);
+        assert!(!state.is_uv_blocked());
+
+        // Test UV blocking
+        let mut state = PinState::new();
+        state.uv_retries = 0;
+        assert!(state.is_uv_blocked());
+    }
+
+    #[test]
+    fn test_pin_state_cbor_round_trip() {
+        // Create state with specific UV retries
+        let mut state = PinState::new();
+        state.uv_retries = 1; // Only 1 retry left
+        state.retries = 5;
+        state.version = 42;
+
+        // Serialize to CBOR
+        let mut buf = Vec::new();
+        crate::cbor::into_writer(&state, &mut buf).expect("CBOR serialization failed");
+
+        // Deserialize back
+        let restored: PinState = crate::cbor::decode(&buf).expect("CBOR deserialization failed");
+
+        assert_eq!(restored.uv_retries, 1, "UV retries should be preserved");
+        assert_eq!(restored.retries, 5);
+        assert_eq!(restored.version, 42);
     }
 }

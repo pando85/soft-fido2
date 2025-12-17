@@ -1,8 +1,23 @@
 //! CTAP Extension Processing
 //!
 //! Implements CTAP extensions for enhanced functionality:
-//! - credProtect: Credential protection policy
-//! - hmac-secret: HMAC-based secrets for credentials
+//! - credProtect: Credential protection policy (fully implemented)
+//! - hmac-secret: HMAC-based secrets for credentials (partially implemented)
+//!
+//! # Extension Implementation Status
+//!
+//! | Extension | makeCredential | getAssertion |
+//! |-----------|----------------|--------------|
+//! | credProtect | ✅ Full | ✅ Full |
+//! | hmac-secret | ⚠️ Returns true | ❌ Not implemented |
+//! | credBlob | ✅ Full | ⚠️ Stub |
+//! | largeBlobKey | ✅ Full | ⚠️ Stub |
+//! | minPinLength | ✅ Full | N/A |
+//!
+//! **Note**: The hmac-secret extension returns `true` in makeCredential responses
+//! to indicate support, but the actual HMAC computation in getAssertion is not
+//! yet implemented. Clients requesting hmac-secret outputs during getAssertion
+//! will receive no extension output (per CTAP spec, this is allowed behavior).
 //!
 //! Spec: <https://fidoalliance.org/specs/fido-v2.2-rd-20230321/fido-client-to-authenticator-protocol-v2.2-rd-20230321.html#sctn-extensions>
 

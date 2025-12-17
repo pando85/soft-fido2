@@ -160,6 +160,10 @@ impl From<CtapUvResult> for UvResult {
 ///         // Return total credential count
 ///         Ok(0)
 ///     }
+///
+///     fn get_timestamp_ms(&self) -> u64 {
+///         0
+///     }
 /// }
 /// ```
 pub trait AuthenticatorCallbacks: Send + Sync {
@@ -214,7 +218,9 @@ struct CallbackAdapter<C: AuthenticatorCallbacks> {
     callbacks: Arc<C>,
 }
 
-impl<C: AuthenticatorCallbacks> soft_fido2_ctap::callbacks::PlatformCallbacks for CallbackAdapter<C> {
+impl<C: AuthenticatorCallbacks> soft_fido2_ctap::callbacks::PlatformCallbacks
+    for CallbackAdapter<C>
+{
     fn get_timestamp_ms(&self) -> u64 {
         self.callbacks.get_timestamp_ms()
     }
@@ -732,6 +738,7 @@ impl<C: AuthenticatorCallbacks> Authenticator<C> {
     /// #     fn list_credentials(&self, _: &str, _: Option<&[u8]>) -> soft_fido2::Result<Vec<Credential>> { Ok(vec![]) }
     /// #     fn enumerate_rps(&self) -> soft_fido2::Result<Vec<(String, Option<String>, usize)>> { Ok(vec![]) }
     /// #     fn credential_count(&self) -> soft_fido2::Result<usize> { Ok(0) }
+    /// #     fn get_timestamp_ms(&self) -> u64 { 0 }
     /// # }
     /// let callbacks = MyCallbacks;
     /// let mut auth = Authenticator::new(callbacks).unwrap();

@@ -117,16 +117,26 @@ impl ChannelManager {
     }
 
     /// Allocate a new channel ID
+    ///
+    /// Returns a unique CID that is not currently in use by any active channel.
+    /// Skips the broadcast CID (0xFFFFFFFF) and zero.
     pub fn allocate_cid(&mut self) -> u32 {
-        let cid = self.next_cid;
-        self.next_cid = self.next_cid.wrapping_add(1);
+        // Find a CID that isn't currently in use
+        // This prevents CID collision after 2^32 allocations (wraparound)
+        loop {
+            let cid = self.next_cid;
+            self.next_cid = self.next_cid.wrapping_add(1);
 
-        // Skip broadcast CID and zero
-        if self.next_cid == 0 || self.next_cid == BROADCAST_CID {
-            self.next_cid = 1;
+            // Skip broadcast CID and zero
+            if self.next_cid == 0 || self.next_cid == BROADCAST_CID {
+                self.next_cid = 1;
+            }
+
+            // Skip if this CID is already in use by an active transaction
+            if !self.channels.contains_key(&cid) {
+                return cid;
+            }
         }
-
-        cid
     }
 
     /// Process an incoming packet
@@ -372,5 +382,51 @@ mod tests {
         assert_eq!(cid1, 0xFFFFFFFE);
         assert_eq!(cid2, 1); // Skips 0xFFFFFFFF and 0
         assert_eq!(cid3, 2);
+    }
+
+    #[test]
+    fn test_max_active_channels_limit() {
+        let mut manager = ChannelManager::new();
+
+        // Create MAX_ACTIVE_CHANNELS multi-packet transactions
+        for i in 0..MAX_ACTIVE_CHANNELS {
+            let cid = 0x10000000 + i as u32;
+            let data = vec![0xAA; 100]; // Large enough to require multiple packets
+            let packets = Packet::new_init(cid, Cmd::Cbor, &data, None).unwrap();
+
+            // Start transaction (should succeed)
+            let result = manager.process_packet(packets[0].clone());
+            assert!(result.is_ok(), "Transaction {} should succeed", i);
+            assert!(result.unwrap().is_none()); // Not complete yet
+        }
+
+        assert_eq!(manager.active_channels(), MAX_ACTIVE_CHANNELS);
+
+        // Try to start one more - should fail with ChannelBusy
+        let extra_cid = 0x20000000u32;
+        let extra_data = vec![0xBB; 100];
+        let extra_packets = Packet::new_init(extra_cid, Cmd::Cbor, &extra_data, None).unwrap();
+
+        let result = manager.process_packet(extra_packets[0].clone());
+        assert!(result.is_err());
+        assert!(matches!(result, Err(Error::ChannelBusy)));
+    }
+
+    #[test]
+    fn test_cid_collision_prevention() {
+        let mut manager = ChannelManager::new();
+
+        // Start a transaction on CID 1
+        let data = vec![0xCC; 100];
+        let packets = Packet::new_init(1, Cmd::Cbor, &data, None).unwrap();
+        let _ = manager.process_packet(packets[0].clone()).unwrap();
+
+        // Set next_cid to 1 to simulate wraparound collision scenario
+        manager.next_cid = 1;
+
+        // Allocate a new CID - should skip CID 1 since it's in use
+        let new_cid = manager.allocate_cid();
+        assert_ne!(new_cid, 1, "Should skip CID 1 which is in use");
+        assert_eq!(new_cid, 2, "Should allocate CID 2 instead");
     }
 }
