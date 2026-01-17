@@ -24,7 +24,7 @@ hmac = "0.12"
 hkdf = "0.12"
 aes = "0.8"
 cbc = { version = "0.1", features = ["alloc"] }
-rand = "0.8"
+rand = "0.9"
 subtle = "2.6"
 zeroize = { version = "1.8", default-features = false, features = ["alloc"] }
 
