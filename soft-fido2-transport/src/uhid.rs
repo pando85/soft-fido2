@@ -327,8 +327,7 @@ impl UhidDevice {
 
     /// Set non-blocking mode on the file descriptor
     fn set_nonblocking(&self, nonblocking: bool) -> Result<()> {
-        let fd = self.file.as_raw_fd();
-        let flags = nix::fcntl::fcntl(fd, nix::fcntl::FcntlArg::F_GETFL)
+        let flags = nix::fcntl::fcntl(&self.file, nix::fcntl::FcntlArg::F_GETFL)
             .map_err(|e| Error::Other(format!("Failed to get file flags: {}", e)))?;
 
         let mut flags = nix::fcntl::OFlag::from_bits_truncate(flags);
@@ -338,7 +337,7 @@ impl UhidDevice {
             flags.remove(nix::fcntl::OFlag::O_NONBLOCK);
         }
 
-        nix::fcntl::fcntl(fd, nix::fcntl::FcntlArg::F_SETFL(flags))
+        nix::fcntl::fcntl(&self.file, nix::fcntl::FcntlArg::F_SETFL(flags))
             .map_err(|e| Error::Other(format!("Failed to set file flags: {}", e)))?;
         Ok(())
     }

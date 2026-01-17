@@ -76,7 +76,7 @@ mod tests {
     use crate::{
         Result, UpResult, UvResult,
         authenticator::{Authenticator, AuthenticatorConfig},
-        callbacks::{CredentialStorageCallbacks, UserInteractionCallbacks},
+        callbacks::{CredentialStorageCallbacks, PlatformCallbacks, UserInteractionCallbacks},
         types::Credential,
     };
 
@@ -143,6 +143,12 @@ mod tests {
 
         fn credential_count(&self) -> Result<usize> {
             Ok(0)
+        }
+    }
+
+    impl PlatformCallbacks for MockCallbacks {
+        fn get_timestamp_ms(&self) -> u64 {
+            0
         }
     }
 
