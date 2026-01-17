@@ -8,9 +8,9 @@ extern crate alloc;
 use crate::error::{CryptoError, Result};
 
 use alloc::vec::Vec;
+use p256::elliptic_curve::Generate;
 use p256::elliptic_curve::sec1::ToEncodedPoint;
 use p256::{PublicKey, SecretKey};
-use rand::rngs::OsRng;
 use zeroize::Zeroizing;
 
 /// P-256 key pair for ECDH key agreement
@@ -30,7 +30,9 @@ impl KeyPair {
     /// let keypair = KeyPair::generate().unwrap();
     /// ```
     pub fn generate() -> Result<Self> {
-        let secret = SecretKey::random(&mut OsRng);
+        let mut rng = rand::rngs::SysRng;
+        let secret = SecretKey::try_generate_from_rng(&mut rng)
+            .map_err(|_| CryptoError::InvalidPrivateKey)?;
         let public = secret.public_key();
         Ok(Self { secret, public })
     }

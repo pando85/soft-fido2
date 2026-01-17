@@ -754,7 +754,7 @@ struct AttestationCredential {
 /// Generate a random credential ID
 fn generate_credential_id() -> Vec<u8> {
     let mut id = vec![0u8; 32];
-    rand::thread_rng().fill_bytes(&mut id);
+    rand::rng().fill_bytes(&mut id);
     id
 }
 
