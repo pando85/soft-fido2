@@ -40,7 +40,7 @@ thiserror = "1.0"
 # Utilities
 hex = "0.4"
 smallvec = { version = "1.13", features = ["serde"] }
-spin = "0.9"
+spin = "0.10"
 lazy_static = "1.5"
 
 # Transport
