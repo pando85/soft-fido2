@@ -5,6 +5,21 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/), and this project
 adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [v0.10.1](https://github.com/pando85/soft-fido2/tree/v0.10.1) - 2026-01-18
+
+### Build
+
+- ci: Add renovate ([e818960](https://github.com/pando85/soft-fido2/commit/e818960144b3faf69025a27c383f715e56c53ca2))
+- deps: Update pre-commit hook adrienverge/yamllint to v1.38.0 ([260048b](https://github.com/pando85/soft-fido2/commit/260048b08caa279fdb5cf2f9c55718f09410aed2))
+- deps: Update pre-commit hook alessandrojcm/commitlint-pre-commit-hook to v9.24.0 ([bb9483e](https://github.com/pando85/soft-fido2/commit/bb9483e686434a184301196cb09f35c7bb381a83))
+- deps: Update Rust crate spin to 0.10 ([7ce2987](https://github.com/pando85/soft-fido2/commit/7ce29875628961c4149f6b502404d6dbbbfab299))
+- deps: Update Rust crate hex-literal to v1 ([d82b80f](https://github.com/pando85/soft-fido2/commit/d82b80fc8e38cca1ad79a731e5171d3f635b1087))
+- deps: Update Rust crate thiserror to v2 ([777b874](https://github.com/pando85/soft-fido2/commit/777b8747767573803f6bfc2cb61fd7057a05e64d))
+- deps: Update actions/cache action to v5 ([4f6caca](https://github.com/pando85/soft-fido2/commit/4f6caca8cc0ce062826628d392089ae455de07d2))
+- deps: Update actions/checkout action to v6 ([ca60422](https://github.com/pando85/soft-fido2/commit/ca604220d731c2795deb209bda225382806e1063))
+- deps: Update Rust crate nix to 0.30 ([f86d0cc](https://github.com/pando85/soft-fido2/commit/f86d0cc7c8c41e26ab1f50481bac636bb3646530))
+- deps: Update nix to 0.30 ([d646557](https://github.com/pando85/soft-fido2/commit/d646557a2152429a5c5036d6fb4d701cea642288))
+
 ## [v0.10.0](https://github.com/pando85/soft-fido2/tree/v0.10.0) - 2025-12-17
 
 ### Fixed
