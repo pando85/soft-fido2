@@ -257,6 +257,11 @@ impl AuthenticatorCallbacks for VirtualAuthCallbacks {
         if let Some(cp) = cred.cred_protect {
             println!("  CredProtect: 0x{:02x}", cp);
         }
+        if let Some(cr) = cred.cred_random {
+            println!("  CredRandom: {} bytes (hmac-secret enabled)", cr.as_slice().len());
+        } else {
+            println!("  CredRandom: None (hmac-secret NOT enabled)");
+        }
         println!("  Total credentials stored: {}\n", store.len());
 
         Ok(())
@@ -272,6 +277,11 @@ impl AuthenticatorCallbacks for VirtualAuthCallbacks {
                     println!("         User: {}", name);
                 }
                 println!("         Sign count: {}", cred.sign_count);
+                if cred.extensions.cred_random.is_some() {
+                    println!("         CredRandom: present (hmac-secret available)");
+                } else {
+                    println!("         CredRandom: None (hmac-secret NOT available)");
+                }
                 Ok(Some(cred.clone()))
             }
             None => {
