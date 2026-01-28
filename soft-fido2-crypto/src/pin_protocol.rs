@@ -354,7 +354,7 @@ pub mod v2 {
         }
 
         // Generate random IV
-        let mut rng = rand::thread_rng();
+        let mut rng = rand::rng();
         let mut iv: [u8; 16] = [0u8; 16];
         rng.fill(&mut iv);
 
