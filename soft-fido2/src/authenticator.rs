@@ -287,6 +287,7 @@ impl<C: AuthenticatorCallbacks> CredentialStorageCallbacks for CallbackAdapter<C
             created: &credential.created,
             discoverable: &credential.discoverable,
             cred_protect: Some(&credential.cred_protect),
+            cred_random: credential.cred_random.as_ref(),
         };
 
         self.callbacks

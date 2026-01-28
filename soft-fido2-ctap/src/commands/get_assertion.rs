@@ -10,7 +10,7 @@ use crate::{
     callbacks::AuthenticatorCallbacks,
     cbor::{MapBuilder, MapParser},
     commands::make_credential::get_user_verified_flag_value,
-    extensions::GetAssertionExtensions,
+    extensions::{GetAssertionExtensions, compute_hmac_secret},
     status::{Result, StatusCode},
     types::PublicKeyCredentialDescriptor,
 };
@@ -432,6 +432,8 @@ pub fn handle<C: AuthenticatorCallbacks>(
                 && cred_rp_id == rp_id
             {
                 // Create a temporary credential from unwrapped data
+                // Note: Non-discoverable credentials don't support hmac-secret
+                // because cred_random isn't stored in the wrapped credential
                 let cred = crate::types::Credential {
                     id: desc.id.clone(),
                     rp_id: cred_rp_id,
@@ -445,6 +447,7 @@ pub fn handle<C: AuthenticatorCallbacks>(
                     created: 0,          // Not tracked
                     discoverable: false, // Non-resident
                     cred_protect: 0,     // Not tracked
+                    cred_random: None,   // Not supported for non-resident creds
                 };
                 creds.push(cred);
             }
@@ -515,7 +518,8 @@ pub fn handle<C: AuthenticatorCallbacks>(
 
     // Step 11: Process extensions
     // Extensions are processed; outputs will be added to authenticator data
-    let extension_outputs = extensions.build_outputs();
+    let mut extension_outputs = extensions.build_outputs();
+    // Note: hmac-secret output is computed after credential selection
 
     // Step 12: Credential selection
     let (selected_cred, user_selected) = if allow_list.is_some() {
@@ -553,6 +557,70 @@ pub fn handle<C: AuthenticatorCallbacks>(
             (selected, false)
         }
     };
+
+    // Compute hmac-secret output if requested and credential supports it
+    if extensions.has_hmac_secret() {
+        #[cfg(feature = "std")]
+        eprintln!("  [DEBUG] hmac-secret extension requested");
+        if let Some(hmac_input) = extensions.get_hmac_secret() {
+            #[cfg(feature = "std")]
+            eprintln!("  [DEBUG] hmac-secret input parsed: keyAgreement={} bytes, saltEnc={} bytes, protocol={}",
+                hmac_input.key_agreement.len(), hmac_input.salt_enc.len(), hmac_input.pin_uv_auth_protocol);
+            
+            // Get the stored keypair for the PIN protocol version
+            // This keypair was established via getKeyAgreement clientPIN subcommand
+            let keypair = auth.get_pin_protocol_keypair(hmac_input.pin_uv_auth_protocol);
+            
+            if let Some(auth_keypair) = keypair {
+                #[cfg(feature = "std")]
+                eprintln!("  [DEBUG] ✓ Found stored keypair for protocol {}", hmac_input.pin_uv_auth_protocol);
+                
+                if let Some(cred_random) = &selected_cred.cred_random {
+                    #[cfg(feature = "std")]
+                    eprintln!("  [DEBUG] cred_random present, computing hmac-secret...");
+                    
+                    // Compute hmac-secret output using the stored keypair
+                    if let Some(encrypted_output) =
+                        compute_hmac_secret(hmac_input, cred_random.as_slice(), auth_keypair)
+                    {
+                        #[cfg(feature = "std")]
+                        eprintln!("  [DEBUG] ✓ hmac-secret computed successfully, output={} bytes", encrypted_output.len());
+                        
+                        // Add hmac-secret to extension outputs
+                        // Per spec, the output is just the encrypted bytes
+                        let ext_name = crate::extensions::ext_ids::HMAC_SECRET;
+                        if let Some(crate::cbor::Value::Map(ref mut map)) = extension_outputs {
+                            map.push((
+                                crate::cbor::Value::Text(ext_name.to_string()),
+                                crate::cbor::Value::Bytes(encrypted_output),
+                            ));
+                        } else {
+                            use alloc::vec;
+                            extension_outputs = Some(crate::cbor::Value::Map(vec![(
+                                crate::cbor::Value::Text(ext_name.to_string()),
+                                crate::cbor::Value::Bytes(encrypted_output),
+                            )]));
+                        }
+                    } else {
+                        #[cfg(feature = "std")]
+                        eprintln!("  [DEBUG] ✗ hmac-secret computation FAILED");
+                    }
+                } else {
+                    #[cfg(feature = "std")]
+                    eprintln!("  [DEBUG] ✗ cred_random is None");
+                }
+            } else {
+                #[cfg(feature = "std")]
+                eprintln!("  [DEBUG] ✗ No stored keypair for protocol {} - getKeyAgreement not called?", hmac_input.pin_uv_auth_protocol);
+            }
+        } else {
+            #[cfg(feature = "std")]
+            eprintln!("  [DEBUG] ✗ hmac-secret input parsing failed or missing");
+        }
+    } else {
+        #[cfg(feature = "std")]
+        eprintln!("  [DEBUG] hmac-secret extension NOT requested");
+    }
 
     // Step 13: Attestation statement generation
     // Simplified: Only generate attestation if attestationFormatsPreference is present and not ["none"]
