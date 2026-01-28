@@ -633,6 +633,15 @@ fn create_credential<C: AuthenticatorCallbacks>(
     user: &User,
     algorithm: i32,
 ) -> Result<Vec<u8>> {
+    // Generate cred_random if hmac-secret extension is enabled
+    let cred_random = if extensions.hmac_secret == Some(true) {
+        let mut random = [0u8; 32];
+        rand::thread_rng().fill_bytes(&mut random);
+        Some(SecBytes::from_array(random))
+    } else {
+        None
+    };
+
     if options.rk || auth.config().force_resident_keys {
         // Create discoverable credential
         let id = generate_credential_id();
@@ -662,6 +671,7 @@ fn create_credential<C: AuthenticatorCallbacks>(
             created: current_timestamp(),
             discoverable: true,
             cred_protect: cred_protect_value,
+            cred_random,
         };
 
         auth.callbacks().write_credential(&credential)?;
@@ -669,6 +679,8 @@ fn create_credential<C: AuthenticatorCallbacks>(
         Ok(id)
     } else {
         // Create non-discoverable credential
+        // For non-discoverable credentials, we need to include cred_random in the wrapped credential
+        // For now, wrap_credential doesn't support hmac-secret for non-discoverable credentials
         auth.wrap_credential(private_key, &rp.id, algorithm)
     }
 }

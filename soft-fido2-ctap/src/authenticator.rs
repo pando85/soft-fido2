@@ -1503,6 +1503,7 @@ mod tests {
             created: 0,
             discoverable: true,
             cred_protect: 0,
+            cred_random: None,
         };
 
         let cred2 = Credential {
@@ -1518,6 +1519,7 @@ mod tests {
             created: 0,
             discoverable: true,
             cred_protect: 0,
+            cred_random: None,
         };
 
         callbacks.write_credential(&cred1).unwrap();
@@ -1722,6 +1724,7 @@ mod tests {
             created: 0,
             discoverable: true,
             cred_protect: 0,
+            cred_random: None,
         };
 
         callbacks.write_credential(&cred).unwrap();

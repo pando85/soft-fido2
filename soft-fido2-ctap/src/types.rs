@@ -303,6 +303,14 @@ pub struct Credential {
 
     /// User display name
     pub user_display_name: Option<String>,
+
+    /// HMAC-secret credential random (32 bytes)
+    ///
+    /// This is used by the hmac-secret extension to derive HMAC outputs.
+    /// Generated during credential creation when hmac-secret is enabled.
+    /// If None, hmac-secret extension is not supported for this credential.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub cred_random: Option<SecBytes>,
 }
 
 impl Credential {
@@ -319,6 +327,34 @@ impl Credential {
         private_key: SecBytes,
         discoverable: bool,
     ) -> Self {
+        Self::with_cred_random(
+            id,
+            rp_id,
+            rp_name,
+            user_id,
+            user_name,
+            user_display_name,
+            algorithm,
+            private_key,
+            discoverable,
+            None,
+        )
+    }
+
+    /// Create a new credential with hmac-secret support
+    #[allow(clippy::too_many_arguments)]
+    pub fn with_cred_random(
+        id: Vec<u8>,
+        rp_id: String,
+        rp_name: Option<String>,
+        user_id: Vec<u8>,
+        user_name: Option<String>,
+        user_display_name: Option<String>,
+        algorithm: i32,
+        private_key: SecBytes,
+        discoverable: bool,
+        cred_random: Option<SecBytes>,
+    ) -> Self {
         Self {
             id,
             rp_id,
@@ -332,6 +368,7 @@ impl Credential {
             cred_protect: CredProtect::UserVerificationOptional.to_u8(),
             discoverable,
             user_display_name,
+            cred_random,
         }
     }
 }
