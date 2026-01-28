@@ -10,7 +10,7 @@ use crate::{
     callbacks::AuthenticatorCallbacks,
     cbor::{MapBuilder, MapParser},
     commands::make_credential::get_user_verified_flag_value,
-    extensions::GetAssertionExtensions,
+    extensions::{GetAssertionExtensions, compute_hmac_secret},
     status::{Result, StatusCode},
     types::PublicKeyCredentialDescriptor,
 };
@@ -432,6 +432,8 @@ pub fn handle<C: AuthenticatorCallbacks>(
                 && cred_rp_id == rp_id
             {
                 // Create a temporary credential from unwrapped data
+                // Note: Non-discoverable credentials don't support hmac-secret
+                // because cred_random isn't stored in the wrapped credential
                 let cred = crate::types::Credential {
                     id: desc.id.clone(),
                     rp_id: cred_rp_id,
@@ -445,6 +447,7 @@ pub fn handle<C: AuthenticatorCallbacks>(
                     created: 0,          // Not tracked
                     discoverable: false, // Non-resident
                     cred_protect: 0,     // Not tracked
+                    cred_random: None,   // Not supported for non-resident creds
                 };
                 creds.push(cred);
             }
@@ -515,7 +518,8 @@ pub fn handle<C: AuthenticatorCallbacks>(
 
     // Step 11: Process extensions
     // Extensions are processed; outputs will be added to authenticator data
-    let extension_outputs = extensions.build_outputs();
+    let mut extension_outputs = extensions.build_outputs();
+    // Note: hmac-secret output is computed after credential selection
 
     // Step 12: Credential selection
     let (selected_cred, user_selected) = if allow_list.is_some() {
@@ -553,6 +557,47 @@ pub fn handle<C: AuthenticatorCallbacks>(
             (selected, false)
         }
     };
+
+    // Compute hmac-secret output if requested and credential supports it
+    if extensions.has_hmac_secret() {
+        if let Some(hmac_input) = extensions.get_hmac_secret() {
+            if let Some(cred_random) = &selected_cred.cred_random {
+                // Credential has cred_random - compute hmac-secret output
+                if let Some((public_key, encrypted_output)) =
+                    compute_hmac_secret(hmac_input, cred_random.as_slice())
+                {
+                    // Build hmac-secret extension output map
+                    use alloc::vec;
+                    let hmac_output_map = crate::cbor::Value::Map(vec![
+                        // 1: keyAgreement (authenticator's public key)
+                        (
+                            crate::cbor::Value::Integer(1.into()),
+                            public_key,
+                        ),
+                        // 2: output (encrypted HMAC result)
+                        (
+                            crate::cbor::Value::Integer(2.into()),
+                            crate::cbor::Value::Bytes(encrypted_output),
+                        ),
+                    ]);
+
+                    // Add to extension outputs
+                    let ext_name = crate::extensions::ext_ids::HMAC_SECRET;
+                    if let Some(crate::cbor::Value::Map(ref mut map)) = extension_outputs {
+                        map.push((
+                            crate::cbor::Value::Text(ext_name.to_string()),
+                            hmac_output_map,
+                        ));
+                    } else {
+                        extension_outputs = Some(crate::cbor::Value::Map(vec![(
+                            crate::cbor::Value::Text(ext_name.to_string()),
+                            hmac_output_map,
+                        )]));
+                    }
+                }
+            }
+        }
+    }
 
     // Step 13: Attestation statement generation
     // Simplified: Only generate attestation if attestationFormatsPreference is present and not ["none"]
