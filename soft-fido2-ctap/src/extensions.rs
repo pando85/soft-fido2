@@ -288,13 +288,14 @@ fn parse_cose_key_to_sec1(cose_key: &[(crate::cbor::Value, crate::cbor::Value)])
     }
 
     // Build SEC1 uncompressed point: 0x04 || x || y
-    if let (Some(x_bytes), Some(y_bytes)) = (x, y) {
-        if x_bytes.len() == 32 && y_bytes.len() == 32 {
-            let mut result = vec![0x04u8];
-            result.extend_from_slice(x_bytes);
-            result.extend_from_slice(y_bytes);
-            return result;
-        }
+    if let (Some(x_bytes), Some(y_bytes)) = (x, y)
+        && x_bytes.len() == 32
+        && y_bytes.len() == 32
+    {
+        let mut result = vec![0x04u8];
+        result.extend_from_slice(x_bytes);
+        result.extend_from_slice(y_bytes);
+        return result;
     }
 
     // Return empty if parsing failed
@@ -446,10 +447,16 @@ pub fn compute_hmac_secret(
     #[cfg(feature = "std")]
     {
         extern crate std;
-        std::eprintln!("    [hmac-secret] START: keyAgreement={}, saltEnc={}, saltAuth={}, cred_random={}, protocol={}",
-            input.key_agreement.len(), input.salt_enc.len(), input.salt_auth.len(), cred_random.len(), input.pin_uv_auth_protocol);
+        std::eprintln!(
+            "    [hmac-secret] START: keyAgreement={}, saltEnc={}, saltAuth={}, cred_random={}, protocol={}",
+            input.key_agreement.len(),
+            input.salt_enc.len(),
+            input.salt_auth.len(),
+            cred_random.len(),
+            input.pin_uv_auth_protocol
+        );
     }
-    
+
     // Validate input
     if input.key_agreement.is_empty() || input.salt_enc.is_empty() || cred_random.len() != 32 {
         #[cfg(feature = "std")]
@@ -464,9 +471,9 @@ pub fn compute_hmac_secret(
             std::eprintln!("    [hmac-secret] shared secret computed using stored keypair");
             ss
         }
-        Err(e) => {
+        Err(_e) => {
             #[cfg(feature = "std")]
-            std::eprintln!("    [hmac-secret] shared secret failed: {:?}", e);
+            std::eprintln!("    [hmac-secret] shared secret failed: {:?}", _e);
             return None;
         }
     };
@@ -476,34 +483,41 @@ pub fn compute_hmac_secret(
         1 => {
             #[cfg(feature = "std")]
             std::eprintln!("    [hmac-secret] using PIN protocol v1");
-            let (enc, hmac) =
-                soft_fido2_crypto::pin_protocol::v1::derive_keys(&shared_secret);
+            let (enc, hmac) = soft_fido2_crypto::pin_protocol::v1::derive_keys(&shared_secret);
             (hmac, enc)
         }
         2 => {
             #[cfg(feature = "std")]
             std::eprintln!("    [hmac-secret] using PIN protocol v2");
             let hmac = soft_fido2_crypto::pin_protocol::v2::derive_hmac_key(&shared_secret);
-            let enc =
-                soft_fido2_crypto::pin_protocol::v2::derive_encryption_key(&shared_secret);
+            let enc = soft_fido2_crypto::pin_protocol::v2::derive_encryption_key(&shared_secret);
             (hmac, enc)
         }
         _ => {
             #[cfg(feature = "std")]
-            std::eprintln!("    [hmac-secret] unsupported protocol: {}", input.pin_uv_auth_protocol);
+            std::eprintln!(
+                "    [hmac-secret] unsupported protocol: {}",
+                input.pin_uv_auth_protocol
+            );
             return None;
         }
     };
 
     #[cfg(feature = "std")]
-    std::eprintln!("    [hmac-secret] verifying saltAuth ({} bytes)...", input.salt_auth.len());
+    std::eprintln!(
+        "    [hmac-secret] verifying saltAuth ({} bytes)...",
+        input.salt_auth.len()
+    );
 
     // Verify saltAuth
     let valid = match input.pin_uv_auth_protocol {
         1 => {
             if input.salt_auth.len() < 16 {
                 #[cfg(feature = "std")]
-                std::eprintln!("    [hmac-secret] saltAuth too short for v1: {}", input.salt_auth.len());
+                std::eprintln!(
+                    "    [hmac-secret] saltAuth too short for v1: {}",
+                    input.salt_auth.len()
+                );
                 return None;
             }
             let mut expected = [0u8; 16];
@@ -513,7 +527,10 @@ pub fn compute_hmac_secret(
         2 => {
             if input.salt_auth.len() < 32 {
                 #[cfg(feature = "std")]
-                std::eprintln!("    [hmac-secret] saltAuth too short for v2: {}", input.salt_auth.len());
+                std::eprintln!(
+                    "    [hmac-secret] saltAuth too short for v2: {}",
+                    input.salt_auth.len()
+                );
                 return None;
             }
             let mut expected = [0u8; 32];
@@ -561,7 +578,10 @@ pub fn compute_hmac_secret(
     // Validate salt length (32 bytes for one salt, 64 bytes for two salts)
     if salts.len() != 32 && salts.len() != 64 {
         #[cfg(feature = "std")]
-        std::eprintln!("    [hmac-secret] ✗ invalid salt length: {} (expected 32 or 64)", salts.len());
+        std::eprintln!(
+            "    [hmac-secret] ✗ invalid salt length: {} (expected 32 or 64)",
+            salts.len()
+        );
         return None;
     }
 
@@ -589,7 +609,10 @@ pub fn compute_hmac_secret(
     };
 
     #[cfg(feature = "std")]
-    std::eprintln!("    [hmac-secret] ✓ SUCCESS - encrypted output {} bytes", encrypted.len());
+    std::eprintln!(
+        "    [hmac-secret] ✓ SUCCESS - encrypted output {} bytes",
+        encrypted.len()
+    );
 
     Some(encrypted)
 }
