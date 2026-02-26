@@ -564,28 +564,38 @@ pub fn handle<C: AuthenticatorCallbacks>(
         eprintln!("  [DEBUG] hmac-secret extension requested");
         if let Some(hmac_input) = extensions.get_hmac_secret() {
             #[cfg(feature = "std")]
-            eprintln!("  [DEBUG] hmac-secret input parsed: keyAgreement={} bytes, saltEnc={} bytes, protocol={}",
-                hmac_input.key_agreement.len(), hmac_input.salt_enc.len(), hmac_input.pin_uv_auth_protocol);
-            
+            eprintln!(
+                "  [DEBUG] hmac-secret input parsed: keyAgreement={} bytes, saltEnc={} bytes, protocol={}",
+                hmac_input.key_agreement.len(),
+                hmac_input.salt_enc.len(),
+                hmac_input.pin_uv_auth_protocol
+            );
+
             // Get the stored keypair for the PIN protocol version
             // This keypair was established via getKeyAgreement clientPIN subcommand
             let keypair = auth.get_pin_protocol_keypair(hmac_input.pin_uv_auth_protocol);
-            
+
             if let Some(auth_keypair) = keypair {
                 #[cfg(feature = "std")]
-                eprintln!("  [DEBUG] ✓ Found stored keypair for protocol {}", hmac_input.pin_uv_auth_protocol);
-                
+                eprintln!(
+                    "  [DEBUG] ✓ Found stored keypair for protocol {}",
+                    hmac_input.pin_uv_auth_protocol
+                );
+
                 if let Some(cred_random) = &selected_cred.cred_random {
                     #[cfg(feature = "std")]
                     eprintln!("  [DEBUG] cred_random present, computing hmac-secret...");
-                    
+
                     // Compute hmac-secret output using the stored keypair
                     if let Some(encrypted_output) =
                         compute_hmac_secret(hmac_input, cred_random.as_slice(), auth_keypair)
                     {
                         #[cfg(feature = "std")]
-                        eprintln!("  [DEBUG] ✓ hmac-secret computed successfully, output={} bytes", encrypted_output.len());
-                        
+                        eprintln!(
+                            "  [DEBUG] ✓ hmac-secret computed successfully, output={} bytes",
+                            encrypted_output.len()
+                        );
+
                         // Add hmac-secret to extension outputs
                         // Per spec, the output is just the encrypted bytes
                         let ext_name = crate::extensions::ext_ids::HMAC_SECRET;
@@ -611,7 +621,10 @@ pub fn handle<C: AuthenticatorCallbacks>(
                 }
             } else {
                 #[cfg(feature = "std")]
-                eprintln!("  [DEBUG] ✗ No stored keypair for protocol {} - getKeyAgreement not called?", hmac_input.pin_uv_auth_protocol);
+                eprintln!(
+                    "  [DEBUG] ✗ No stored keypair for protocol {} - getKeyAgreement not called?",
+                    hmac_input.pin_uv_auth_protocol
+                );
             }
         } else {
             #[cfg(feature = "std")]

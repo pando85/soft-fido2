@@ -167,7 +167,7 @@ impl<'a> CredentialRef<'a> {
             extensions: Extensions {
                 cred_protect: self.cred_protect.copied(),
                 hmac_secret: None,
-                cred_random: self.cred_random.map(|cr| cr.clone()),
+                cred_random: self.cred_random.cloned(),
             },
         }
     }

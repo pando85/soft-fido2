@@ -258,7 +258,10 @@ impl AuthenticatorCallbacks for VirtualAuthCallbacks {
             println!("  CredProtect: 0x{:02x}", cp);
         }
         if let Some(cr) = cred.cred_random {
-            println!("  CredRandom: {} bytes (hmac-secret enabled)", cr.as_slice().len());
+            println!(
+                "  CredRandom: {} bytes (hmac-secret enabled)",
+                cr.as_slice().len()
+            );
         } else {
             println!("  CredRandom: None (hmac-secret NOT enabled)");
         }
