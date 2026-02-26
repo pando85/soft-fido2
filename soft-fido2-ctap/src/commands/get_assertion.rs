@@ -9,7 +9,7 @@ use crate::{
     authenticator::Authenticator,
     callbacks::AuthenticatorCallbacks,
     cbor::{MapBuilder, MapParser},
-    commands::make_credential::get_user_verified_flag_value,
+    commands::make_credential::{MAX_CREDENTIAL_ID_LENGTH, get_user_verified_flag_value},
     extensions::{GetAssertionExtensions, compute_hmac_secret},
     status::{Result, StatusCode},
     types::PublicKeyCredentialDescriptor,
@@ -25,6 +25,12 @@ use alloc::{
 
 use sha2::{Digest, Sha256};
 use zeroize::Zeroizing;
+
+/// Maximum RP ID length (typical domain name limit)
+const MAX_RP_ID_LENGTH: usize = 256;
+
+/// Maximum number of credentials in allow list
+const MAX_ALLOW_LIST_SIZE: usize = 128;
 
 /// GetAssertion request parameter keys
 mod req_keys {
@@ -82,9 +88,12 @@ pub fn handle<C: AuthenticatorCallbacks>(
     // Required parameters
     let rp_id: String = parser.get(req_keys::RP_ID)?;
 
-    // Validate RP ID is not empty (empty RP ID could match unintended credentials)
+    // Validate RP ID
     if rp_id.is_empty() {
         return Err(StatusCode::InvalidParameter);
+    }
+    if rp_id.len() > MAX_RP_ID_LENGTH {
+        return Err(StatusCode::InvalidLength);
     }
 
     let client_data_hash: Vec<u8> = parser.get_bytes(req_keys::CLIENT_DATA_HASH)?;
@@ -98,6 +107,10 @@ pub fn handle<C: AuthenticatorCallbacks>(
     {
         match raw_allow_list {
             crate::cbor::Value::Array(arr) => {
+                // Validate allow list size
+                if arr.len() > MAX_ALLOW_LIST_SIZE {
+                    return Err(StatusCode::LimitExceeded);
+                }
                 let mut descriptors = Vec::new();
                 for elem in arr.iter() {
                     if let crate::cbor::Value::Map(map) = elem {
@@ -161,6 +174,10 @@ pub fn handle<C: AuthenticatorCallbacks>(
                         }
 
                         if let (Some(cred_type), Some(id)) = (cred_type, id) {
+                            // Validate credential ID size (per CTAP spec max is 1023 bytes)
+                            if id.len() > MAX_CREDENTIAL_ID_LENGTH {
+                                return Err(StatusCode::InvalidLength);
+                            }
                             descriptors.push(PublicKeyCredentialDescriptor {
                                 r#type: cred_type,
                                 id,
@@ -560,42 +577,17 @@ pub fn handle<C: AuthenticatorCallbacks>(
 
     // Compute hmac-secret output if requested and credential supports it
     if extensions.has_hmac_secret() {
-        #[cfg(feature = "std")]
-        eprintln!("  [DEBUG] hmac-secret extension requested");
         if let Some(hmac_input) = extensions.get_hmac_secret() {
-            #[cfg(feature = "std")]
-            eprintln!(
-                "  [DEBUG] hmac-secret input parsed: keyAgreement={} bytes, saltEnc={} bytes, protocol={}",
-                hmac_input.key_agreement.len(),
-                hmac_input.salt_enc.len(),
-                hmac_input.pin_uv_auth_protocol
-            );
-
             // Get the stored keypair for the PIN protocol version
             // This keypair was established via getKeyAgreement clientPIN subcommand
             let keypair = auth.get_pin_protocol_keypair(hmac_input.pin_uv_auth_protocol);
 
             if let Some(auth_keypair) = keypair {
-                #[cfg(feature = "std")]
-                eprintln!(
-                    "  [DEBUG] ✓ Found stored keypair for protocol {}",
-                    hmac_input.pin_uv_auth_protocol
-                );
-
                 if let Some(cred_random) = &selected_cred.cred_random {
-                    #[cfg(feature = "std")]
-                    eprintln!("  [DEBUG] cred_random present, computing hmac-secret...");
-
                     // Compute hmac-secret output using the stored keypair
                     if let Some(encrypted_output) =
                         compute_hmac_secret(hmac_input, cred_random.as_slice(), auth_keypair)
                     {
-                        #[cfg(feature = "std")]
-                        eprintln!(
-                            "  [DEBUG] ✓ hmac-secret computed successfully, output={} bytes",
-                            encrypted_output.len()
-                        );
-
                         // Add hmac-secret to extension outputs
                         // Per spec, the output is just the encrypted bytes
                         let ext_name = crate::extensions::ext_ids::HMAC_SECRET;
@@ -611,28 +603,10 @@ pub fn handle<C: AuthenticatorCallbacks>(
                                 crate::cbor::Value::Bytes(encrypted_output),
                             )]));
                         }
-                    } else {
-                        #[cfg(feature = "std")]
-                        eprintln!("  [DEBUG] ✗ hmac-secret computation FAILED");
                     }
-                } else {
-                    #[cfg(feature = "std")]
-                    eprintln!("  [DEBUG] ✗ cred_random is None");
                 }
-            } else {
-                #[cfg(feature = "std")]
-                eprintln!(
-                    "  [DEBUG] ✗ No stored keypair for protocol {} - getKeyAgreement not called?",
-                    hmac_input.pin_uv_auth_protocol
-                );
             }
-        } else {
-            #[cfg(feature = "std")]
-            eprintln!("  [DEBUG] ✗ hmac-secret input parsing failed or missing");
         }
-    } else {
-        #[cfg(feature = "std")]
-        eprintln!("  [DEBUG] hmac-secret extension NOT requested");
     }
 
     // Step 13: Attestation statement generation

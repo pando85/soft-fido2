@@ -25,6 +25,24 @@ use alloc::{format, vec};
 use rand::RngCore;
 use sha2::{Digest, Sha256};
 
+/// Maximum RP ID length (typical domain name limit)
+const MAX_RP_ID_LENGTH: usize = 256;
+
+/// Maximum RP name length
+const MAX_RP_NAME_LENGTH: usize = 256;
+
+/// Maximum user ID length (per FIDO2 spec)
+const MAX_USER_ID_LENGTH: usize = 64;
+
+/// Maximum user name/display name length
+const MAX_USER_NAME_LENGTH: usize = 256;
+
+/// Maximum credential ID length (per CTAP spec)
+pub const MAX_CREDENTIAL_ID_LENGTH: usize = 1023;
+
+/// Maximum number of credentials in exclude/allow lists
+const MAX_CREDENTIAL_LIST_SIZE: usize = 128;
+
 /// MakeCredential request parameter keys
 #[allow(dead_code)]
 mod req_keys {
@@ -85,9 +103,17 @@ pub fn handle<C: AuthenticatorCallbacks>(
 
     let rp: RelyingParty = parser.get(req_keys::RP)?;
 
-    // Validate RP ID is not empty (empty RP ID could cause credential management issues)
+    // Validate RP ID
     if rp.id.is_empty() {
         return Err(StatusCode::InvalidParameter);
+    }
+    if rp.id.len() > MAX_RP_ID_LENGTH {
+        return Err(StatusCode::InvalidLength);
+    }
+    if let Some(ref name) = rp.name {
+        if name.len() > MAX_RP_NAME_LENGTH {
+            return Err(StatusCode::InvalidLength);
+        }
     }
 
     let user = parse_user(&parser, req_keys::USER)?;
@@ -99,6 +125,18 @@ pub fn handle<C: AuthenticatorCallbacks>(
     // Optional parameters
     let exclude_list: Option<Vec<PublicKeyCredentialDescriptor>> =
         parser.get_opt(req_keys::EXCLUDE_LIST)?;
+
+    // Validate exclude list size and credential ID sizes
+    if let Some(ref list) = exclude_list {
+        if list.len() > MAX_CREDENTIAL_LIST_SIZE {
+            return Err(StatusCode::LimitExceeded);
+        }
+        for cred in list {
+            if cred.id.len() > MAX_CREDENTIAL_ID_LENGTH {
+                return Err(StatusCode::InvalidLength);
+            }
+        }
+    }
 
     let pin_uv_auth_param: Option<Vec<u8>> =
         if parser.get_raw(req_keys::PIN_UV_AUTH_PARAM).is_some() {
@@ -723,6 +761,21 @@ fn parse_user(parser: &MapParser, key: i32) -> Result<User> {
 
     let id = user_id.ok_or(StatusCode::MissingParameter)?;
 
+    // Validate user field sizes
+    if id.len() > MAX_USER_ID_LENGTH {
+        return Err(StatusCode::InvalidLength);
+    }
+    if let Some(ref name) = user_name {
+        if name.len() > MAX_USER_NAME_LENGTH {
+            return Err(StatusCode::InvalidLength);
+        }
+    }
+    if let Some(ref display_name) = user_display_name {
+        if display_name.len() > MAX_USER_NAME_LENGTH {
+            return Err(StatusCode::InvalidLength);
+        }
+    }
+
     Ok(User {
         id,
         name: user_name,
@@ -1107,5 +1160,90 @@ mod tests {
 
         let result = validate_and_choose_algorithm(&auth, &params);
         assert_eq!(result, Err(StatusCode::UnsupportedAlgorithm));
+    }
+
+    #[test]
+    fn test_parse_user_validates_id_length() {
+        // Create a user ID that exceeds the maximum length
+        let oversized_id: Vec<u8> = vec![0u8; MAX_USER_ID_LENGTH + 1];
+
+        let user_map = vec![(
+            crate::cbor::Value::Text("id".to_string()),
+            crate::cbor::Value::Bytes(oversized_id),
+        )];
+
+        let outer_map = vec![(
+            crate::cbor::Value::Integer(0x01.into()),
+            crate::cbor::Value::Map(user_map),
+        )];
+
+        let user_cbor = crate::cbor::Value::Map(outer_map);
+        let bytes = crate::cbor::encode(&user_cbor).unwrap();
+        let parser = MapParser::from_bytes(&bytes).unwrap();
+        let result = parse_user(&parser, 0x01);
+
+        assert_eq!(result, Err(StatusCode::InvalidLength));
+    }
+
+    #[test]
+    fn test_parse_user_validates_name_length() {
+        // Create a user with oversized name
+        let oversized_name = "x".repeat(MAX_USER_NAME_LENGTH + 1);
+
+        let user_map = vec![
+            (
+                crate::cbor::Value::Text("id".to_string()),
+                crate::cbor::Value::Bytes(vec![1, 2, 3, 4]),
+            ),
+            (
+                crate::cbor::Value::Text("name".to_string()),
+                crate::cbor::Value::Text(oversized_name),
+            ),
+        ];
+
+        let outer_map = vec![(
+            crate::cbor::Value::Integer(0x01.into()),
+            crate::cbor::Value::Map(user_map),
+        )];
+
+        let user_cbor = crate::cbor::Value::Map(outer_map);
+        let bytes = crate::cbor::encode(&user_cbor).unwrap();
+        let parser = MapParser::from_bytes(&bytes).unwrap();
+        let result = parse_user(&parser, 0x01);
+
+        assert_eq!(result, Err(StatusCode::InvalidLength));
+    }
+
+    #[test]
+    fn test_parse_user_accepts_valid_sizes() {
+        // Create a user with maximum valid sizes
+        let max_id: Vec<u8> = vec![0u8; MAX_USER_ID_LENGTH];
+        let max_name = "x".repeat(MAX_USER_NAME_LENGTH);
+
+        let user_map = vec![
+            (
+                crate::cbor::Value::Text("id".to_string()),
+                crate::cbor::Value::Bytes(max_id.clone()),
+            ),
+            (
+                crate::cbor::Value::Text("name".to_string()),
+                crate::cbor::Value::Text(max_name.clone()),
+            ),
+        ];
+
+        let outer_map = vec![(
+            crate::cbor::Value::Integer(0x01.into()),
+            crate::cbor::Value::Map(user_map),
+        )];
+
+        let user_cbor = crate::cbor::Value::Map(outer_map);
+        let bytes = crate::cbor::encode(&user_cbor).unwrap();
+        let parser = MapParser::from_bytes(&bytes).unwrap();
+        let result = parse_user(&parser, 0x01);
+
+        assert!(result.is_ok());
+        let user = result.unwrap();
+        assert_eq!(user.id, max_id);
+        assert_eq!(user.name, Some(max_name));
     }
 }
