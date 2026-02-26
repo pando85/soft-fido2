@@ -444,80 +444,32 @@ pub fn compute_hmac_secret(
     cred_random: &[u8],
     auth_keypair: &soft_fido2_crypto::ecdh::KeyPair,
 ) -> Option<Vec<u8>> {
-    #[cfg(feature = "std")]
-    {
-        extern crate std;
-        std::eprintln!(
-            "    [hmac-secret] START: keyAgreement={}, saltEnc={}, saltAuth={}, cred_random={}, protocol={}",
-            input.key_agreement.len(),
-            input.salt_enc.len(),
-            input.salt_auth.len(),
-            cred_random.len(),
-            input.pin_uv_auth_protocol
-        );
-    }
-
     // Validate input
     if input.key_agreement.is_empty() || input.salt_enc.is_empty() || cred_random.len() != 32 {
-        #[cfg(feature = "std")]
-        std::eprintln!("    [hmac-secret] input validation failed");
         return None;
     }
 
     // Compute shared secret with platform's public key using authenticator's STORED keypair
-    let shared_secret = match auth_keypair.shared_secret(&input.key_agreement) {
-        Ok(ss) => {
-            #[cfg(feature = "std")]
-            std::eprintln!("    [hmac-secret] shared secret computed using stored keypair");
-            ss
-        }
-        Err(_e) => {
-            #[cfg(feature = "std")]
-            std::eprintln!("    [hmac-secret] shared secret failed: {:?}", _e);
-            return None;
-        }
-    };
+    let shared_secret = auth_keypair.shared_secret(&input.key_agreement).ok()?;
 
     // Derive keys based on PIN protocol version
     let (hmac_key, enc_key) = match input.pin_uv_auth_protocol {
         1 => {
-            #[cfg(feature = "std")]
-            std::eprintln!("    [hmac-secret] using PIN protocol v1");
             let (enc, hmac) = soft_fido2_crypto::pin_protocol::v1::derive_keys(&shared_secret);
             (hmac, enc)
         }
         2 => {
-            #[cfg(feature = "std")]
-            std::eprintln!("    [hmac-secret] using PIN protocol v2");
             let hmac = soft_fido2_crypto::pin_protocol::v2::derive_hmac_key(&shared_secret);
             let enc = soft_fido2_crypto::pin_protocol::v2::derive_encryption_key(&shared_secret);
             (hmac, enc)
         }
-        _ => {
-            #[cfg(feature = "std")]
-            std::eprintln!(
-                "    [hmac-secret] unsupported protocol: {}",
-                input.pin_uv_auth_protocol
-            );
-            return None;
-        }
+        _ => return None,
     };
-
-    #[cfg(feature = "std")]
-    std::eprintln!(
-        "    [hmac-secret] verifying saltAuth ({} bytes)...",
-        input.salt_auth.len()
-    );
 
     // Verify saltAuth
     let valid = match input.pin_uv_auth_protocol {
         1 => {
             if input.salt_auth.len() < 16 {
-                #[cfg(feature = "std")]
-                std::eprintln!(
-                    "    [hmac-secret] saltAuth too short for v1: {}",
-                    input.salt_auth.len()
-                );
                 return None;
             }
             let mut expected = [0u8; 16];
@@ -526,11 +478,6 @@ pub fn compute_hmac_secret(
         }
         2 => {
             if input.salt_auth.len() < 32 {
-                #[cfg(feature = "std")]
-                std::eprintln!(
-                    "    [hmac-secret] saltAuth too short for v2: {}",
-                    input.salt_auth.len()
-                );
                 return None;
             }
             let mut expected = [0u8; 32];
@@ -541,52 +488,22 @@ pub fn compute_hmac_secret(
     };
 
     if !valid {
-        #[cfg(feature = "std")]
-        std::eprintln!("    [hmac-secret] ✗ saltAuth verification FAILED");
         return None;
     }
 
-    #[cfg(feature = "std")]
-    std::eprintln!("    [hmac-secret] ✓ saltAuth verified, decrypting salts...");
-
     // Decrypt salt(s)
     let salts = match input.pin_uv_auth_protocol {
-        1 => match soft_fido2_crypto::pin_protocol::v1::decrypt(&enc_key, &input.salt_enc) {
-            Ok(s) => s,
-            Err(e) => {
-                #[cfg(feature = "std")]
-                std::eprintln!("    [hmac-secret] v1 decrypt failed: {:?}", e);
-                let _ = e; // suppress warning when std is not enabled
-                return None;
-            }
-        },
-        2 => match soft_fido2_crypto::pin_protocol::v2::decrypt(&enc_key, &input.salt_enc) {
-            Ok(s) => s,
-            Err(e) => {
-                #[cfg(feature = "std")]
-                std::eprintln!("    [hmac-secret] v2 decrypt failed: {:?}", e);
-                let _ = e; // suppress warning when std is not enabled
-                return None;
-            }
-        },
+        1 => soft_fido2_crypto::pin_protocol::v1::decrypt(&enc_key, &input.salt_enc).ok()?,
+        2 => soft_fido2_crypto::pin_protocol::v2::decrypt(&enc_key, &input.salt_enc).ok()?,
         _ => return None,
     };
 
-    #[cfg(feature = "std")]
-    std::eprintln!("    [hmac-secret] decrypted salts: {} bytes", salts.len());
-
     // Validate salt length (32 bytes for one salt, 64 bytes for two salts)
     if salts.len() != 32 && salts.len() != 64 {
-        #[cfg(feature = "std")]
-        std::eprintln!(
-            "    [hmac-secret] ✗ invalid salt length: {} (expected 32 or 64)",
-            salts.len()
-        );
         return None;
     }
 
     // Compute HMAC output(s)
-    // Use the hmac and sha2 crates from soft_fido2_crypto's re-exports
     let mut output = Vec::new();
 
     // First salt (always present)
@@ -607,12 +524,6 @@ pub fn compute_hmac_secret(
         2 => soft_fido2_crypto::pin_protocol::v2::encrypt(&enc_key, &output).ok()?,
         _ => return None,
     };
-
-    #[cfg(feature = "std")]
-    std::eprintln!(
-        "    [hmac-secret] ✓ SUCCESS - encrypted output {} bytes",
-        encrypted.len()
-    );
 
     Some(encrypted)
 }
