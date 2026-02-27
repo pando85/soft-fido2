@@ -576,34 +576,34 @@ pub fn handle<C: AuthenticatorCallbacks>(
     };
 
     // Compute hmac-secret output if requested and credential supports it
-    if extensions.has_hmac_secret() {
-        if let Some(hmac_input) = extensions.get_hmac_secret() {
-            // Get the stored keypair for the PIN protocol version
-            // This keypair was established via getKeyAgreement clientPIN subcommand
-            let keypair = auth.get_pin_protocol_keypair(hmac_input.pin_uv_auth_protocol);
+    if extensions.has_hmac_secret()
+        && let Some(hmac_input) = extensions.get_hmac_secret()
+    {
+        // Get the stored keypair for the PIN protocol version
+        // This keypair was established via getKeyAgreement clientPIN subcommand
+        let keypair = auth.get_pin_protocol_keypair(hmac_input.pin_uv_auth_protocol);
 
-            if let Some(auth_keypair) = keypair {
-                if let Some(cred_random) = &selected_cred.cred_random {
-                    // Compute hmac-secret output using the stored keypair
-                    if let Some(encrypted_output) =
-                        compute_hmac_secret(hmac_input, cred_random.as_slice(), auth_keypair)
-                    {
-                        // Add hmac-secret to extension outputs
-                        // Per spec, the output is just the encrypted bytes
-                        let ext_name = crate::extensions::ext_ids::HMAC_SECRET;
-                        if let Some(crate::cbor::Value::Map(ref mut map)) = extension_outputs {
-                            map.push((
-                                crate::cbor::Value::Text(ext_name.to_string()),
-                                crate::cbor::Value::Bytes(encrypted_output),
-                            ));
-                        } else {
-                            use alloc::vec;
-                            extension_outputs = Some(crate::cbor::Value::Map(vec![(
-                                crate::cbor::Value::Text(ext_name.to_string()),
-                                crate::cbor::Value::Bytes(encrypted_output),
-                            )]));
-                        }
-                    }
+        if let Some(auth_keypair) = keypair
+            && let Some(cred_random) = &selected_cred.cred_random
+        {
+            // Compute hmac-secret output using the stored keypair
+            if let Some(encrypted_output) =
+                compute_hmac_secret(hmac_input, cred_random.as_slice(), auth_keypair)
+            {
+                // Add hmac-secret to extension outputs
+                // Per spec, the output is just the encrypted bytes
+                let ext_name = crate::extensions::ext_ids::HMAC_SECRET;
+                if let Some(crate::cbor::Value::Map(ref mut map)) = extension_outputs {
+                    map.push((
+                        crate::cbor::Value::Text(ext_name.to_string()),
+                        crate::cbor::Value::Bytes(encrypted_output),
+                    ));
+                } else {
+                    use alloc::vec;
+                    extension_outputs = Some(crate::cbor::Value::Map(vec![(
+                        crate::cbor::Value::Text(ext_name.to_string()),
+                        crate::cbor::Value::Bytes(encrypted_output),
+                    )]));
                 }
             }
         }

@@ -34,7 +34,7 @@ The implementation follows FIDO2 specifications well and has appropriate securit
 
 **Location:** `soft-fido2-ctap/src/commands/get_assertion.rs:564-635`, `soft-fido2-ctap/src/extensions.rs:447-617`
 
-**Description:** 
+**Description:**
 Multiple `eprintln!` debug statements are present in the hmac-secret extension code and getAssertion command. While these are behind `#[cfg(feature = "std")]`, they still appear in standard builds.
 
 **Risk:**
@@ -56,7 +56,7 @@ Remove all `eprintln!` statements from production code paths. Debug output shoul
 **Description:**
 Several input fields lack explicit size validation:
 - RP ID length not bounded
-- User ID length not bounded  
+- User ID length not bounded
 - User name/display name length not bounded
 - Extension data size not bounded
 
@@ -250,7 +250,7 @@ AuthenticatorConfig {
     // Cryptographic settings
     aaguid: [0u8; 16],              // Authenticator identifier
     algorithms: vec![-7],           // ES256 only by default
-    
+
     // Security options
     options: AuthenticatorOptions {
         always_uv: false,           // Require UV for all operations
@@ -259,12 +259,12 @@ AuthenticatorConfig {
         up: true,                   // User presence required
         make_cred_uv_not_rqd: false, // UV optional for non-rk creds
     },
-    
+
     // Limits
     max_credentials: 100,           // Credential storage limit
     max_msg_size: Some(7609),       // CTAP max message size
     min_pin_length: Some(4),        // PIN minimum (increase for prod)
-    
+
     // Testing conveniences (disable for production)
     force_resident_keys: true,      // Set false for production
     constant_sign_count: false,     // Set true for privacy

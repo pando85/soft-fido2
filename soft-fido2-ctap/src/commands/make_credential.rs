@@ -110,10 +110,10 @@ pub fn handle<C: AuthenticatorCallbacks>(
     if rp.id.len() > MAX_RP_ID_LENGTH {
         return Err(StatusCode::InvalidLength);
     }
-    if let Some(ref name) = rp.name {
-        if name.len() > MAX_RP_NAME_LENGTH {
-            return Err(StatusCode::InvalidLength);
-        }
+    if let Some(ref name) = rp.name
+        && name.len() > MAX_RP_NAME_LENGTH
+    {
+        return Err(StatusCode::InvalidLength);
     }
 
     let user = parse_user(&parser, req_keys::USER)?;
@@ -765,15 +765,15 @@ fn parse_user(parser: &MapParser, key: i32) -> Result<User> {
     if id.len() > MAX_USER_ID_LENGTH {
         return Err(StatusCode::InvalidLength);
     }
-    if let Some(ref name) = user_name {
-        if name.len() > MAX_USER_NAME_LENGTH {
-            return Err(StatusCode::InvalidLength);
-        }
+    if let Some(ref name) = user_name
+        && name.len() > MAX_USER_NAME_LENGTH
+    {
+        return Err(StatusCode::InvalidLength);
     }
-    if let Some(ref display_name) = user_display_name {
-        if display_name.len() > MAX_USER_NAME_LENGTH {
-            return Err(StatusCode::InvalidLength);
-        }
+    if let Some(ref display_name) = user_display_name
+        && display_name.len() > MAX_USER_NAME_LENGTH
+    {
+        return Err(StatusCode::InvalidLength);
     }
 
     Ok(User {
