@@ -52,8 +52,14 @@ impl KeyPair {
     /// ```
     pub fn public_key_cose(&self) -> ([u8; 32], [u8; 32]) {
         let point = self.public.to_encoded_point(false);
-        let x = point.x().expect("uncompressed point has x coordinate");
-        let y = point.y().expect("uncompressed point has y coordinate");
+        // SAFETY: to_encoded_point(false) produces an uncompressed point (0x04 prefix),
+        // which always contains both x and y coordinates for P-256 curve points.
+        let x = point
+            .x()
+            .expect("uncompressed P-256 point always has x coordinate");
+        let y = point
+            .y()
+            .expect("uncompressed P-256 point always has y coordinate");
 
         let mut x_bytes = [0u8; 32];
         let mut y_bytes = [0u8; 32];

@@ -73,6 +73,7 @@ impl From<CtapUpResult> for UpResult {
             CtapUpResult::Denied => UpResult::Denied,
             CtapUpResult::Accepted => UpResult::Accepted,
             CtapUpResult::Timeout => UpResult::Timeout,
+            _ => UpResult::Denied,
         }
     }
 }
@@ -104,6 +105,7 @@ impl From<CtapUvResult> for UvResult {
             CtapUvResult::Accepted => UvResult::Accepted,
             CtapUvResult::AcceptedWithUp => UvResult::AcceptedWithUp,
             CtapUvResult::Timeout => UvResult::Timeout,
+            _ => UvResult::Denied,
         }
     }
 }

@@ -135,7 +135,9 @@ pub mod v1 {
     /// assert_eq!(mac.len(), 16);
     /// ```
     pub fn authenticate(key: &[u8; 32], data: &[u8]) -> [u8; 16] {
-        let mut mac = HmacSha256::new_from_slice(key).expect("HMAC accepts any key size");
+        // SAFETY: HMAC-SHA256 accepts keys of any size per RFC 2104.
+        // The 32-byte key is valid and will never cause this to fail.
+        let mut mac = HmacSha256::new_from_slice(key).expect("HMAC-SHA256 accepts any key size");
         mac.update(data);
         let result = mac.finalize();
 
@@ -248,7 +250,10 @@ pub mod v2 {
         use hmac::{Hmac, Mac};
         use sha2::Sha256;
 
-        let mut mac = Hmac::<Sha256>::new_from_slice(key).expect("HMAC can accept key of any size");
+        // SAFETY: HMAC-SHA256 accepts keys of any size per RFC 2104.
+        // The 32-byte key is valid and will never cause this to fail.
+        let mut mac =
+            Hmac::<Sha256>::new_from_slice(key).expect("HMAC-SHA256 accepts any key size");
         mac.update(data);
 
         let result = mac.finalize();
@@ -321,8 +326,10 @@ pub mod v2 {
 
         let hkdf = Hkdf::<Sha256>::new(Some(&salt), shared_secret);
         let mut key = Zeroizing::new([0u8; 32]);
+        // SAFETY: HKDF-SHA-256 can expand up to 255 * 32 = 8160 bytes.
+        // Requesting 32 bytes is always valid.
         hkdf.expand(info, &mut *key)
-            .expect("32 bytes is valid length for HKDF-SHA-256");
+            .expect("32 bytes is valid length for HKDF-SHA-256 (max is 8160)");
 
         key
     }
@@ -345,8 +352,8 @@ pub mod v2 {
     ///
     /// IV prepended ciphertext (length = 16 + plaintext.len())
     pub fn encrypt(key: &[u8; 32], plaintext: &[u8]) -> Result<Vec<u8>> {
-        use aes::Aes256;
         use aes::cipher::{BlockEncrypt, KeyInit};
+        use aes::Aes256;
         use rand::Rng;
 
         if !plaintext.len().is_multiple_of(16) {
@@ -406,8 +413,8 @@ pub mod v2 {
     ///
     /// Decrypted plaintext
     pub fn decrypt(key: &[u8; 32], ciphertext: &[u8]) -> Result<Vec<u8>> {
-        use aes::Aes256;
         use aes::cipher::{BlockDecrypt, KeyInit};
+        use aes::Aes256;
 
         if ciphertext.len() < 16 || !(ciphertext.len() - 16).is_multiple_of(16) {
             return Err(CryptoError::DecryptionFailed);
@@ -472,8 +479,10 @@ pub mod v2 {
 
         let hkdf = Hkdf::<Sha256>::new(Some(&salt), shared_secret);
         let mut key = Zeroizing::new([0u8; 32]);
+        // SAFETY: HKDF-SHA-256 can expand up to 255 * 32 = 8160 bytes.
+        // Requesting 32 bytes is always valid.
         hkdf.expand(info, &mut *key)
-            .expect("32 bytes is valid length for HKDF-SHA-256");
+            .expect("32 bytes is valid length for HKDF-SHA-256 (max is 8160)");
 
         key
     }
