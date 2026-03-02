@@ -3,8 +3,8 @@
 //! These traits define the interface between the CTAP protocol implementation
 //! and the platform-specific user interaction and storage mechanisms.
 
-use crate::types::{Credential, PinState};
 use crate::StatusCode;
+use crate::types::{Credential, PinState};
 
 use alloc::string::String;
 use alloc::vec::Vec;

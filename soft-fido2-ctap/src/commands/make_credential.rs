@@ -12,8 +12,8 @@ use crate::{
     extensions::MakeCredentialExtensions,
     status::{Result, StatusCode},
     types::{
-        auth_data_flags, PublicKeyCredentialDescriptor, PublicKeyCredentialParameters,
-        RelyingParty, User,
+        PublicKeyCredentialDescriptor, PublicKeyCredentialParameters, RelyingParty, User,
+        auth_data_flags,
     },
 };
 
