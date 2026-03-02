@@ -4,11 +4,11 @@
 //! PIN management, and overall state coordination.
 
 use crate::{
-    CoseAlgorithm, SecBytes, SecPinHash, StatusCode,
     callbacks::{AuthenticatorCallbacks, PinStorageCallbacks},
     cbor::MAX_CTAP_MESSAGE_SIZE,
     pin_token::{Permission, PinToken, PinTokenManager},
-    types::{MAX_UV_RETRIES, PinState},
+    types::{PinState, MAX_UV_RETRIES},
+    CoseAlgorithm, SecBytes, SecPinHash, StatusCode,
 };
 
 use soft_fido2_crypto::pin_protocol::{self, v2};
@@ -1099,85 +1099,11 @@ mod tests {
     use super::*;
 
     use crate::{
-        UpResult, UvResult,
         callbacks::{CredentialStorageCallbacks, PlatformCallbacks, UserInteractionCallbacks},
+        test_utils::MockCallbacks,
         types::Credential,
+        UpResult, UvResult,
     };
-
-    // Mock callbacks for testing
-    struct MockCallbacks;
-
-    impl PlatformCallbacks for MockCallbacks {
-        fn get_timestamp_ms(&self) -> u64 {
-            0
-        }
-    }
-
-    impl UserInteractionCallbacks for MockCallbacks {
-        fn request_up(
-            &self,
-            _info: &str,
-            _user_name: Option<&str>,
-            _rp_id: &str,
-        ) -> Result<UpResult, StatusCode> {
-            Ok(UpResult::Accepted)
-        }
-
-        fn request_uv(
-            &self,
-            _info: &str,
-            _user_name: Option<&str>,
-            _rp_id: &str,
-        ) -> Result<UvResult, StatusCode> {
-            Ok(UvResult::Accepted)
-        }
-
-        fn select_credential(
-            &self,
-            _rp_id: &str,
-            _user_names: &[String],
-        ) -> Result<usize, StatusCode> {
-            Ok(0)
-        }
-    }
-
-    impl CredentialStorageCallbacks for MockCallbacks {
-        fn write_credential(&self, _credential: &Credential) -> Result<(), StatusCode> {
-            Ok(())
-        }
-
-        fn delete_credential(&self, _credential_id: &[u8]) -> Result<(), StatusCode> {
-            Ok(())
-        }
-
-        fn read_credentials(
-            &self,
-            _rp_id: &str,
-            _user_id: Option<&[u8]>,
-        ) -> Result<Vec<Credential>, StatusCode> {
-            Ok(vec![])
-        }
-
-        fn credential_exists(&self, _credential_id: &[u8]) -> Result<bool, StatusCode> {
-            Ok(false)
-        }
-
-        fn get_credential(&self, _credential_id: &[u8]) -> Result<Credential, StatusCode> {
-            Err(StatusCode::NoCredentials)
-        }
-
-        fn update_credential(&self, _credential: &Credential) -> Result<(), StatusCode> {
-            Ok(())
-        }
-
-        fn enumerate_rps(&self) -> Result<Vec<(String, Option<String>, usize)>, StatusCode> {
-            Ok(vec![])
-        }
-
-        fn credential_count(&self) -> Result<usize, StatusCode> {
-            Ok(0)
-        }
-    }
 
     fn create_test_authenticator() -> Authenticator<MockCallbacks> {
         let config = AuthenticatorConfig::new();
@@ -1281,10 +1207,9 @@ mod tests {
             .unwrap();
 
         // Should succeed with correct permission and RP
-        assert!(
-            auth.verify_pin_uv_auth_token(Permission::MakeCredential, Some("example.com"))
-                .is_ok()
-        );
+        assert!(auth
+            .verify_pin_uv_auth_token(Permission::MakeCredential, Some("example.com"))
+            .is_ok());
 
         // Should fail with wrong permission
         assert_eq!(
