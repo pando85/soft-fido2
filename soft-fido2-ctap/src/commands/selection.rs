@@ -6,11 +6,11 @@
 //! Spec: <https://fidoalliance.org/specs/fido-v2.2-rd-20230321/fido-client-to-authenticator-protocol-v2.2-rd-20230321.html#authenticatorSelection>
 
 use crate::{
-    UpResult,
     authenticator::Authenticator,
     callbacks::AuthenticatorCallbacks,
     cbor::MapBuilder,
     status::{Result, StatusCode},
+    UpResult,
 };
 
 use alloc::vec::Vec;
@@ -40,11 +40,13 @@ pub fn handle<C: AuthenticatorCallbacks>(
 mod tests {
     use super::*;
 
+    use alloc::string::String;
+
     use crate::{
-        UvResult,
         authenticator::{Authenticator, AuthenticatorConfig},
         callbacks::{CredentialStorageCallbacks, UserInteractionCallbacks},
         types::Credential,
+        UvResult,
     };
 
     struct AcceptingCallbacks;

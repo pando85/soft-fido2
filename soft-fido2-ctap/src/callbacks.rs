@@ -3,8 +3,8 @@
 //! These traits define the interface between the CTAP protocol implementation
 //! and the platform-specific user interaction and storage mechanisms.
 
-use crate::StatusCode;
 use crate::types::{Credential, PinState};
+use crate::StatusCode;
 
 use alloc::string::String;
 use alloc::vec::Vec;
@@ -260,95 +260,10 @@ mod tests {
         assert!(UvResult::AcceptedWithUp.has_up());
     }
 
-    // Mock implementation for testing
-    pub struct MockCallbacks;
-
-    impl PlatformCallbacks for MockCallbacks {
-        fn get_timestamp_ms(&self) -> u64 {
-            0
-        }
-    }
-
-    impl UserInteractionCallbacks for MockCallbacks {
-        fn request_up(
-            &self,
-            _info: &str,
-            _user_name: Option<&str>,
-            _rp_id: &str,
-        ) -> Result<UpResult, StatusCode> {
-            Ok(UpResult::Accepted)
-        }
-
-        fn request_uv(
-            &self,
-            _info: &str,
-            _user_name: Option<&str>,
-            _rp_id: &str,
-        ) -> Result<UvResult, StatusCode> {
-            Ok(UvResult::Accepted)
-        }
-
-        fn select_credential(
-            &self,
-            _rp_id: &str,
-            _user_names: &[String],
-        ) -> Result<usize, StatusCode> {
-            Ok(0) // Select first credential
-        }
-    }
-
-    impl CredentialStorageCallbacks for MockCallbacks {
-        fn write_credential(&self, _credential: &Credential) -> Result<(), StatusCode> {
-            Ok(())
-        }
-
-        fn delete_credential(&self, _credential_id: &[u8]) -> Result<(), StatusCode> {
-            Ok(())
-        }
-
-        fn read_credentials(
-            &self,
-            _rp_id: &str,
-            _user_id: Option<&[u8]>,
-        ) -> Result<Vec<Credential>, StatusCode> {
-            Ok(vec![])
-        }
-
-        fn credential_exists(&self, _credential_id: &[u8]) -> Result<bool, StatusCode> {
-            Ok(false)
-        }
-
-        fn get_credential(&self, _credential_id: &[u8]) -> Result<Credential, StatusCode> {
-            Err(StatusCode::NoCredentials)
-        }
-
-        fn update_credential(&self, _credential: &Credential) -> Result<(), StatusCode> {
-            Ok(())
-        }
-
-        fn enumerate_rps(&self) -> Result<Vec<(String, Option<String>, usize)>, StatusCode> {
-            Ok(vec![])
-        }
-
-        fn credential_count(&self) -> Result<usize, StatusCode> {
-            Ok(0)
-        }
-    }
-
-    impl PinStorageCallbacks for MockCallbacks {
-        fn load_pin_state(&self) -> Result<PinState, StatusCode> {
-            // Return default state (no PIN set)
-            Ok(PinState::new())
-        }
-
-        fn save_pin_state(&self, _state: &PinState) -> Result<(), StatusCode> {
-            // Mock: don't actually persist
-            Ok(())
-        }
-    }
-
     #[test]
     fn test_mock_callbacks() {
+        use crate::test_utils::MockCallbacks;
+
         let callbacks = MockCallbacks;
 
         // Test user interaction callbacks
@@ -365,6 +280,8 @@ mod tests {
 
     #[test]
     fn test_pin_storage_callbacks() {
+        use crate::test_utils::MockCallbacks;
+
         let callbacks = MockCallbacks;
 
         // Test PIN storage callbacks (optional trait)
@@ -378,6 +295,8 @@ mod tests {
 
     #[test]
     fn test_authenticator_callbacks_blanket_impl() {
+        use crate::test_utils::MockCallbacks;
+
         let callbacks = MockCallbacks;
 
         // Should work as AuthenticatorCallbacks due to blanket impl

@@ -970,77 +970,7 @@ mod tests {
     #[test]
     fn test_validate_algorithm_selection() {
         use crate::authenticator::{Authenticator, AuthenticatorConfig, AuthenticatorOptions};
-
-        // Mock callbacks for testing
-        struct MockCallbacks;
-
-        impl crate::callbacks::PlatformCallbacks for MockCallbacks {
-            fn get_timestamp_ms(&self) -> u64 {
-                0
-            }
-        }
-
-        impl crate::callbacks::UserInteractionCallbacks for MockCallbacks {
-            fn request_up(
-                &self,
-                _info: &str,
-                _user_name: Option<&str>,
-                _rp_id: &str,
-            ) -> Result<crate::callbacks::UpResult> {
-                Ok(crate::callbacks::UpResult::Accepted)
-            }
-
-            fn request_uv(
-                &self,
-                _info: &str,
-                _user_name: Option<&str>,
-                _rp_id: &str,
-            ) -> Result<crate::callbacks::UvResult> {
-                Ok(crate::callbacks::UvResult::Accepted)
-            }
-
-            fn select_credential(&self, _rp_id: &str, _user_names: &[String]) -> Result<usize> {
-                Ok(0)
-            }
-        }
-
-        impl crate::callbacks::CredentialStorageCallbacks for MockCallbacks {
-            fn write_credential(&self, _credential: &crate::types::Credential) -> Result<()> {
-                Ok(())
-            }
-
-            fn delete_credential(&self, _credential_id: &[u8]) -> Result<()> {
-                Ok(())
-            }
-
-            fn read_credentials(
-                &self,
-                _rp_id: &str,
-                _user_id: Option<&[u8]>,
-            ) -> Result<Vec<crate::types::Credential>> {
-                Ok(vec![])
-            }
-
-            fn credential_exists(&self, _credential_id: &[u8]) -> Result<bool> {
-                Ok(false)
-            }
-
-            fn get_credential(&self, _credential_id: &[u8]) -> Result<crate::types::Credential> {
-                Err(StatusCode::NoCredentials)
-            }
-
-            fn update_credential(&self, _credential: &crate::types::Credential) -> Result<()> {
-                Ok(())
-            }
-
-            fn enumerate_rps(&self) -> Result<Vec<(String, Option<String>, usize)>> {
-                Ok(vec![])
-            }
-
-            fn credential_count(&self) -> Result<usize> {
-                Ok(0)
-            }
-        }
+        use crate::test_utils::MockCallbacks;
 
         let config = AuthenticatorConfig::new()
             .with_algorithms(vec![-7, -8]) // ES256, EdDSA
@@ -1070,77 +1000,7 @@ mod tests {
     #[test]
     fn test_validate_algorithm_none_supported() {
         use crate::authenticator::{Authenticator, AuthenticatorConfig, AuthenticatorOptions};
-
-        // Mock callbacks for testing
-        struct MockCallbacks;
-
-        impl crate::callbacks::PlatformCallbacks for MockCallbacks {
-            fn get_timestamp_ms(&self) -> u64 {
-                0
-            }
-        }
-
-        impl crate::callbacks::UserInteractionCallbacks for MockCallbacks {
-            fn request_up(
-                &self,
-                _info: &str,
-                _user_name: Option<&str>,
-                _rp_id: &str,
-            ) -> Result<crate::callbacks::UpResult> {
-                Ok(crate::callbacks::UpResult::Accepted)
-            }
-
-            fn request_uv(
-                &self,
-                _info: &str,
-                _user_name: Option<&str>,
-                _rp_id: &str,
-            ) -> Result<crate::callbacks::UvResult> {
-                Ok(crate::callbacks::UvResult::Accepted)
-            }
-
-            fn select_credential(&self, _rp_id: &str, _user_names: &[String]) -> Result<usize> {
-                Ok(0)
-            }
-        }
-
-        impl crate::callbacks::CredentialStorageCallbacks for MockCallbacks {
-            fn write_credential(&self, _credential: &crate::types::Credential) -> Result<()> {
-                Ok(())
-            }
-
-            fn delete_credential(&self, _credential_id: &[u8]) -> Result<()> {
-                Ok(())
-            }
-
-            fn read_credentials(
-                &self,
-                _rp_id: &str,
-                _user_id: Option<&[u8]>,
-            ) -> Result<Vec<crate::types::Credential>> {
-                Ok(vec![])
-            }
-
-            fn credential_exists(&self, _credential_id: &[u8]) -> Result<bool> {
-                Ok(false)
-            }
-
-            fn get_credential(&self, _credential_id: &[u8]) -> Result<crate::types::Credential> {
-                Err(StatusCode::NoCredentials)
-            }
-
-            fn update_credential(&self, _credential: &crate::types::Credential) -> Result<()> {
-                Ok(())
-            }
-
-            fn enumerate_rps(&self) -> Result<Vec<(String, Option<String>, usize)>> {
-                Ok(vec![])
-            }
-
-            fn credential_count(&self) -> Result<usize> {
-                Ok(0)
-            }
-        }
+        use crate::test_utils::MockCallbacks;
 
         let config = AuthenticatorConfig::new()
             .with_algorithms(vec![-7]) // Only ES256
