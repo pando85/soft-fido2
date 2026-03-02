@@ -11,7 +11,10 @@ use crate::{
     cbor::{MapBuilder, MapParser},
     extensions::MakeCredentialExtensions,
     status::{Result, StatusCode},
-    types::{PublicKeyCredentialDescriptor, PublicKeyCredentialParameters, RelyingParty, User},
+    types::{
+        auth_data_flags, PublicKeyCredentialDescriptor, PublicKeyCredentialParameters,
+        RelyingParty, User,
+    },
 };
 
 use soft_fido2_crypto::ecdsa;
@@ -859,14 +862,14 @@ fn build_authenticator_data(
     // Flags (1 byte)
     let mut flags = 0u8;
     if up {
-        flags |= 0x01; // UP
+        flags |= auth_data_flags::UP;
     }
     if uv {
-        flags |= 0x04; // UV
+        flags |= auth_data_flags::UV;
     }
-    flags |= 0x40; // AT (attested credential data present)
+    flags |= auth_data_flags::AT;
     if extensions.is_some() {
-        flags |= 0x80; // ED (extension data present)
+        flags |= auth_data_flags::ED;
     }
     auth_data.push(flags);
 
