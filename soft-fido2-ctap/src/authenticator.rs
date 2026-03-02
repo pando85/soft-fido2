@@ -949,11 +949,14 @@ impl<C: AuthenticatorCallbacks> Authenticator<C> {
         }
 
         // Get wrapping key as fixed-size array reference
+        // SAFETY: credential_wrapping_key is initialized in Authenticator::new()
+        // and is always exactly 32 bytes. The field is private and cannot be
+        // modified after initialization.
         let wrapping_key: &[u8; 32] = self
             .credential_wrapping_key
             .as_slice()
             .try_into()
-            .expect("credential_wrapping_key is always 32 bytes");
+            .expect("credential_wrapping_key invariant: always 32 bytes");
 
         // Encrypt using PIN protocol V2 (AES-256-CBC with random IV)
         let encrypted = v2::encrypt(wrapping_key, &plaintext).map_err(|_| StatusCode::Other)?;
@@ -997,11 +1000,14 @@ impl<C: AuthenticatorCallbacks> Authenticator<C> {
         }
 
         // Get wrapping key as fixed-size array reference
+        // SAFETY: credential_wrapping_key is initialized in Authenticator::new()
+        // and is always exactly 32 bytes. The field is private and cannot be
+        // modified after initialization.
         let wrapping_key: &[u8; 32] = self
             .credential_wrapping_key
             .as_slice()
             .try_into()
-            .expect("credential_wrapping_key is always 32 bytes");
+            .expect("credential_wrapping_key invariant: always 32 bytes");
 
         // Verify HMAC
         let hmac_computed = v2::authenticate(wrapping_key, data_with_version);

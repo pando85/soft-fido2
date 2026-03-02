@@ -37,7 +37,10 @@ pub fn hmac_sha256(key: &[u8], data: &[u8]) -> [u8; 32] {
     use hmac::{Hmac, Mac};
     use sha2::Sha256;
 
-    let mut mac = Hmac::<Sha256>::new_from_slice(key).expect("HMAC can take key of any size");
+    // SAFETY: HMAC-SHA256 accepts keys of any size per RFC 2104.
+    // If the key is shorter than the block size, it's padded with zeros.
+    // If longer, it's hashed first. This never fails.
+    let mut mac = Hmac::<Sha256>::new_from_slice(key).expect("HMAC-SHA256 accepts any key size");
     mac.update(data);
     let result = mac.finalize();
 
