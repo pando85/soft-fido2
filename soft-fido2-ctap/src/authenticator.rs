@@ -7,7 +7,7 @@ use crate::{
     callbacks::{AuthenticatorCallbacks, PinStorageCallbacks},
     cbor::MAX_CTAP_MESSAGE_SIZE,
     pin_token::{Permission, PinToken, PinTokenManager},
-    types::{PinState, MAX_UV_RETRIES},
+    types::{PinState, MAX_PIN_RETRIES, MAX_UV_RETRIES},
     CoseAlgorithm, SecBytes, SecPinHash, StatusCode,
 };
 
@@ -27,9 +27,6 @@ use alloc::{
 use rand::RngCore;
 use sha2::{Digest, Sha256};
 use subtle::ConstantTimeEq;
-
-/// Maximum PIN retries before blocking
-const MAX_PIN_RETRIES: u8 = 8;
 
 /// Type alias for custom command handlers
 type CustomCommandHandler = Box<dyn Fn(&[u8]) -> Result<Vec<u8>, StatusCode> + Send + Sync>;
