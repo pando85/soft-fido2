@@ -48,6 +48,7 @@ const LIFETIME_MS: u64 = 600_000;
 /// bitwise OR.
 #[repr(u8)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[non_exhaustive]
 pub enum Permission {
     /// Make credential permission (0x01)
     ///

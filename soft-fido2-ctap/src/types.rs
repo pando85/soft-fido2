@@ -164,6 +164,7 @@ impl PublicKeyCredentialParameters {
 ///
 /// Common COSE algorithm identifiers used in FIDO2.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[non_exhaustive]
 #[repr(i32)]
 pub enum CoseAlgorithm {
     /// ES256 (ECDSA with P-256 and SHA-256)
@@ -244,6 +245,7 @@ impl AuthenticatorOptions {
 ///
 /// Defines the level of protection for a credential.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[non_exhaustive]
 #[repr(u8)]
 pub enum CredProtect {
     /// User verification optional
@@ -407,6 +409,7 @@ fn current_timestamp() -> i64 {
 
 /// Authenticator transport types
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[non_exhaustive]
 pub enum AuthenticatorTransport {
     /// USB
     Usb,

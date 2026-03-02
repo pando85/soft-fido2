@@ -9,6 +9,7 @@ use thiserror::Error;
 /// Cryptographic operation errors
 #[cfg(feature = "std")]
 #[derive(Debug, Error)]
+#[non_exhaustive]
 pub enum CryptoError {
     /// Invalid public key provided
     #[error("Invalid public key")]
@@ -46,6 +47,7 @@ pub enum CryptoError {
 /// Cryptographic operation errors (no_std version)
 #[cfg(not(feature = "std"))]
 #[derive(Debug)]
+#[non_exhaustive]
 pub enum CryptoError {
     /// Invalid public key provided
     InvalidPublicKey,

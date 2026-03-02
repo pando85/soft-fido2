@@ -9,6 +9,7 @@ use core::fmt;
 ///
 /// These status codes are returned in CTAP responses to indicate success or various error conditions.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[non_exhaustive]
 #[repr(u8)]
 pub enum StatusCode {
     /// Successful completion of command
@@ -310,6 +311,7 @@ impl From<soft_fido2_crypto::CryptoError> for StatusCode {
             soft_fido2_crypto::CryptoError::InvalidKeyLength { .. } => Self::InvalidParameter,
             soft_fido2_crypto::CryptoError::KeyAgreementFailed => Self::Other,
             soft_fido2_crypto::CryptoError::InvalidCoseKey => Self::InvalidParameter,
+            _ => Self::Other,
         }
     }
 }
