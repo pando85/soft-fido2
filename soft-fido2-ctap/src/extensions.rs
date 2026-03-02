@@ -48,6 +48,7 @@ pub mod ext_ids {
 /// Defines how a credential should be protected.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[repr(u8)]
+#[non_exhaustive]
 pub enum CredProtectPolicy {
     /// User verification optional (UV not required)
     UserVerificationOptional = 0x01,

@@ -17,6 +17,7 @@ pub mod selection;
 /// CTAP command codes
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 #[repr(u8)]
+#[non_exhaustive]
 pub enum CommandCode {
     MakeCredential = 0x01,
     GetAssertion = 0x02,

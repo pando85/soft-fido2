@@ -11,6 +11,7 @@ use alloc::vec::Vec;
 
 /// Result of a user presence check
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[non_exhaustive]
 pub enum UpResult {
     /// User denied the operation
     Denied,
@@ -29,6 +30,7 @@ impl UpResult {
 
 /// Result of a user verification check
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[non_exhaustive]
 pub enum UvResult {
     /// User verification denied
     Denied,
