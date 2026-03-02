@@ -13,6 +13,21 @@ use std::time::{SystemTime, UNIX_EPOCH};
 
 use serde::{Deserialize, Serialize};
 
+/// Authenticator data flags (FIDO2 spec section 6.1)
+///
+/// These flags are used in the authenticator data structure to indicate
+/// which optional fields are present and what verification was performed.
+pub mod auth_data_flags {
+    /// User Present (UP) - bit 0
+    pub const UP: u8 = 0x01;
+    /// User Verified (UV) - bit 2
+    pub const UV: u8 = 0x04;
+    /// Attested credential data (AT) - bit 6
+    pub const AT: u8 = 0x40;
+    /// Extension data (ED) - bit 7
+    pub const ED: u8 = 0x80;
+}
+
 /// Relying Party information
 ///
 /// Represents a web service that uses FIDO2 for authentication.
