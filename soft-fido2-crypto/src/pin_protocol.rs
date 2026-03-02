@@ -352,8 +352,8 @@ pub mod v2 {
     ///
     /// IV prepended ciphertext (length = 16 + plaintext.len())
     pub fn encrypt(key: &[u8; 32], plaintext: &[u8]) -> Result<Vec<u8>> {
-        use aes::cipher::{BlockEncrypt, KeyInit};
         use aes::Aes256;
+        use aes::cipher::{BlockEncrypt, KeyInit};
         use rand::Rng;
 
         if !plaintext.len().is_multiple_of(16) {
@@ -413,8 +413,8 @@ pub mod v2 {
     ///
     /// Decrypted plaintext
     pub fn decrypt(key: &[u8; 32], ciphertext: &[u8]) -> Result<Vec<u8>> {
-        use aes::cipher::{BlockDecrypt, KeyInit};
         use aes::Aes256;
+        use aes::cipher::{BlockDecrypt, KeyInit};
 
         if ciphertext.len() < 16 || !(ciphertext.len() - 16).is_multiple_of(16) {
             return Err(CryptoError::DecryptionFailed);

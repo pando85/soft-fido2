@@ -12,7 +12,7 @@ use crate::{
     commands::make_credential::{MAX_CREDENTIAL_ID_LENGTH, get_user_verified_flag_value},
     extensions::{GetAssertionExtensions, compute_hmac_secret},
     status::{Result, StatusCode},
-    types::{auth_data_flags, PublicKeyCredentialDescriptor},
+    types::{PublicKeyCredentialDescriptor, auth_data_flags},
 };
 
 use soft_fido2_crypto::ecdsa;
