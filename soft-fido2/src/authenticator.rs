@@ -50,6 +50,7 @@ impl PinStorageCallbacks for NoOpPinStorage {
 }
 
 /// User presence result
+#[non_exhaustive]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum UpResult {
     Denied,
@@ -79,6 +80,7 @@ impl From<CtapUpResult> for UpResult {
 }
 
 /// User verification result
+#[non_exhaustive]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum UvResult {
     Denied,

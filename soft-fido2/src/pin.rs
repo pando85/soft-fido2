@@ -16,6 +16,7 @@ use rand::rngs::OsRng;
 use zeroize::Zeroizing;
 
 /// PIN protocol version
+#[non_exhaustive]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum PinProtocol {
     /// PIN protocol version 1 (AES-256-CBC + HMAC-SHA-256)
