@@ -4,11 +4,12 @@
 //! <https://fidoalliance.org/specs/fido-v2.2-rd-20230321/fido-client-to-authenticator-protocol-v2.2-rd-20230321.html#error-responses>
 
 use core::fmt;
+use core::str::FromStr;
 
 /// CTAP2 status codes
 ///
 /// These status codes are returned in CTAP responses to indicate success or various error conditions.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 #[non_exhaustive]
 #[repr(u8)]
 pub enum StatusCode {
@@ -316,6 +317,75 @@ impl From<soft_fido2_crypto::CryptoError> for StatusCode {
     }
 }
 
+/// Error type for parsing status codes from strings
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct ParseStatusCodeError;
+
+impl fmt::Display for ParseStatusCodeError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "invalid status code string")
+    }
+}
+
+impl FromStr for StatusCode {
+    type Err = ParseStatusCodeError;
+
+    fn from_str(s: &str) -> core::result::Result<Self, Self::Err> {
+        match s {
+            "Success" => Ok(Self::Success),
+            "InvalidCommand" => Ok(Self::InvalidCommand),
+            "InvalidParameter" => Ok(Self::InvalidParameter),
+            "InvalidLength" => Ok(Self::InvalidLength),
+            "InvalidSeq" => Ok(Self::InvalidSeq),
+            "Timeout" => Ok(Self::Timeout),
+            "ChannelBusy" => Ok(Self::ChannelBusy),
+            "LockRequired" => Ok(Self::LockRequired),
+            "InvalidChannel" => Ok(Self::InvalidChannel),
+            "CborUnexpectedType" => Ok(Self::CborUnexpectedType),
+            "InvalidCbor" => Ok(Self::InvalidCbor),
+            "MissingParameter" => Ok(Self::MissingParameter),
+            "LimitExceeded" => Ok(Self::LimitExceeded),
+            "UnsupportedExtension" => Ok(Self::UnsupportedExtension),
+            "CredentialExcluded" => Ok(Self::CredentialExcluded),
+            "Processing" => Ok(Self::Processing),
+            "InvalidCredential" => Ok(Self::InvalidCredential),
+            "UserActionPending" => Ok(Self::UserActionPending),
+            "OperationPending" => Ok(Self::OperationPending),
+            "NoOperations" => Ok(Self::NoOperations),
+            "UnsupportedAlgorithm" => Ok(Self::UnsupportedAlgorithm),
+            "OperationDenied" => Ok(Self::OperationDenied),
+            "KeyStoreFull" => Ok(Self::KeyStoreFull),
+            "NotBusy" => Ok(Self::NotBusy),
+            "NoOperationPending" => Ok(Self::NoOperationPending),
+            "UnsupportedOption" => Ok(Self::UnsupportedOption),
+            "InvalidOption" => Ok(Self::InvalidOption),
+            "KeepaliveCancel" => Ok(Self::KeepaliveCancel),
+            "NoCredentials" => Ok(Self::NoCredentials),
+            "UserActionTimeout" => Ok(Self::UserActionTimeout),
+            "NotAllowed" => Ok(Self::NotAllowed),
+            "PinInvalid" => Ok(Self::PinInvalid),
+            "PinBlocked" => Ok(Self::PinBlocked),
+            "PinAuthInvalid" => Ok(Self::PinAuthInvalid),
+            "PinAuthBlocked" => Ok(Self::PinAuthBlocked),
+            "PinNotSet" => Ok(Self::PinNotSet),
+            "PinRequired" => Ok(Self::PinRequired),
+            "PinPolicyViolation" => Ok(Self::PinPolicyViolation),
+            "PinTokenExpired" => Ok(Self::PinTokenExpired),
+            "RequestTooLarge" => Ok(Self::RequestTooLarge),
+            "ActionTimeout" => Ok(Self::ActionTimeout),
+            "UpRequired" => Ok(Self::UpRequired),
+            "UvBlocked" => Ok(Self::UvBlocked),
+            "IntegrityFailure" => Ok(Self::IntegrityFailure),
+            "InvalidSubcommand" => Ok(Self::InvalidSubcommand),
+            "UvInvalid" => Ok(Self::UvInvalid),
+            "UnauthorizedPermission" => Ok(Self::UnauthorizedPermission),
+            "PuatRequired" => Ok(Self::PuatRequired),
+            "Other" => Ok(Self::Other),
+            _ => Err(ParseStatusCodeError),
+        }
+    }
+}
+
 /// Result type for CTAP operations
 pub type Result<T> = core::result::Result<T, StatusCode>;
 
@@ -358,5 +428,19 @@ mod tests {
 
         let status: StatusCode = soft_fido2_crypto::CryptoError::DecryptionFailed.into();
         assert_eq!(status, StatusCode::PinAuthInvalid);
+    }
+
+    #[test]
+    fn test_from_str() {
+        assert_eq!("Success".parse::<StatusCode>(), Ok(StatusCode::Success));
+        assert_eq!(
+            "InvalidCommand".parse::<StatusCode>(),
+            Ok(StatusCode::InvalidCommand)
+        );
+        assert_eq!(
+            "PinInvalid".parse::<StatusCode>(),
+            Ok(StatusCode::PinInvalid)
+        );
+        assert!("InvalidString".parse::<StatusCode>().is_err());
     }
 }
