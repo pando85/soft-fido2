@@ -9,6 +9,7 @@ use core::fmt;
 use alloc::string::String;
 
 /// Error type for CTAP operations
+#[non_exhaustive]
 #[derive(Debug, Clone, PartialEq)]
 pub enum Error {
     /// The given operation was successful

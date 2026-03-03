@@ -6,6 +6,7 @@ use std::fmt;
 pub type Result<T> = std::result::Result<T, Error>;
 
 /// Transport layer errors
+#[non_exhaustive]
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Error {
     /// Invalid packet format

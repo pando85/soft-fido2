@@ -8,6 +8,7 @@ use alloc::vec;
 use alloc::vec::Vec;
 
 /// CTAP 2.1 Command Codes
+#[non_exhaustive]
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 #[repr(u8)]
 pub enum CtapCommand {

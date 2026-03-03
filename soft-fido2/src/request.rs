@@ -58,6 +58,7 @@ impl From<[u8; 32]> for ClientDataHash {
 }
 
 /// Type of credential
+#[non_exhaustive]
 #[derive(Default, Debug, Clone, Copy, PartialEq, Eq)]
 pub enum CredentialType {
     /// Public key credential (the only type currently defined in CTAP2)
@@ -104,6 +105,7 @@ impl CredentialDescriptor {
 }
 
 /// PIN/UV authentication protocol version
+#[non_exhaustive]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 #[repr(u8)]
 pub enum PinUvAuthProtocol {
@@ -336,6 +338,7 @@ impl GetAssertionRequest {
 /// PIN/UV auth token permissions
 ///
 /// These correspond to the permission bits defined in FIDO 2.2 spec.
+#[non_exhaustive]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 #[repr(u8)]
 pub enum Permission {

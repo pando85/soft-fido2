@@ -23,6 +23,7 @@ const INIT_PACKET_DATA_SIZE: usize = 57;
 const CONT_PACKET_DATA_SIZE: usize = 59;
 
 /// CTAP HID commands
+#[non_exhaustive]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 #[repr(u8)]
 pub enum Cmd {
@@ -84,6 +85,7 @@ impl Cmd {
 }
 
 /// CTAP HID error codes
+#[non_exhaustive]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 #[repr(u8)]
 pub enum ErrorCode {
