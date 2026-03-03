@@ -22,7 +22,7 @@ mod cbor_helpers;
 pub mod credential_mgmt;
 
 use crate::error::{Error, Result};
-use crate::request::{GetAssertionRequest, MakeCredentialRequest};
+use crate::request::{DEFAULT_TIMEOUT_MS, GetAssertionRequest, MakeCredentialRequest};
 use crate::transport::Transport;
 
 use soft_fido2_ctap::cbor::{MapBuilder, Value};
@@ -183,7 +183,7 @@ impl Client {
 
     /// Send authenticatorGetInfo command
     pub fn authenticator_get_info(transport: &mut Transport) -> Result<Vec<u8>> {
-        let response = transport.send_ctap_command(0x04, &[], 30000)?;
+        let response = transport.send_ctap_command(0x04, &[], DEFAULT_TIMEOUT_MS)?;
         Ok(response)
     }
 
@@ -340,7 +340,7 @@ impl Client {
         transport: &mut Transport,
         response: &mut [u8],
     ) -> Result<usize> {
-        transport.send_ctap_command_buf(0x04, &[], response, 30000)
+        transport.send_ctap_command_buf(0x04, &[], response, DEFAULT_TIMEOUT_MS)
     }
 
     /// Get credentials metadata (wrapper for credential_mgmt module)

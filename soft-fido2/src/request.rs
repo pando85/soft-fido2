@@ -7,6 +7,9 @@ use soft_fido2_ctap::types::{RelyingParty, User};
 use alloc::string::String;
 use alloc::vec::Vec;
 
+/// Default timeout for CTAP operations (30 seconds)
+pub const DEFAULT_TIMEOUT_MS: i32 = 30000;
+
 /// A validated client data hash (must be exactly 32 bytes)
 ///
 /// This newtype ensures that client data hashes are always the correct length,
@@ -192,7 +195,7 @@ impl MakeCredentialRequest {
             rp,
             user,
             pin_uv_auth: None,
-            timeout_ms: 30000, // 30 second default
+            timeout_ms: DEFAULT_TIMEOUT_MS, // 30 second default
             resident_key: None,
             user_verification: None,
         }
@@ -204,7 +207,7 @@ impl MakeCredentialRequest {
         self
     }
 
-    /// Set the timeout in milliseconds (default: 30000ms)
+    /// Set the timeout in milliseconds (default: 30000ms = DEFAULT_TIMEOUT_MS)
     pub fn with_timeout(mut self, timeout_ms: i32) -> Self {
         self.timeout_ms = timeout_ms;
         self
@@ -274,7 +277,7 @@ impl GetAssertionRequest {
             rp_id: rp_id.into(),
             allow_list: Vec::new(),
             pin_uv_auth: None,
-            timeout_ms: 30000, // 30 second default
+            timeout_ms: DEFAULT_TIMEOUT_MS, // 30 second default
             user_verification: None,
         }
     }
@@ -297,7 +300,7 @@ impl GetAssertionRequest {
         self
     }
 
-    /// Set the timeout in milliseconds (default: 30000ms)
+    /// Set the timeout in milliseconds (default: 30000ms = DEFAULT_TIMEOUT_MS)
     pub fn with_timeout(mut self, timeout_ms: i32) -> Self {
         self.timeout_ms = timeout_ms;
         self
