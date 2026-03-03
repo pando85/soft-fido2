@@ -54,9 +54,12 @@ impl KeyPair {
         let point = self.public.to_encoded_point(false);
         // SAFETY: to_encoded_point(false) produces an uncompressed point (0x04 prefix),
         // which always contains both x and y coordinates for P-256 curve points.
+        // The P-256 curve is defined over a prime field where all valid points have
+        // both coordinates, and SecretKey::public_key() always produces valid points.
         let x = point
             .x()
             .expect("uncompressed P-256 point always has x coordinate");
+        // SAFETY: Same as above - uncompressed P-256 points always have both coordinates.
         let y = point
             .y()
             .expect("uncompressed P-256 point always has y coordinate");
