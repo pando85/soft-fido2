@@ -15,7 +15,7 @@ use crate::error::{CryptoError, Result};
 use alloc::vec::Vec;
 use p256::ecdsa::signature::{Signer, Verifier};
 use p256::ecdsa::{Signature, SigningKey, VerifyingKey};
-use rand::rngs::OsRng;
+use p256::elliptic_curve::Generate;
 use zeroize::Zeroizing;
 
 /// Generate new random ES256 key pair
@@ -35,7 +35,7 @@ use zeroize::Zeroizing;
 /// assert_eq!(public_key[0], 0x04);
 /// ```
 pub fn generate_keypair() -> (Zeroizing<[u8; 32]>, Vec<u8>) {
-    let signing_key = SigningKey::random(&mut OsRng);
+    let signing_key = SigningKey::try_generate_from_rng(&mut rand::rngs::SysRng).unwrap();
     let verifying_key = signing_key.verifying_key();
 
     let mut private_key = Zeroizing::new([0u8; 32]);
