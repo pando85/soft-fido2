@@ -18,6 +18,7 @@ use crate::{
 };
 
 use soft_fido2_crypto::ecdsa;
+use soft_fido2_crypto::eddsa;
 
 #[cfg(feature = "std")]
 use std::time::{SystemTime, UNIX_EPOCH};
@@ -247,11 +248,13 @@ pub fn handle<C: AuthenticatorCallbacks>(
             // 6.3: If pinUvAuthParam not present and uv is true, keep uv as true
             // (Already handled by options parsing)
 
-            // 6.4: If pinUvAuthParam not present and uv is false/absent, require PUAT
+            // 6.4: If pinUvAuthParam not present and uv is false/absent, check built-in UV
             if pin_uv_auth_param.is_none() && !options.uv {
-                if auth.config().options.client_pin.unwrap_or(false)
+                // If built-in UV is available, treat uv as true
+                if auth.has_built_in_uv_enabled() {
+                    options.uv = true;
+                } else if auth.config().options.client_pin.unwrap_or(false)
                     && !auth.config().options.pin_uv_auth_token
-                // noMcGaPermissionsWithClientPin absent or false
                 {
                     return Err(StatusCode::PuatRequired);
                 } else {
@@ -277,7 +280,10 @@ pub fn handle<C: AuthenticatorCallbacks>(
         // makeCredUvNotRqd is true
         if authenticator_protected && !options.uv && pin_uv_auth_param.is_none() && options.rk {
             // Trying to create discoverable credential without UV
-            if auth.config().options.client_pin.unwrap_or(false)
+            // If built-in UV is available, treat uv as true
+            if auth.has_built_in_uv_enabled() {
+                options.uv = true;
+            } else if auth.config().options.client_pin.unwrap_or(false)
                 && !auth.config().options.pin_uv_auth_token
             {
                 return Err(StatusCode::PuatRequired);
@@ -289,7 +295,10 @@ pub fn handle<C: AuthenticatorCallbacks>(
         // makeCredUvNotRqd is false or absent
         if authenticator_protected && !options.uv && pin_uv_auth_param.is_none() {
             // Creating any credential without UV when authenticator is protected
-            if auth.config().options.client_pin.unwrap_or(false)
+            // If built-in UV is available, treat uv as true
+            if auth.has_built_in_uv_enabled() {
+                options.uv = true;
+            } else if auth.config().options.client_pin.unwrap_or(false)
                 && !auth.config().options.pin_uv_auth_token
             {
                 return Err(StatusCode::PuatRequired);
@@ -366,8 +375,19 @@ pub fn handle<C: AuthenticatorCallbacks>(
     // Step 15: Process extensions
     let extension_outputs = extensions.build_outputs(auth.config().min_pin_length);
 
-    // Step 16: Generate credential key pair
-    let (private_key, public_key_bytes) = ecdsa::generate_keypair();
+    // Step 16: Generate credential key pair based on algorithm
+    let (private_key, public_key_bytes): ([u8; 32], Vec<u8>) = match alg {
+        -8 => {
+            // EdDSA (Ed25519)
+            let (sk, pk) = eddsa::generate_keypair();
+            (*sk, pk)
+        }
+        _ => {
+            // ES256 (P-256) - default
+            let (sk, pk) = ecdsa::generate_keypair();
+            (*sk, pk)
+        }
+    };
 
     // Step 17: Create credential (resident or non-resident)
     let credential_id = create_credential(
@@ -399,7 +419,16 @@ pub fn handle<C: AuthenticatorCallbacks>(
 
     // Build attestation statement (self-attestation)
     let sig_data = [&auth_data[..], &client_data_hash[..]].concat();
-    let signature = ecdsa::sign(&private_key, &sig_data)?;
+    let signature = match alg {
+        -8 => {
+            // EdDSA (Ed25519)
+            eddsa::sign(&private_key, &sig_data)?
+        }
+        _ => {
+            // ES256 (P-256) - default
+            ecdsa::sign(&private_key, &sig_data)?
+        }
+    };
     let att_stmt = build_attestation_statement(&signature, alg)?;
 
     // Build response
@@ -904,22 +933,44 @@ fn build_authenticator_data(
 ///
 /// For ES256 (P-256):
 /// { 1: 2, 3: -7, -1: 1, -2: x, -3: y }
+///
+/// For EdDSA (Ed25519):
+/// { 1: 1, 3: -8, -1: 6, -2: x }
 fn build_cose_public_key(public_key: &[u8], algorithm: i32) -> Result<Vec<u8>> {
-    // Public key is in uncompressed SEC1 format: 0x04 || x || y
-    if public_key.len() != 65 || public_key[0] != 0x04 {
-        return Err(StatusCode::InvalidParameter);
+    match algorithm {
+        -8 => {
+            // EdDSA (Ed25519) - OKP format
+            // Public key is 32 bytes
+            if public_key.len() != 32 {
+                return Err(StatusCode::InvalidParameter);
+            }
+
+            MapBuilder::new()
+                .insert(1, 1)? // kty: OKP (Octet Key Pair)
+                .insert(3, algorithm)? // alg: EdDSA
+                .insert(-1, 6)? // crv: Ed25519
+                .insert_bytes(-2, public_key)? // x: public key
+                .build()
+        }
+        _ => {
+            // ES256 (P-256) - EC2 format
+            // Public key is in uncompressed SEC1 format: 0x04 || x || y
+            if public_key.len() != 65 || public_key[0] != 0x04 {
+                return Err(StatusCode::InvalidParameter);
+            }
+
+            let x = &public_key[1..33];
+            let y = &public_key[33..65];
+
+            MapBuilder::new()
+                .insert(1, 2)? // kty: EC2
+                .insert(3, algorithm)? // alg
+                .insert(-1, 1)? // crv: P-256
+                .insert_bytes(-2, x)? // x coordinate
+                .insert_bytes(-3, y)? // y coordinate
+                .build()
+        }
     }
-
-    let x = &public_key[1..33];
-    let y = &public_key[33..65];
-
-    MapBuilder::new()
-        .insert(1, 2)? // kty: EC2
-        .insert(3, algorithm)? // alg
-        .insert(-1, 1)? // crv: P-256
-        .insert_bytes(-2, x)? // x coordinate
-        .insert_bytes(-3, y)? // y coordinate
-        .build()
 }
 
 /// Build attestation statement
@@ -964,9 +1015,25 @@ mod tests {
     }
 
     #[test]
+    fn test_build_cose_public_key_eddsa() {
+        // Valid Ed25519 public key (32 bytes)
+        let public_key = vec![0x42u8; 32];
+
+        let cose_key = build_cose_public_key(&public_key, -8).unwrap();
+        assert!(!cose_key.is_empty());
+    }
+
+    #[test]
     fn test_build_cose_public_key_invalid() {
         let public_key = vec![0x01, 0x02, 0x03]; // Invalid format
         let result = build_cose_public_key(&public_key, -7);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_build_cose_public_key_eddsa_invalid() {
+        let public_key = vec![0x01, 0x02, 0x03]; // Invalid format (not 32 bytes)
+        let result = build_cose_public_key(&public_key, -8);
         assert!(result.is_err());
     }
 

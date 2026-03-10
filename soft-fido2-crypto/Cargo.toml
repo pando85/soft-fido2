@@ -25,6 +25,7 @@ rand.workspace = true
 subtle.workspace = true
 zeroize.workspace = true
 thiserror.workspace = true
+ed25519-dalek = { version = "2.1", features = ["zeroize"] }
 
 [dev-dependencies]
 hex.workspace = true
