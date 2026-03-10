@@ -5,6 +5,7 @@ use crate::error::{Error, Result};
 use soft_fido2_ctap::types::{RelyingParty, User};
 
 use alloc::string::String;
+use alloc::vec;
 use alloc::vec::Vec;
 
 /// Default timeout for CTAP operations (30 seconds)
