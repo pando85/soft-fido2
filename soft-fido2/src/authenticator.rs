@@ -396,7 +396,7 @@ impl Default for AuthenticatorConfig {
             firmware_version: None,
             constant_sign_count: false,
             max_msg_size: MAX_CTAP_MESSAGE_SIZE,
-            algorithms: vec![-7, -8], // ES256, EdDSA
+            algorithms: vec![-7, -8, -19], // ES256, EdDSA, Ed25519
             device_name: None,
             vendor_id: None,
             product_id: None,
@@ -441,7 +441,7 @@ impl Default for AuthenticatorConfigBuilder {
             firmware_version: None,
             constant_sign_count: false,
             max_msg_size: MAX_CTAP_MESSAGE_SIZE,
-            algorithms: vec![-7, -8], // ES256, EdDSA
+            algorithms: vec![-7, -8, -19], // ES256, EdDSA, Ed25519
             device_name: None,
             vendor_id: None,
             product_id: None,
