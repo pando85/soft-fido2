@@ -74,12 +74,15 @@ impl Client {
             cred_type: &'static str,
         }
 
-        let alg_param = PubKeyCredParam {
-            alg: -7,
-            cred_type: "public-key",
-        };
-        let alg_params: SmallVec<[PubKeyCredParam; 1]> = SmallVec::from_buf([alg_param]);
-        builder = builder.insert(4, alg_params).map_err(|_| Error::Other)?;
+        let alg_params: Vec<PubKeyCredParam> = request
+            .algorithms()
+            .iter()
+            .map(|&alg| PubKeyCredParam {
+                alg,
+                cred_type: "public-key",
+            })
+            .collect();
+        builder = builder.insert(4, &alg_params).map_err(|_| Error::Other)?;
 
         if request.resident_key.is_some() || request.user_verification.is_some() {
             #[derive(Serialize)]
@@ -227,12 +230,15 @@ impl Client {
             cred_type: &'static str,
         }
 
-        let alg_param = PubKeyCredParam {
-            alg: -7,
-            cred_type: "public-key",
-        };
-        let alg_params: SmallVec<[PubKeyCredParam; 1]> = SmallVec::from_buf([alg_param]);
-        builder = builder.insert(4, alg_params).map_err(|_| Error::Other)?;
+        let alg_params: Vec<PubKeyCredParam> = request
+            .algorithms()
+            .iter()
+            .map(|&alg| PubKeyCredParam {
+                alg,
+                cred_type: "public-key",
+            })
+            .collect();
+        builder = builder.insert(4, &alg_params).map_err(|_| Error::Other)?;
 
         if request.resident_key.is_some() || request.user_verification.is_some() {
             #[derive(Serialize)]

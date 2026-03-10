@@ -4,6 +4,7 @@
 //!
 //! - **ECDH**: P-256 key agreement for PIN protocol
 //! - **ECDSA**: ES256 signatures for attestation and assertions
+//! - **EdDSA**: Ed25519 signatures for attestation and assertions
 //! - **PIN Protocols**: V1 (AES-256-CBC + HMAC) and V2 (HMAC-only)
 //! - **HMAC-SHA256**: For hmac-secret extension
 //!
@@ -14,6 +15,7 @@
 
 pub mod ecdh;
 pub mod ecdsa;
+pub mod eddsa;
 pub mod error;
 pub mod pin_protocol;
 

@@ -179,6 +179,7 @@ pub struct MakeCredentialRequest {
     pub(crate) timeout_ms: i32,
     pub(crate) resident_key: Option<bool>,
     pub(crate) user_verification: Option<bool>,
+    pub(crate) algorithms: Vec<i32>,
 }
 
 impl MakeCredentialRequest {
@@ -198,6 +199,7 @@ impl MakeCredentialRequest {
             timeout_ms: DEFAULT_TIMEOUT_MS, // 30 second default
             resident_key: None,
             user_verification: None,
+            algorithms: vec![-7], // Default: ES256
         }
     }
 
@@ -225,6 +227,16 @@ impl MakeCredentialRequest {
         self
     }
 
+    /// Set the preferred algorithms (default: [-7] for ES256)
+    ///
+    /// Common algorithms:
+    /// - `-7`: ES256 (P-256 + SHA-256)
+    /// - `-8`: EdDSA (Ed25519)
+    pub fn with_algorithms(mut self, algorithms: Vec<i32>) -> Self {
+        self.algorithms = algorithms;
+        self
+    }
+
     /// Get the client data hash
     pub fn client_data_hash(&self) -> &ClientDataHash {
         &self.client_data_hash
@@ -248,6 +260,11 @@ impl MakeCredentialRequest {
     /// Get the timeout in milliseconds
     pub fn timeout_ms(&self) -> i32 {
         self.timeout_ms
+    }
+
+    /// Get the algorithms
+    pub fn algorithms(&self) -> &[i32] {
+        &self.algorithms
     }
 }
 

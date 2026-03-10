@@ -372,6 +372,8 @@ pub struct AuthenticatorConfig {
     pub firmware_version: Option<u32>,
     pub constant_sign_count: bool,
     pub max_msg_size: usize,
+    /// Supported COSE algorithms (e.g., -7 for ES256, -8 for EdDSA)
+    pub algorithms: Vec<i32>,
     /// USB/HID device name
     pub device_name: Option<String>,
     /// USB vendor ID
@@ -394,6 +396,7 @@ impl Default for AuthenticatorConfig {
             firmware_version: None,
             constant_sign_count: false,
             max_msg_size: MAX_CTAP_MESSAGE_SIZE,
+            algorithms: vec![-7, -8], // ES256, EdDSA
             device_name: None,
             vendor_id: None,
             product_id: None,
@@ -419,6 +422,7 @@ pub struct AuthenticatorConfigBuilder {
     firmware_version: Option<u32>,
     constant_sign_count: bool,
     max_msg_size: usize,
+    algorithms: Vec<i32>,
     device_name: Option<String>,
     vendor_id: Option<u16>,
     product_id: Option<u16>,
@@ -437,6 +441,7 @@ impl Default for AuthenticatorConfigBuilder {
             firmware_version: None,
             constant_sign_count: false,
             max_msg_size: MAX_CTAP_MESSAGE_SIZE,
+            algorithms: vec![-7, -8], // ES256, EdDSA
             device_name: None,
             vendor_id: None,
             product_id: None,
@@ -515,6 +520,11 @@ impl AuthenticatorConfigBuilder {
         self
     }
 
+    pub fn algorithms(mut self, algorithms: Vec<i32>) -> Self {
+        self.algorithms = algorithms;
+        self
+    }
+
     pub fn build(self) -> AuthenticatorConfig {
         AuthenticatorConfig {
             aaguid: self.aaguid,
@@ -534,6 +544,11 @@ impl AuthenticatorConfigBuilder {
             firmware_version: self.firmware_version,
             constant_sign_count: self.constant_sign_count,
             max_msg_size: self.max_msg_size,
+            algorithms: if self.algorithms.is_empty() {
+                vec![-7, -8] // Default: ES256, EdDSA
+            } else {
+                self.algorithms
+            },
             device_name: self.device_name,
             vendor_id: self.vendor_id,
             product_id: self.product_id,
@@ -627,7 +642,8 @@ impl<C: AuthenticatorCallbacks> Authenticator<C> {
             .with_extensions(config.extensions)
             .with_force_resident_keys(config.force_resident_keys)
             .with_constant_sign_count(config.constant_sign_count)
-            .with_max_msg_size(config.max_msg_size);
+            .with_max_msg_size(config.max_msg_size)
+            .with_algorithms(config.algorithms);
 
         if let Some(fw_version) = config.firmware_version {
             ctap_config = ctap_config.with_firmware_version(fw_version);

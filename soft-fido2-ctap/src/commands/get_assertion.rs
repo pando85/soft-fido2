@@ -16,6 +16,7 @@ use crate::{
 };
 
 use soft_fido2_crypto::ecdsa;
+use soft_fido2_crypto::eddsa;
 
 use alloc::{
     format,
@@ -639,7 +640,7 @@ pub fn handle<C: AuthenticatorCallbacks>(
         extension_outputs.as_ref(),
     )?;
 
-    // Generate signature
+    // Generate signature based on credential algorithm
     let sig_data = [&auth_data[..], &client_data_hash[..]].concat();
 
     let key_bytes = selected_cred.private_key.as_slice();
@@ -654,7 +655,10 @@ pub fn handle<C: AuthenticatorCallbacks>(
         arr
     });
 
-    let signature = ecdsa::sign(&priv_key_array, &sig_data)?;
+    let signature = match selected_cred.algorithm {
+        -8 => eddsa::sign(&priv_key_array, &sig_data)?,
+        _ => ecdsa::sign(&priv_key_array, &sig_data)?,
+    };
 
     // Build credential descriptor
     let credential_desc = PublicKeyCredentialDescriptor {
