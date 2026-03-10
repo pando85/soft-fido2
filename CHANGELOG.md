@@ -5,6 +5,48 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/), and this project
 adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [v0.11.0](https://github.com/pando85/soft-fido2/tree/v0.11.0) - 2026-03-10
+
+### Added
+
+- Add #[non_exhaustive] to public enums ([2c25131](https://github.com/pando85/soft-fido2/commit/2c251319f525d463465d618f4aae64b66ee45da6))
+- Add Hash and FromStr traits to StatusCode ([8c01e8e](https://github.com/pando85/soft-fido2/commit/8c01e8e4cf7746cb598ae615b3bd48af563dffb6))
+- Add eddsa (ed25519) support and fix built-in uv flow ([0335b68](https://github.com/pando85/soft-fido2/commit/0335b680509b69fb50ecaf4a371d1a1cc80baffe))
+- Add support for ed25519 algorithm identifier (-19) ([83d6f7d](https://github.com/pando85/soft-fido2/commit/83d6f7da4e59b2e107266e3aed42434b113ca2ae))
+
+### Fixed
+
+- hmac-secret: Use stored PIN protocol keypair for shared secret ([9b93ad2](https://github.com/pando85/soft-fido2/commit/9b93ad2a22f1b7bdb459f642937c0aee788b22ad))
+- Security audit findings and hardening (Issue #67) ([223c17b](https://github.com/pando85/soft-fido2/commit/223c17baaa69b169f121911a0b42011ae733f790))
+- Collapse nested if statements for clippy ([9a5ae31](https://github.com/pando85/soft-fido2/commit/9a5ae31078ae2fbd6819a3aa680e83e8210cd1d3))
+- Apply rustfmt formatting to fix CI ([218d187](https://github.com/pando85/soft-fido2/commit/218d187aae3256e67dc0dab56c4fdb1c03780076))
+
+### Documentation
+
+- Add SAFETY comments to ecdh.rs expect() calls ([bdf8487](https://github.com/pando85/soft-fido2/commit/bdf848715edadbba2ef16b5c27b13ef93efb122a))
+
+### Build
+
+- ci: Automerge patch and minor requests ([cb9f30b](https://github.com/pando85/soft-fido2/commit/cb9f30b4a1e7402e83b5c88112a631e1e47cfff3))
+- deps: Update Rust crate nix to 0.31 ([0a610c8](https://github.com/pando85/soft-fido2/commit/0a610c823c774dbd90b096bf6cfdadb1723afc99))
+
+### Fix
+
+- Cargo fmt and clippy warnings ([48bac4c](https://github.com/pando85/soft-fido2/commit/48bac4c8303e84684ae6788225a4d5f6e450aef8))
+
+### Refactor
+
+- Consolidate MockCallbacks into shared test utility module ([6f4c7f7](https://github.com/pando85/soft-fido2/commit/6f4c7f7dd8899e01238b6c726b106e36f5ae5b36))
+- Remove duplicate MAX_PIN_RETRIES constant ([5b4db97](https://github.com/pando85/soft-fido2/commit/5b4db9791d6797c44a7a65151d6a99e1805ba1fa))
+- Add constants for authenticator data flags ([f1b0fb4](https://github.com/pando85/soft-fido2/commit/f1b0fb406fec91d05eee9bee7c41c6981355143f))
+- Add #[non_exhaustive] to public enums ([6b2b9e1](https://github.com/pando85/soft-fido2/commit/6b2b9e1cd1f2d52ea6396cc684fa2e4ab52d6b92))
+- Add SAFETY comments to expect() calls in production code ([fa68320](https://github.com/pando85/soft-fido2/commit/fa68320a5872fd98a011d470cfdffcf2e3d8b4ee))
+- Replace magic timeout values with DEFAULT_TIMEOUT_MS constant ([981dd11](https://github.com/pando85/soft-fido2/commit/981dd11824259380c25234fe5b537b22cfabfcdb))
+
+### Testing
+
+- Add integration tests for eddsa and built-in uv flow ([911a7b0](https://github.com/pando85/soft-fido2/commit/911a7b0c44ab58db1afa8e0649b91b9148747b9d))
+
 ## [v0.10.1](https://github.com/pando85/soft-fido2/tree/v0.10.1) - 2026-01-18
 
 ### Build
