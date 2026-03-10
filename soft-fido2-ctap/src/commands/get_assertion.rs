@@ -656,7 +656,7 @@ pub fn handle<C: AuthenticatorCallbacks>(
     });
 
     let signature = match selected_cred.algorithm {
-        -8 => eddsa::sign(&priv_key_array, &sig_data)?,
+        -8 | -19 => eddsa::sign(&priv_key_array, &sig_data)?,
         _ => ecdsa::sign(&priv_key_array, &sig_data)?,
     };
 

@@ -232,7 +232,8 @@ impl MakeCredentialRequest {
     ///
     /// Common algorithms:
     /// - `-7`: ES256 (P-256 + SHA-256)
-    /// - `-8`: EdDSA (Ed25519)
+    /// - `-8`: EdDSA (Ed25519) - WebAuthn preferred
+    /// - `-19`: Ed25519 - IANA recommended
     pub fn with_algorithms(mut self, algorithms: Vec<i32>) -> Self {
         self.algorithms = algorithms;
         self

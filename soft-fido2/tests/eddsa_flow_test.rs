@@ -173,6 +173,81 @@ fn test_webauthn_es256_and_eddsa_both_supported() {
 }
 
 #[test]
+fn test_webauthn_ed25519_registration_and_auth() {
+    let callbacks = TestCallbacks::new();
+
+    let config = AuthenticatorConfig::builder()
+        .aaguid([
+            0x6f, 0x15, 0x82, 0x74, 0xaa, 0xb6, 0x44, 0x3d, 0x9b, 0xcf, 0x8a, 0x3f, 0x69, 0x29,
+            0x7c, 0x88,
+        ])
+        .max_credentials(100)
+        .options(
+            AuthenticatorOptions::new()
+                .with_resident_keys(true)
+                .with_user_verification(Some(true))
+                .with_client_pin(Some(true)),
+        )
+        .build();
+
+    let pin_hash = compute_pin_hash(PIN);
+    Authenticator::<TestCallbacks>::set_pin_hash(&pin_hash);
+
+    let mut auth = Authenticator::with_config(callbacks.clone(), config)
+        .expect("Failed to create authenticator");
+
+    // Registration with Ed25519 (-19)
+    let challenge = b"ed25519-registration-challenge";
+    let client_data_hash = compute_client_data_hash(challenge, ORIGIN, "webauthn.create");
+
+    let make_cred_request = build_make_credential_cbor_with_alg(
+        &client_data_hash,
+        RP_ID,
+        "Ed25519 Test Corp",
+        &[1, 2, 3, 4],
+        "user@ed25519-test.com",
+        "Ed25519 User",
+        -19, // Ed25519 (IANA recommended)
+    );
+
+    let mut ctap_request = vec![0x01];
+    ctap_request.extend_from_slice(&make_cred_request);
+
+    let mut response = Vec::new();
+    auth.handle(&ctap_request, &mut response)
+        .expect("Ed25519 makeCredential failed");
+
+    let status = response[0];
+    assert_eq!(
+        status, 0x00,
+        "Ed25519 makeCredential failed with status: 0x{:02x}",
+        status
+    );
+
+    // Authentication with Ed25519
+    let challenge = b"ed25519-auth-challenge";
+    let client_data_hash = compute_client_data_hash(challenge, ORIGIN, "webauthn.get");
+
+    let get_assertion_request = build_get_assertion_cbor(&client_data_hash, RP_ID);
+
+    let mut ctap_request = vec![0x02];
+    ctap_request.extend_from_slice(&get_assertion_request);
+
+    let mut response = Vec::new();
+    auth.handle(&ctap_request, &mut response)
+        .expect("Ed25519 getAssertion failed");
+
+    let status = response[0];
+    assert_eq!(
+        status, 0x00,
+        "Ed25519 getAssertion failed with status: 0x{:02x}",
+        status
+    );
+
+    assert_eq!(callbacks.credential_count(), 1);
+}
+
+#[test]
 fn test_eddsa_algorithm_preference() {
     let callbacks = TestCallbacks::new();
 

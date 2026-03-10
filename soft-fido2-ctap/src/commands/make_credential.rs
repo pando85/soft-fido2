@@ -377,8 +377,8 @@ pub fn handle<C: AuthenticatorCallbacks>(
 
     // Step 16: Generate credential key pair based on algorithm
     let (private_key, public_key_bytes): ([u8; 32], Vec<u8>) = match alg {
-        -8 => {
-            // EdDSA (Ed25519)
+        -8 | -19 => {
+            // EdDSA/Ed25519
             let (sk, pk) = eddsa::generate_keypair();
             (*sk, pk)
         }
@@ -420,8 +420,8 @@ pub fn handle<C: AuthenticatorCallbacks>(
     // Build attestation statement (self-attestation)
     let sig_data = [&auth_data[..], &client_data_hash[..]].concat();
     let signature = match alg {
-        -8 => {
-            // EdDSA (Ed25519)
+        -8 | -19 => {
+            // EdDSA/Ed25519
             eddsa::sign(&private_key, &sig_data)?
         }
         _ => {
@@ -934,12 +934,12 @@ fn build_authenticator_data(
 /// For ES256 (P-256):
 /// { 1: 2, 3: -7, -1: 1, -2: x, -3: y }
 ///
-/// For EdDSA (Ed25519):
-/// { 1: 1, 3: -8, -1: 6, -2: x }
+/// For EdDSA (-8) / Ed25519 (-19):
+/// { 1: 1, 3: alg, -1: 6, -2: x }
 fn build_cose_public_key(public_key: &[u8], algorithm: i32) -> Result<Vec<u8>> {
     match algorithm {
-        -8 => {
-            // EdDSA (Ed25519) - OKP format
+        -8 | -19 => {
+            // EdDSA/Ed25519 - OKP format
             // Public key is 32 bytes
             if public_key.len() != 32 {
                 return Err(StatusCode::InvalidParameter);
@@ -947,7 +947,7 @@ fn build_cose_public_key(public_key: &[u8], algorithm: i32) -> Result<Vec<u8>> {
 
             MapBuilder::new()
                 .insert(1, 1)? // kty: OKP (Octet Key Pair)
-                .insert(3, algorithm)? // alg: EdDSA
+                .insert(3, algorithm)? // alg: EdDSA (-8) or Ed25519 (-19)
                 .insert(-1, 6)? // crv: Ed25519
                 .insert_bytes(-2, public_key)? // x: public key
                 .build()
@@ -1024,6 +1024,15 @@ mod tests {
     }
 
     #[test]
+    fn test_build_cose_public_key_ed25519() {
+        // Valid Ed25519 public key (32 bytes) with -19 algorithm identifier
+        let public_key = vec![0x42u8; 32];
+
+        let cose_key = build_cose_public_key(&public_key, -19).unwrap();
+        assert!(!cose_key.is_empty());
+    }
+
+    #[test]
     fn test_build_cose_public_key_invalid() {
         let public_key = vec![0x01, 0x02, 0x03]; // Invalid format
         let result = build_cose_public_key(&public_key, -7);
@@ -1034,6 +1043,13 @@ mod tests {
     fn test_build_cose_public_key_eddsa_invalid() {
         let public_key = vec![0x01, 0x02, 0x03]; // Invalid format (not 32 bytes)
         let result = build_cose_public_key(&public_key, -8);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_build_cose_public_key_ed25519_invalid() {
+        let public_key = vec![0x01, 0x02, 0x03]; // Invalid format (not 32 bytes)
+        let result = build_cose_public_key(&public_key, -19);
         assert!(result.is_err());
     }
 
@@ -1090,6 +1106,36 @@ mod tests {
 
         let result = validate_and_choose_algorithm(&auth, &params);
         assert_eq!(result, Err(StatusCode::UnsupportedAlgorithm));
+    }
+
+    #[test]
+    fn test_validate_algorithm_ed25519_selection() {
+        use crate::authenticator::{Authenticator, AuthenticatorConfig, AuthenticatorOptions};
+        use crate::test_utils::MockCallbacks;
+
+        let config = AuthenticatorConfig::new()
+            .with_algorithms(vec![-7, -19]) // ES256, Ed25519
+            .with_options(AuthenticatorOptions::new());
+        let auth = Authenticator::new(config, MockCallbacks);
+
+        let params = vec![
+            PublicKeyCredentialParameters {
+                cred_type: "public-key".to_string(),
+                alg: -257, // RS256 (not supported)
+            },
+            PublicKeyCredentialParameters {
+                cred_type: "public-key".to_string(),
+                alg: -19, // Ed25519 (supported)
+            },
+            PublicKeyCredentialParameters {
+                cred_type: "public-key".to_string(),
+                alg: -7, // ES256 (supported)
+            },
+        ];
+
+        // Should choose the first supported algorithm (Ed25519 in this case)
+        let result = validate_and_choose_algorithm(&auth, &params);
+        assert_eq!(result.unwrap(), -19);
     }
 
     #[test]
