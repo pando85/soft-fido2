@@ -5,6 +5,17 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/), and this project
 adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [v0.11.2](https://github.com/pando85/soft-fido2/tree/v0.11.2) - 2026-03-11
+
+### Fixed
+
+- Accept ssh eddsa enrollments ([a91f9b7](https://github.com/pando85/soft-fido2/commit/a91f9b7c26cd736c5708ec9380a93efbb1934a71))
+- Accept hidden ed25519 ssh algorithms ([1e9d9ab](https://github.com/pando85/soft-fido2/commit/1e9d9ab88d1a5cc4bd2d5dd78d2c165e948ed30d))
+
+### Testing
+
+- Pin mozilla e2e to browser-safe algorithm advertisement ([4bf176b](https://github.com/pando85/soft-fido2/commit/4bf176b2588655f8cab9573937370291fc2a2b34))
+
 ## [v0.11.1](https://github.com/pando85/soft-fido2/tree/v0.11.1) - 2026-03-11
 
 ### Fixed
