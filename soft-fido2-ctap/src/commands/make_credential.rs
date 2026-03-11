@@ -377,8 +377,8 @@ pub fn handle<C: AuthenticatorCallbacks>(
 
     // Step 16: Generate credential key pair based on algorithm
     let (private_key, public_key_bytes): ([u8; 32], Vec<u8>) = match alg {
-        -19 => {
-            // Ed25519 (IANA recommended COSE algorithm -19)
+        -8 | -19 => {
+            // EdDSA (-8) / Ed25519 (-19)
             let (sk, pk) = eddsa::generate_keypair();
             (*sk, pk)
         }
@@ -420,8 +420,8 @@ pub fn handle<C: AuthenticatorCallbacks>(
     // Build attestation statement (self-attestation)
     let sig_data = [&auth_data[..], &client_data_hash[..]].concat();
     let signature = match alg {
-        -19 => {
-            // Ed25519 (IANA recommended COSE algorithm -19)
+        -8 | -19 => {
+            // EdDSA (-8) / Ed25519 (-19)
             eddsa::sign(&private_key, &sig_data)?
         }
         _ => {
@@ -460,6 +460,12 @@ fn validate_and_choose_algorithm<C: AuthenticatorCallbacks>(
         // If this algorithm is supported and we haven't chosen one yet
         if chosen_alg.is_none() && auth.config().algorithms.contains(&param.alg) {
             chosen_alg = Some(param.alg);
+        }
+
+        // Accept -8 (EdDSA) for SSH compatibility. OpenSSH still requests -8
+        // for ed25519-sk enrollment even when the authenticator advertises -19.
+        if chosen_alg.is_none() && param.alg == -8 {
+            chosen_alg = Some(-8);
         }
     }
 
@@ -938,8 +944,8 @@ fn build_authenticator_data(
 /// { 1: 1, 3: -19, -1: 6, -2: x }
 fn build_cose_public_key(public_key: &[u8], algorithm: i32) -> Result<Vec<u8>> {
     match algorithm {
-        -19 => {
-            // Ed25519 - OKP format
+        -8 | -19 => {
+            // EdDSA (-8) / Ed25519 (-19) - OKP format
             // Public key is 32 bytes
             if public_key.len() != 32 {
                 return Err(StatusCode::InvalidParameter);
@@ -947,7 +953,7 @@ fn build_cose_public_key(public_key: &[u8], algorithm: i32) -> Result<Vec<u8>> {
 
             MapBuilder::new()
                 .insert(1, 1)? // kty: OKP (Octet Key Pair)
-                .insert(3, algorithm)? // alg: Ed25519 (-19)
+                .insert(3, algorithm)? // alg: EdDSA (-8) or Ed25519 (-19)
                 .insert(-1, 6)? // crv: Ed25519
                 .insert_bytes(-2, public_key)? // x: public key
                 .build()
