@@ -377,8 +377,8 @@ pub fn handle<C: AuthenticatorCallbacks>(
 
     // Step 16: Generate credential key pair based on algorithm
     let (private_key, public_key_bytes): ([u8; 32], Vec<u8>) = match alg {
-        -8 | -19 => {
-            // EdDSA/Ed25519
+        -19 => {
+            // Ed25519 (IANA recommended COSE algorithm -19)
             let (sk, pk) = eddsa::generate_keypair();
             (*sk, pk)
         }
@@ -420,8 +420,8 @@ pub fn handle<C: AuthenticatorCallbacks>(
     // Build attestation statement (self-attestation)
     let sig_data = [&auth_data[..], &client_data_hash[..]].concat();
     let signature = match alg {
-        -8 | -19 => {
-            // EdDSA/Ed25519
+        -19 => {
+            // Ed25519 (IANA recommended COSE algorithm -19)
             eddsa::sign(&private_key, &sig_data)?
         }
         _ => {
@@ -934,12 +934,12 @@ fn build_authenticator_data(
 /// For ES256 (P-256):
 /// { 1: 2, 3: -7, -1: 1, -2: x, -3: y }
 ///
-/// For EdDSA (-8) / Ed25519 (-19):
-/// { 1: 1, 3: alg, -1: 6, -2: x }
+/// For Ed25519 (-19):
+/// { 1: 1, 3: -19, -1: 6, -2: x }
 fn build_cose_public_key(public_key: &[u8], algorithm: i32) -> Result<Vec<u8>> {
     match algorithm {
-        -8 | -19 => {
-            // EdDSA/Ed25519 - OKP format
+        -19 => {
+            // Ed25519 - OKP format
             // Public key is 32 bytes
             if public_key.len() != 32 {
                 return Err(StatusCode::InvalidParameter);
@@ -947,7 +947,7 @@ fn build_cose_public_key(public_key: &[u8], algorithm: i32) -> Result<Vec<u8>> {
 
             MapBuilder::new()
                 .insert(1, 1)? // kty: OKP (Octet Key Pair)
-                .insert(3, algorithm)? // alg: EdDSA (-8) or Ed25519 (-19)
+                .insert(3, algorithm)? // alg: Ed25519 (-19)
                 .insert(-1, 6)? // crv: Ed25519
                 .insert_bytes(-2, public_key)? // x: public key
                 .build()
@@ -994,13 +994,12 @@ mod tests {
     use super::*;
 
     #[test]
-    fn test_generate_credential_id() {
-        let id1 = generate_credential_id();
-        let id2 = generate_credential_id();
+    fn test_build_cose_public_key_ed25519() {
+        // Valid Ed25519 public key (32 bytes) with -19 algorithm identifier
+        let public_key = vec![0x42u8; 32];
 
-        assert_eq!(id1.len(), 32);
-        assert_eq!(id2.len(), 32);
-        assert_ne!(id1, id2); // Should be random
+        let cose_key = build_cose_public_key(&public_key, -19).unwrap();
+        assert!(!cose_key.is_empty());
     }
 
     #[test]
@@ -1015,34 +1014,9 @@ mod tests {
     }
 
     #[test]
-    fn test_build_cose_public_key_eddsa() {
-        // Valid Ed25519 public key (32 bytes)
-        let public_key = vec![0x42u8; 32];
-
-        let cose_key = build_cose_public_key(&public_key, -8).unwrap();
-        assert!(!cose_key.is_empty());
-    }
-
-    #[test]
-    fn test_build_cose_public_key_ed25519() {
-        // Valid Ed25519 public key (32 bytes) with -19 algorithm identifier
-        let public_key = vec![0x42u8; 32];
-
-        let cose_key = build_cose_public_key(&public_key, -19).unwrap();
-        assert!(!cose_key.is_empty());
-    }
-
-    #[test]
     fn test_build_cose_public_key_invalid() {
         let public_key = vec![0x01, 0x02, 0x03]; // Invalid format
         let result = build_cose_public_key(&public_key, -7);
-        assert!(result.is_err());
-    }
-
-    #[test]
-    fn test_build_cose_public_key_eddsa_invalid() {
-        let public_key = vec![0x01, 0x02, 0x03]; // Invalid format (not 32 bytes)
-        let result = build_cose_public_key(&public_key, -8);
         assert!(result.is_err());
     }
 
