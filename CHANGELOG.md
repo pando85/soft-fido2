@@ -5,6 +5,12 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/), and this project
 adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [v0.11.1](https://github.com/pando85/soft-fido2/tree/v0.11.1) - 2026-03-11
+
+### Fixed
+
+- Remove deprecated eddsa (-8) algorithm identifier ([ce6b686](https://github.com/pando85/soft-fido2/commit/ce6b686bd0fceaf5c61c68c83dc44b90707b71d8))
+
 ## [v0.11.0](https://github.com/pando85/soft-fido2/tree/v0.11.0) - 2026-03-10
 
 ### Added
