@@ -16,7 +16,7 @@ const RP_ID: &str = "eddsa-test.com";
 const ORIGIN: &str = "https://eddsa-test.com";
 
 #[test]
-fn test_webauthn_eddsa_registration_and_auth() {
+fn test_webauthn_ed25519_registration_and_auth_basic() {
     let callbacks = TestCallbacks::new();
 
     let config = AuthenticatorConfig::builder()
@@ -39,17 +39,17 @@ fn test_webauthn_eddsa_registration_and_auth() {
     let mut auth = Authenticator::with_config(callbacks.clone(), config)
         .expect("Failed to create authenticator");
 
-    // Registration with EdDSA
-    let challenge = b"eddsa-registration-challenge";
+    // Registration with Ed25519
+    let challenge = b"ed25519-registration-challenge";
     let client_data_hash = compute_client_data_hash(challenge, ORIGIN, "webauthn.create");
 
-    let make_cred_request = build_make_credential_cbor_eddsa(
+    let make_cred_request = build_make_credential_cbor_ed25519(
         &client_data_hash,
         RP_ID,
-        "EdDSA Test Corp",
+        "Ed25519 Test Corp",
         &[1, 2, 3, 4],
-        "user@eddsa-test.com",
-        "EdDSA User",
+        "user@ed25519-test.com",
+        "Ed25519 User",
     );
 
     let mut ctap_request = vec![0x01];
@@ -57,17 +57,17 @@ fn test_webauthn_eddsa_registration_and_auth() {
 
     let mut response = Vec::new();
     auth.handle(&ctap_request, &mut response)
-        .expect("EdDSA makeCredential failed");
+        .expect("Ed25519 makeCredential failed");
 
     let status = response[0];
     assert_eq!(
         status, 0x00,
-        "EdDSA makeCredential failed with status: 0x{:02x}",
+        "Ed25519 makeCredential failed with status: 0x{:02x}",
         status
     );
 
-    // Authentication with EdDSA
-    let challenge = b"eddsa-auth-challenge";
+    // Authentication with Ed25519
+    let challenge = b"ed25519-auth-challenge";
     let client_data_hash = compute_client_data_hash(challenge, ORIGIN, "webauthn.get");
 
     let get_assertion_request = build_get_assertion_cbor(&client_data_hash, RP_ID);
@@ -77,12 +77,12 @@ fn test_webauthn_eddsa_registration_and_auth() {
 
     let mut response = Vec::new();
     auth.handle(&ctap_request, &mut response)
-        .expect("EdDSA getAssertion failed");
+        .expect("Ed25519 getAssertion failed");
 
     let status = response[0];
     assert_eq!(
         status, 0x00,
-        "EdDSA getAssertion failed with status: 0x{:02x}",
+        "Ed25519 getAssertion failed with status: 0x{:02x}",
         status
     );
 
@@ -90,7 +90,7 @@ fn test_webauthn_eddsa_registration_and_auth() {
 }
 
 #[test]
-fn test_webauthn_es256_and_eddsa_both_supported() {
+fn test_webauthn_es256_and_ed25519_both_supported() {
     let callbacks = TestCallbacks::new();
 
     let config = AuthenticatorConfig::builder()
@@ -134,8 +134,8 @@ fn test_webauthn_es256_and_eddsa_both_supported() {
         .expect("ES256 makeCredential failed");
     assert_eq!(response[0], 0x00, "ES256 registration failed");
 
-    // Register with EdDSA
-    let challenge = b"eddsa-challenge";
+    // Register with Ed25519
+    let challenge = b"ed25519-challenge";
     let client_data_hash = compute_client_data_hash(challenge, ORIGIN, "webauthn.create");
     let make_cred_request = build_make_credential_cbor_with_alg(
         &client_data_hash,
@@ -143,8 +143,8 @@ fn test_webauthn_es256_and_eddsa_both_supported() {
         "Test Corp",
         &[5, 6, 7, 8],
         "user2@test.com",
-        "User EdDSA",
-        -8, // EdDSA
+        "User Ed25519",
+        -19, // Ed25519 (IANA recommended)
     );
 
     let mut ctap_request = vec![0x01];
@@ -152,8 +152,8 @@ fn test_webauthn_es256_and_eddsa_both_supported() {
 
     let mut response = Vec::new();
     auth.handle(&ctap_request, &mut response)
-        .expect("EdDSA makeCredential failed");
-    assert_eq!(response[0], 0x00, "EdDSA registration failed");
+        .expect("Ed25519 makeCredential failed");
+    assert_eq!(response[0], 0x00, "Ed25519 registration failed");
 
     // Both credentials should be stored
     assert_eq!(callbacks.credential_count(), 2);
@@ -248,7 +248,7 @@ fn test_webauthn_ed25519_registration_and_auth() {
 }
 
 #[test]
-fn test_eddsa_algorithm_preference() {
+fn test_ed25519_algorithm_preference() {
     let callbacks = TestCallbacks::new();
 
     let config = AuthenticatorConfig::builder()
@@ -272,14 +272,14 @@ fn test_eddsa_algorithm_preference() {
     let challenge = b"preference-challenge";
     let client_data_hash = compute_client_data_hash(challenge, ORIGIN, "webauthn.create");
 
-    // Build pubKeyCredParams with EdDSA first, then ES256
+    // Build pubKeyCredParams with Ed25519 first, then ES256
     let pub_key_params = vec![
         Value::Map(vec![
             (
                 Value::Text("type".to_string()),
                 Value::Text("public-key".to_string()),
             ),
-            (Value::Text("alg".to_string()), Value::Integer((-8).into())), // EdDSA first
+            (Value::Text("alg".to_string()), Value::Integer((-19).into())), // Ed25519 first
         ]),
         Value::Map(vec![
             (
@@ -338,7 +338,7 @@ fn test_eddsa_algorithm_preference() {
         .expect("makeCredential failed");
     assert_eq!(response[0], 0x00, "makeCredential failed");
 
-    // Verify the credential was created (EdDSA should have been selected)
+    // Verify the credential was created (Ed25519 should have been selected)
     assert_eq!(callbacks.credential_count(), 1);
 }
 
@@ -358,7 +358,7 @@ fn compute_client_data_hash(challenge: &[u8], origin: &str, ceremony_type: &str)
     Sha256::digest(client_data_json.as_bytes()).to_vec()
 }
 
-fn build_make_credential_cbor_eddsa(
+fn build_make_credential_cbor_ed25519(
     client_data_hash: &[u8],
     rp_id: &str,
     rp_name: &str,
@@ -373,7 +373,7 @@ fn build_make_credential_cbor_eddsa(
         user_id,
         user_name,
         user_display_name,
-        -8, // EdDSA
+        -19, // Ed25519 (IANA recommended)
     )
 }
 
