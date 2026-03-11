@@ -462,10 +462,10 @@ fn validate_and_choose_algorithm<C: AuthenticatorCallbacks>(
             chosen_alg = Some(param.alg);
         }
 
-        // Accept -8 (EdDSA) for SSH compatibility. OpenSSH still requests -8
-        // for ed25519-sk enrollment even when the authenticator advertises -19.
-        if chosen_alg.is_none() && param.alg == -8 {
-            chosen_alg = Some(-8);
+        // Accept Ed25519 variants even when they are not advertised in GetInfo.
+        // This keeps browser compatibility while still allowing SSH enrollments.
+        if chosen_alg.is_none() && matches!(param.alg, -8 | -19) {
+            chosen_alg = Some(param.alg);
         }
     }
 
@@ -1073,16 +1073,10 @@ mod tests {
             .with_options(AuthenticatorOptions::new());
         let auth = Authenticator::new(config, MockCallbacks);
 
-        let params = vec![
-            PublicKeyCredentialParameters {
-                cred_type: "public-key".to_string(),
-                alg: -257, // RS256 (not supported)
-            },
-            PublicKeyCredentialParameters {
-                cred_type: "public-key".to_string(),
-                alg: -8, // EdDSA (not supported)
-            },
-        ];
+        let params = vec![PublicKeyCredentialParameters {
+            cred_type: "public-key".to_string(),
+            alg: -257, // RS256 (not supported)
+        }];
 
         let result = validate_and_choose_algorithm(&auth, &params);
         assert_eq!(result, Err(StatusCode::UnsupportedAlgorithm));
@@ -1116,6 +1110,25 @@ mod tests {
         // Should choose the first supported algorithm (Ed25519 in this case)
         let result = validate_and_choose_algorithm(&auth, &params);
         assert_eq!(result.unwrap(), -19);
+    }
+
+    #[test]
+    fn test_validate_algorithm_accepts_eddsa_alias_for_ed25519() {
+        use crate::authenticator::{Authenticator, AuthenticatorConfig, AuthenticatorOptions};
+        use crate::test_utils::MockCallbacks;
+
+        let config = AuthenticatorConfig::new()
+            .with_algorithms(vec![-7, -19]) // ES256, Ed25519
+            .with_options(AuthenticatorOptions::new());
+        let auth = Authenticator::new(config, MockCallbacks);
+
+        let params = vec![PublicKeyCredentialParameters {
+            cred_type: "public-key".to_string(),
+            alg: -8, // EdDSA alias used by OpenSSH for Ed25519
+        }];
+
+        let result = validate_and_choose_algorithm(&auth, &params);
+        assert_eq!(result.unwrap(), -8);
     }
 
     #[test]
