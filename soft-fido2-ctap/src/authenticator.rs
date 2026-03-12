@@ -8,7 +8,7 @@ use crate::{
     callbacks::{AuthenticatorCallbacks, PinStorageCallbacks},
     cbor::MAX_CTAP_MESSAGE_SIZE,
     pin_token::{Permission, PinToken, PinTokenManager},
-    types::{MAX_PIN_RETRIES, MAX_UV_RETRIES, PinState},
+    types::{MAX_UV_RETRIES, PinState},
 };
 
 use soft_fido2_crypto::pin_protocol::{self, v2};
@@ -74,6 +74,23 @@ pub struct AuthenticatorConfig {
     /// Minimum PIN length
     pub min_pin_length: Option<usize>,
 
+    /// Maximum PIN retry attempts (1-8)
+    ///
+    /// Default is 8. After this many failed PIN attempts, the PIN is blocked.
+    /// If `auto_lock_timeout` is set, the PIN will be temporarily locked for that
+    /// duration instead of permanently blocked.
+    pub max_pin_retries: u8,
+
+    /// Auto-lock timeout in seconds (0 = permanent lock)
+    ///
+    /// When set to a non-zero value and PIN retries are exhausted, the PIN is
+    /// temporarily locked for this many seconds. After the timeout expires,
+    /// the retry counter is reset and PIN authentication can be attempted again.
+    ///
+    /// When set to 0 (default), PIN is permanently blocked after max retries
+    /// until the authenticator is reset.
+    pub auto_lock_timeout: u32,
+
     /// Credential wrapping key for non-resident credentials
     ///
     /// Used to encrypt private keys into credential IDs when rk=false.
@@ -130,6 +147,8 @@ impl AuthenticatorConfig {
             transports: vec!["usb".to_string()], // Only USB (NFC might trigger U2F probing)
             max_cred_blob_length: Some(32),
             min_pin_length: Some(4),       // CTAP default minimum PIN length
+            max_pin_retries: 8,            // Default max PIN retries
+            auto_lock_timeout: 0,          // 0 = permanent lock (no auto-unlock)
             credential_wrapping_key: None, // Will be generated if needed
             force_resident_keys: true,
             constant_sign_count: false,
@@ -190,6 +209,33 @@ impl AuthenticatorConfig {
     /// This enhances privacy by preventing cross-site tracking via counter correlation.
     pub fn with_constant_sign_count(mut self, constant: bool) -> Self {
         self.constant_sign_count = constant;
+        self
+    }
+
+    /// Set maximum PIN retry attempts (1-8)
+    ///
+    /// After this many failed PIN attempts, the PIN will be blocked.
+    /// Default is 8.
+    ///
+    /// # Panics
+    ///
+    /// Panics if `retries` is 0 or greater than 8.
+    pub fn with_max_pin_retries(mut self, retries: u8) -> Self {
+        assert!(retries > 0 && retries <= 8, "max_pin_retries must be 1-8");
+        self.max_pin_retries = retries;
+        self
+    }
+
+    /// Set auto-lock timeout in seconds
+    ///
+    /// When set to a non-zero value and PIN retries are exhausted, the PIN is
+    /// temporarily locked for this many seconds. After the timeout expires,
+    /// the retry counter is reset and PIN authentication can be attempted again.
+    ///
+    /// When set to 0 (default), PIN is permanently blocked after max retries
+    /// until the authenticator is reset.
+    pub fn with_auto_lock_timeout(mut self, timeout_seconds: u32) -> Self {
+        self.auto_lock_timeout = timeout_seconds;
         self
     }
 
@@ -418,6 +464,15 @@ impl<C: AuthenticatorCallbacks> Authenticator<C> {
         self.pin_state.is_blocked()
     }
 
+    /// Check if PIN is temporarily locked (auto-lock feature)
+    ///
+    /// Returns `true` if the PIN is currently in a temporary lock state
+    /// due to exhausted retries with auto_lock_timeout configured.
+    pub fn is_pin_locked(&self) -> bool {
+        let now = self.callbacks.get_timestamp_ms();
+        self.pin_state.is_locked(now)
+    }
+
     /// Check if built-in user verification is enabled
     ///
     /// Built-in UV refers to biometric authentication methods (fingerprint,
@@ -463,8 +518,9 @@ impl<C: AuthenticatorCallbacks> Authenticator<C> {
         self.pin_state.pin_hash = Some(SecPinHash::new(hash));
 
         // Reset retry counter and flags
-        self.pin_state.retries = MAX_PIN_RETRIES;
+        self.pin_state.retries = self.config.max_pin_retries;
         self.pin_state.force_pin_change = false;
+        self.pin_state.locked_until = None;
 
         // Persist if storage is configured
         self.save_pin_state()?;
@@ -507,7 +563,19 @@ impl<C: AuthenticatorCallbacks> Authenticator<C> {
             .as_ref()
             .ok_or(StatusCode::PinNotSet)?;
 
-        // Check if blocked
+        // Check for temporary lock (auto-lock feature)
+        let now = self.callbacks.get_timestamp_ms();
+        if self.pin_state.is_locked(now) {
+            return Err(StatusCode::PinBlocked);
+        }
+
+        // If lock has expired (locked_until in the past), auto-unlock
+        if self.pin_state.locked_until.is_some() && !self.pin_state.is_locked(now) {
+            self.pin_state.locked_until = None;
+            self.pin_state.retries = self.config.max_pin_retries;
+        }
+
+        // Check if permanently blocked (no retries)
         if self.is_pin_blocked() {
             return Err(StatusCode::PinBlocked);
         }
@@ -518,17 +586,27 @@ impl<C: AuthenticatorCallbacks> Authenticator<C> {
 
         // Compare using constant-time comparison via SecPinHash
         if pin_hash.verify(&hash) {
-            // PIN correct - reset retry counter
-            self.pin_state.retries = MAX_PIN_RETRIES;
+            // PIN correct - reset retry counter and clear any lock
+            self.pin_state.retries = self.config.max_pin_retries;
+            self.pin_state.locked_until = None;
             self.save_pin_state()?;
             Ok(())
         } else {
             // PIN incorrect - decrement retry counter
             self.pin_state.retries = self.pin_state.retries.saturating_sub(1);
-            self.save_pin_state()?;
-            if self.is_pin_blocked() {
+
+            // If retries exhausted, apply lock
+            if self.pin_state.retries == 0 {
+                if self.config.auto_lock_timeout > 0 {
+                    // Temporary lock
+                    let lock_until = now + (self.config.auto_lock_timeout as u64 * 1000);
+                    self.pin_state.lock(lock_until);
+                }
+                // If auto_lock_timeout is 0, permanent block (locked_until stays None)
+                self.save_pin_state()?;
                 Err(StatusCode::PinBlocked)
             } else {
+                self.save_pin_state()?;
                 Err(StatusCode::PinInvalid)
             }
         }
@@ -545,7 +623,8 @@ impl<C: AuthenticatorCallbacks> Authenticator<C> {
     /// Set PIN hash directly (for testing only)
     pub fn set_pin_hash_for_testing(&mut self, hash: [u8; 32]) {
         self.pin_state.pin_hash = Some(SecPinHash::new(hash));
-        self.pin_state.retries = MAX_PIN_RETRIES;
+        self.pin_state.retries = self.config.max_pin_retries;
+        self.pin_state.locked_until = None;
     }
 
     /// Decrement PIN retry counter (for failed PIN attempts)
@@ -562,7 +641,8 @@ impl<C: AuthenticatorCallbacks> Authenticator<C> {
     /// Updates in-memory state immediately, then attempts to persist.
     /// Persistence errors are propagated to allow callers to handle storage failures.
     pub(crate) fn reset_pin_retries(&mut self) -> Result<(), StatusCode> {
-        self.pin_state.retries = MAX_PIN_RETRIES;
+        self.pin_state.retries = self.config.max_pin_retries;
+        self.pin_state.locked_until = None;
         self.save_pin_state()
     }
 
@@ -1105,7 +1185,7 @@ mod tests {
         UpResult, UvResult,
         callbacks::{CredentialStorageCallbacks, PlatformCallbacks, UserInteractionCallbacks},
         test_utils::MockCallbacks,
-        types::Credential,
+        types::{Credential, MAX_PIN_RETRIES},
     };
 
     fn create_test_authenticator() -> Authenticator<MockCallbacks> {
@@ -1931,5 +2011,113 @@ mod tests {
         assert!(!persisted.is_pin_set());
         assert_eq!(persisted.retries, MAX_PIN_RETRIES);
         assert_eq!(persisted.min_pin_length, 4); // Reset to default
+    }
+
+    #[test]
+    fn test_configurable_max_pin_retries() {
+        // Create authenticator with custom max PIN retries
+        let config = AuthenticatorConfig::new().with_max_pin_retries(5);
+        let mut auth = Authenticator::new(config, MockCallbacks);
+
+        // Set PIN
+        auth.set_pin("1234").unwrap();
+
+        // Verify retries is set to custom value
+        assert_eq!(auth.pin_retries(), 5);
+
+        // Exhaust retries
+        for _ in 0..5 {
+            let _ = auth.verify_pin("wrong");
+        }
+
+        // Should be blocked
+        assert!(auth.is_pin_blocked());
+        assert_eq!(auth.verify_pin("1234"), Err(StatusCode::PinBlocked));
+    }
+
+    #[test]
+    fn test_max_pin_retries_validation() {
+        // Valid values should work
+        let config = AuthenticatorConfig::new().with_max_pin_retries(1);
+        assert_eq!(config.max_pin_retries, 1);
+
+        let config = AuthenticatorConfig::new().with_max_pin_retries(8);
+        assert_eq!(config.max_pin_retries, 8);
+    }
+
+    #[test]
+    fn test_auto_lock_timeout() {
+        // Create authenticator with auto-lock timeout of 60 seconds
+        let config = AuthenticatorConfig::new()
+            .with_max_pin_retries(3)
+            .with_auto_lock_timeout(60);
+        let mut auth = Authenticator::new(config, MockCallbacks);
+
+        // Set PIN
+        auth.set_pin("1234").unwrap();
+
+        // Exhaust retries
+        for _ in 0..3 {
+            let _ = auth.verify_pin("wrong");
+        }
+
+        // Should be temporarily locked
+        assert!(auth.is_pin_locked());
+        assert_eq!(auth.verify_pin("1234"), Err(StatusCode::PinBlocked));
+    }
+
+    #[test]
+    fn test_pin_state_lock_methods() {
+        let mut state = PinState::new();
+
+        // Initially not locked
+        assert!(!state.is_locked(0));
+
+        // Lock for 60 seconds (60000 ms)
+        state.lock(60000);
+        assert!(state.is_locked(30000)); // Before lock expires
+        assert!(!state.is_locked(70000)); // After lock expires
+
+        // Unlock
+        state.unlock();
+        assert!(!state.is_locked(0));
+        assert!(!state.is_locked(100000));
+    }
+
+    #[test]
+    fn test_pin_locked_until_persistence() {
+        // Test that locked_until is serialized/deserialized correctly
+        let mut state = PinState::new();
+        state.lock(123456789);
+
+        // Serialize
+        let mut buf = Vec::new();
+        crate::cbor::into_writer(&state, &mut buf).expect("CBOR serialization failed");
+
+        // Deserialize
+        let restored: PinState = crate::cbor::decode(&buf).expect("CBOR deserialization failed");
+
+        assert_eq!(restored.locked_until, Some(123456789));
+    }
+
+    #[test]
+    fn test_pin_correct_resets_lock() {
+        // Create authenticator with auto-lock
+        let config = AuthenticatorConfig::new()
+            .with_max_pin_retries(2)
+            .with_auto_lock_timeout(60);
+        let mut auth = Authenticator::new(config, MockCallbacks);
+
+        // Set PIN
+        auth.set_pin("1234").unwrap();
+
+        // Wrong attempt
+        let _ = auth.verify_pin("wrong");
+        assert_eq!(auth.pin_retries(), 1);
+
+        // Correct PIN should reset retries and clear any lock
+        auth.verify_pin("1234").unwrap();
+        assert_eq!(auth.pin_retries(), 2);
+        assert!(!auth.is_pin_locked());
     }
 }

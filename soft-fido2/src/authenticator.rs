@@ -382,6 +382,10 @@ pub struct AuthenticatorConfig {
     pub product_id: Option<u16>,
     /// Device version number
     pub device_version: Option<u16>,
+    /// Maximum PIN retry attempts (1-8, default 8)
+    pub max_pin_retries: u8,
+    /// Auto-lock timeout in seconds (0 = permanent lock, default 0)
+    pub auto_lock_timeout: u32,
 }
 
 impl Default for AuthenticatorConfig {
@@ -401,6 +405,8 @@ impl Default for AuthenticatorConfig {
             vendor_id: None,
             product_id: None,
             device_version: None,
+            max_pin_retries: 8,
+            auto_lock_timeout: 0,
         }
     }
 }
@@ -427,6 +433,8 @@ pub struct AuthenticatorConfigBuilder {
     vendor_id: Option<u16>,
     product_id: Option<u16>,
     device_version: Option<u16>,
+    max_pin_retries: u8,
+    auto_lock_timeout: u32,
 }
 
 impl Default for AuthenticatorConfigBuilder {
@@ -446,6 +454,8 @@ impl Default for AuthenticatorConfigBuilder {
             vendor_id: None,
             product_id: None,
             device_version: None,
+            max_pin_retries: 0, // 0 means use default (8)
+            auto_lock_timeout: 0,
         }
     }
 }
@@ -525,6 +535,26 @@ impl AuthenticatorConfigBuilder {
         self
     }
 
+    /// Set maximum PIN retry attempts (1-8)
+    ///
+    /// Default is 8. After this many failed PIN attempts, the PIN is blocked.
+    pub fn max_pin_retries(mut self, retries: u8) -> Self {
+        self.max_pin_retries = retries;
+        self
+    }
+
+    /// Set auto-lock timeout in seconds
+    ///
+    /// When set to a non-zero value and PIN retries are exhausted, the PIN is
+    /// temporarily locked for this many seconds. After the timeout expires,
+    /// the retry counter is reset and PIN authentication can be attempted again.
+    ///
+    /// When set to 0 (default), PIN is permanently blocked after max retries.
+    pub fn auto_lock_timeout(mut self, timeout_seconds: u32) -> Self {
+        self.auto_lock_timeout = timeout_seconds;
+        self
+    }
+
     pub fn build(self) -> AuthenticatorConfig {
         AuthenticatorConfig {
             aaguid: self.aaguid,
@@ -553,6 +583,12 @@ impl AuthenticatorConfigBuilder {
             vendor_id: self.vendor_id,
             product_id: self.product_id,
             device_version: self.device_version,
+            max_pin_retries: if self.max_pin_retries == 0 {
+                8
+            } else {
+                self.max_pin_retries
+            },
+            auto_lock_timeout: self.auto_lock_timeout,
         }
     }
 }
@@ -643,7 +679,9 @@ impl<C: AuthenticatorCallbacks> Authenticator<C> {
             .with_force_resident_keys(config.force_resident_keys)
             .with_constant_sign_count(config.constant_sign_count)
             .with_max_msg_size(config.max_msg_size)
-            .with_algorithms(config.algorithms);
+            .with_algorithms(config.algorithms)
+            .with_max_pin_retries(config.max_pin_retries)
+            .with_auto_lock_timeout(config.auto_lock_timeout);
 
         if let Some(fw_version) = config.firmware_version {
             ctap_config = ctap_config.with_firmware_version(fw_version);

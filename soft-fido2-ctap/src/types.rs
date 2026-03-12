@@ -477,6 +477,16 @@ pub struct PinState {
 
     /// Force PIN change flag
     pub force_pin_change: bool,
+
+    /// Timestamp when PIN is locked until (milliseconds since UNIX epoch)
+    ///
+    /// When set and the current time is before this timestamp, PIN authentication
+    /// is blocked. If `None`, PIN is not locked.
+    ///
+    /// Used for auto-lock feature where PIN is temporarily blocked after
+    /// max failed attempts for a configurable timeout period.
+    #[serde(default)]
+    pub locked_until: Option<u64>,
 }
 
 /// Default value for UV retries for serde deserialization
@@ -500,6 +510,7 @@ impl PinState {
             min_pin_length: DEFAULT_MIN_PIN_LENGTH,
             version: 0,
             force_pin_change: false,
+            locked_until: None,
         }
     }
 
@@ -513,6 +524,17 @@ impl PinState {
         self.retries == 0
     }
 
+    /// Check if PIN is temporarily locked
+    ///
+    /// Returns `true` if `locked_until` is set and current time is before that timestamp.
+    /// Returns `false` if not locked or lock has expired.
+    pub fn is_locked(&self, current_time_ms: u64) -> bool {
+        match self.locked_until {
+            Some(locked_until) => current_time_ms < locked_until,
+            None => false,
+        }
+    }
+
     /// Check if UV is blocked (no UV retries remaining)
     pub fn is_uv_blocked(&self) -> bool {
         self.uv_retries == 0
@@ -521,6 +543,20 @@ impl PinState {
     /// Increment version for state change
     pub fn increment_version(&mut self) {
         self.version = self.version.saturating_add(1);
+    }
+
+    /// Lock PIN until the specified timestamp
+    ///
+    /// # Arguments
+    ///
+    /// * `locked_until` - Unix timestamp in milliseconds when PIN will be unlocked
+    pub fn lock(&mut self, locked_until: u64) {
+        self.locked_until = Some(locked_until);
+    }
+
+    /// Unlock PIN (clear the lock)
+    pub fn unlock(&mut self) {
+        self.locked_until = None;
     }
 }
 
