@@ -121,11 +121,20 @@ pub fn handle<C: AuthenticatorCallbacks>(auth: &Authenticator<C>) -> Result<Vec<
 
     let client_pin_value = config.options.client_pin.map(|_| auth.is_pin_set());
 
+    // uv (built-in user verification) should be:
+    // - false if PIN is set (UV must go through PIN, not built-in method)
+    // - config value if PIN is not set (allow notification-based UV for software authenticator)
+    let uv_value = if auth.is_pin_set() {
+        Some(false)
+    } else {
+        config.options.uv
+    };
+
     let options = Options {
         ep: config.options.ep,
         rk: Some(config.options.rk),
         up: Some(config.options.up),
-        uv: config.options.uv,
+        uv: uv_value,
         plat: Some(config.options.plat),
         always_uv: Some(config.options.always_uv),
         cred_mgmt: Some(config.options.cred_mgmt),
