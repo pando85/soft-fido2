@@ -253,9 +253,9 @@ pub fn handle<C: AuthenticatorCallbacks>(
                 // If built-in UV is available, treat uv as true
                 if auth.has_built_in_uv_enabled() {
                     options.uv = true;
-                } else if auth.config().options.client_pin.unwrap_or(false)
-                    && !auth.config().options.pin_uv_auth_token
-                {
+                } else if auth.is_pin_set() {
+                    // CTAP2 spec §6.1.2 step 6.4: If ClientPin is true (PIN is set),
+                    // return PuatRequired so platform can use PIN fallback
                     return Err(StatusCode::PuatRequired);
                 } else {
                     return Err(StatusCode::OperationDenied);
@@ -283,9 +283,9 @@ pub fn handle<C: AuthenticatorCallbacks>(
             // If built-in UV is available, treat uv as true
             if auth.has_built_in_uv_enabled() {
                 options.uv = true;
-            } else if auth.config().options.client_pin.unwrap_or(false)
-                && !auth.config().options.pin_uv_auth_token
-            {
+            } else if auth.is_pin_set() {
+                // CTAP2 spec §6.1.2 step 7.1.1: If ClientPin is true (PIN is set),
+                // return PuatRequired so platform can use PIN fallback
                 return Err(StatusCode::PuatRequired);
             } else {
                 return Err(StatusCode::OperationDenied);
@@ -298,9 +298,9 @@ pub fn handle<C: AuthenticatorCallbacks>(
             // If built-in UV is available, treat uv as true
             if auth.has_built_in_uv_enabled() {
                 options.uv = true;
-            } else if auth.config().options.client_pin.unwrap_or(false)
-                && !auth.config().options.pin_uv_auth_token
-            {
+            } else if auth.is_pin_set() {
+                // CTAP2 spec §6.1.2 step 8.1.1: If ClientPin is true (PIN is set),
+                // return PuatRequired so platform can use PIN fallback
                 return Err(StatusCode::PuatRequired);
             } else {
                 return Err(StatusCode::OperationDenied);
@@ -552,17 +552,15 @@ fn perform_built_in_uv<C: AuthenticatorCallbacks>(
         }
         UvResult::Timeout => Err(StatusCode::UserActionTimeout),
         UvResult::Denied => {
-            // UV failed - decrement retry counter
             auth.decrement_uv_retries();
 
-            // Check if UV is now blocked
             if auth.is_uv_blocked() {
                 return Err(StatusCode::UvBlocked);
             }
 
-            if auth.config().options.client_pin.unwrap_or(false)
-                && !auth.config().options.pin_uv_auth_token
-            {
+            // CTAP2 spec §6.5.3.1 step 11.2.3.2: If ClientPin is true (PIN is set),
+            // return PuatRequired so platform can use PIN fallback
+            if auth.is_pin_set() {
                 return Err(StatusCode::PuatRequired);
             }
 

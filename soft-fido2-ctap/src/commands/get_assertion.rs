@@ -409,22 +409,16 @@ pub fn handle<C: AuthenticatorCallbacks>(
                     return Err(StatusCode::UserActionTimeout);
                 }
                 UvResult::Denied => {
-                    // UV failed - decrement retry counter
                     auth.decrement_uv_retries();
 
-                    // Check if UV is now blocked
                     if auth.is_uv_blocked() {
                         return Err(StatusCode::UvBlocked);
                     }
 
-                    // Check if clientPin is supported and noMcGaPermissionsWithClientPin is absent/false
-                    if auth.config().options.client_pin.unwrap_or(false)
-                        && !auth.config().options.pin_uv_auth_token
-                    {
+                    if auth.is_pin_set() {
                         return Err(StatusCode::PuatRequired);
                     }
 
-                    // Otherwise return operation denied
                     return Err(StatusCode::OperationDenied);
                 }
             }
