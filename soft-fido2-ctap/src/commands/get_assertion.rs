@@ -9,7 +9,9 @@ use crate::{
     authenticator::Authenticator,
     callbacks::AuthenticatorCallbacks,
     cbor::{MapBuilder, MapParser},
-    commands::make_credential::{MAX_CREDENTIAL_ID_LENGTH, get_user_verified_flag_value},
+    commands::make_credential::{
+        MAX_CREDENTIAL_ID_LENGTH, get_user_present_flag_value, get_user_verified_flag_value,
+    },
     extensions::{GetAssertionExtensions, compute_hmac_secret},
     status::{Result, StatusCode},
     types::{PublicKeyCredentialDescriptor, auth_data_flags},
@@ -384,6 +386,12 @@ pub fn handle<C: AuthenticatorCallbacks>(
 
             // Step 7.1.5: Set "uv" bit in response
             response_state.uv = true;
+
+            // Also check if user presence was confirmed during token acquisition
+            let user_present_flag_value = get_user_present_flag_value(auth);
+            if user_present_flag_value {
+                response_state.up = true;
+            }
 
             // Continue to Step 8
         } else if options.uv {
