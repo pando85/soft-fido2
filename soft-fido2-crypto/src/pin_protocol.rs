@@ -15,7 +15,7 @@ use alloc::vec::Vec;
 use cbc::cipher::block_padding::Pkcs7;
 use cbc::cipher::{BlockDecryptMut, BlockEncryptMut, KeyIvInit};
 use cbc::{Decryptor, Encryptor};
-use hmac::{Hmac, Mac};
+use hmac::{Hmac, KeyInit, Mac};
 use sha2::{Digest, Sha256};
 use subtle::ConstantTimeEq;
 use zeroize::Zeroizing;
@@ -247,7 +247,7 @@ pub mod v2 {
     /// assert_eq!(mac.len(), 32);
     /// ```
     pub fn authenticate(key: &[u8; 32], data: &[u8]) -> [u8; 32] {
-        use hmac::{Hmac, Mac};
+        use hmac::{Hmac, KeyInit, Mac};
         use sha2::Sha256;
 
         // SAFETY: HMAC-SHA256 accepts keys of any size per RFC 2104.
@@ -352,8 +352,8 @@ pub mod v2 {
     ///
     /// IV prepended ciphertext (length = 16 + plaintext.len())
     pub fn encrypt(key: &[u8; 32], plaintext: &[u8]) -> Result<Vec<u8>> {
-        use aes::Aes256;
         use aes::cipher::{BlockEncrypt, KeyInit};
+        use aes::Aes256;
         use rand::Rng;
 
         if !plaintext.len().is_multiple_of(16) {
@@ -413,8 +413,8 @@ pub mod v2 {
     ///
     /// Decrypted plaintext
     pub fn decrypt(key: &[u8; 32], ciphertext: &[u8]) -> Result<Vec<u8>> {
-        use aes::Aes256;
         use aes::cipher::{BlockDecrypt, KeyInit};
+        use aes::Aes256;
 
         if ciphertext.len() < 16 || !(ciphertext.len() - 16).is_multiple_of(16) {
             return Err(CryptoError::DecryptionFailed);

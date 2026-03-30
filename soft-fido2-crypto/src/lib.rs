@@ -36,7 +36,7 @@ pub use zeroize::Zeroizing;
 /// # Returns
 /// 32-byte HMAC-SHA-256 output
 pub fn hmac_sha256(key: &[u8], data: &[u8]) -> [u8; 32] {
-    use hmac::{Hmac, Mac};
+    use hmac::{Hmac, KeyInit, Mac};
     use sha2::Sha256;
 
     // SAFETY: HMAC-SHA256 accepts keys of any size per RFC 2104.
