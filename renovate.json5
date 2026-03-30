@@ -53,5 +53,14 @@
       ],
       enabled: true,
     },
+    {
+      matchPackageNames: [
+        'sha2',
+        'hmac',
+        'hkdf',
+      ],
+      groupName: 'digest crates (sha2, hmac, hkdf)',
+      groupSlug: 'digest-crates',
+    },
   ],
 }
