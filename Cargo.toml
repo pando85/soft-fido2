@@ -19,8 +19,8 @@ soft-fido2-transport = { path = "soft-fido2-transport", version = "0.12.2" }
 
 # Cryptography (well-audited crates)
 p256 = { version = "0.13", features = ["ecdsa", "ecdh"] }
-sha2 = "0.10"
-hmac = "0.12"
+sha2 = "0.11"
+hmac = "0.13"
 hkdf = "0.13"
 aes = "0.8"
 cbc = { version = "0.1", features = ["alloc"] }
