@@ -10,12 +10,16 @@ extern crate alloc;
 use crate::error::{CryptoError, Result};
 
 use aes::Aes256;
+use aes::cipher::consts::U16;
+use aes::cipher::{
+    Array, BlockCipherDecrypt, BlockCipherEncrypt, BlockModeDecrypt, BlockModeEncrypt, KeyInit,
+    KeyIvInit,
+};
 use alloc::vec;
 use alloc::vec::Vec;
 use cbc::cipher::block_padding::Pkcs7;
-use cbc::cipher::{BlockDecryptMut, BlockEncryptMut, KeyIvInit};
 use cbc::{Decryptor, Encryptor};
-use hmac::{Hmac, KeyInit, Mac};
+use hmac::{Hmac, Mac};
 use sha2::{Digest, Sha256};
 use subtle::ConstantTimeEq;
 use zeroize::Zeroizing;
@@ -66,7 +70,7 @@ pub mod v1 {
 
         let cipher = Aes256CbcEnc::new(key.into(), &iv.into());
         let ciphertext = cipher
-            .encrypt_padded_mut::<Pkcs7>(&mut buffer, plaintext.len())
+            .encrypt_padded::<Pkcs7>(&mut buffer, plaintext.len())
             .map_err(|_| CryptoError::EncryptionFailed)?;
 
         Ok(ciphertext.to_vec())
@@ -104,7 +108,7 @@ pub mod v1 {
 
         let cipher = Aes256CbcDec::new(key.into(), &iv.into());
         let plaintext = cipher
-            .decrypt_padded_mut::<Pkcs7>(&mut buffer)
+            .decrypt_padded::<Pkcs7>(&mut buffer)
             .map_err(|_| CryptoError::DecryptionFailed)?;
 
         Ok(plaintext.to_vec())
@@ -352,8 +356,6 @@ pub mod v2 {
     ///
     /// IV prepended ciphertext (length = 16 + plaintext.len())
     pub fn encrypt(key: &[u8; 32], plaintext: &[u8]) -> Result<Vec<u8>> {
-        use aes::Aes256;
-        use aes::cipher::{BlockEncrypt, KeyInit};
         use rand::Rng;
 
         if !plaintext.len().is_multiple_of(16) {
@@ -386,11 +388,11 @@ pub mod v2 {
             }
 
             // Encrypt block
-            let mut encrypted_block = block.into();
+            let mut encrypted_block: Array<u8, U16> = Array::from(block);
             cipher.encrypt_block(&mut encrypted_block);
 
             // Copy to output (starting at byte 16)
-            output[16 + i * 16..16 + (i + 1) * 16].copy_from_slice(&encrypted_block);
+            output[16 + i * 16..16 + (i + 1) * 16].copy_from_slice(encrypted_block.as_slice());
 
             // Update IV for next block (CBC chaining)
             iv_block = encrypted_block.into();
@@ -413,9 +415,6 @@ pub mod v2 {
     ///
     /// Decrypted plaintext
     pub fn decrypt(key: &[u8; 32], ciphertext: &[u8]) -> Result<Vec<u8>> {
-        use aes::Aes256;
-        use aes::cipher::{BlockDecrypt, KeyInit};
-
         if ciphertext.len() < 16 || !(ciphertext.len() - 16).is_multiple_of(16) {
             return Err(CryptoError::DecryptionFailed);
         }
@@ -439,7 +438,7 @@ pub mod v2 {
 
             // Decrypt block
             let encrypted_block = block;
-            let mut decrypted_block = block.into();
+            let mut decrypted_block: Array<u8, U16> = Array::from(block);
             cipher.decrypt_block(&mut decrypted_block);
 
             // XOR with IV

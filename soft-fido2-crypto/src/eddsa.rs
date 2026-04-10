@@ -154,7 +154,10 @@ pub fn public_from_private(private_key: &[u8; 32]) -> Result<Vec<u8>> {
 
 #[cfg(test)]
 mod tests {
+    extern crate alloc;
+
     use super::*;
+    use alloc::vec;
 
     #[test]
     fn test_keypair_generation() {
