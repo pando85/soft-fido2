@@ -9,12 +9,12 @@ extern crate alloc;
 
 use crate::error::{CryptoError, Result};
 
-use aes::Aes256;
 use aes::cipher::consts::U16;
 use aes::cipher::{
     Array, BlockCipherDecrypt, BlockCipherEncrypt, BlockModeDecrypt, BlockModeEncrypt, KeyInit,
     KeyIvInit,
 };
+use aes::Aes256;
 use alloc::vec;
 use alloc::vec::Vec;
 use cbc::cipher::block_padding::Pkcs7;
@@ -362,27 +362,21 @@ pub mod v2 {
             return Err(CryptoError::EncryptionFailed);
         }
 
-        // Generate random IV
         let mut rng = rand::thread_rng();
         let mut iv: [u8; 16] = [0u8; 16];
         rng.fill(&mut iv);
 
-        // Allocate output: IV + ciphertext
         let mut output = vec![0u8; 16 + plaintext.len()];
 
-        // Copy IV to first 16 bytes
         output[0..16].copy_from_slice(&iv);
 
-        // Initialize AES cipher
-        let cipher = Aes256::new(key.into());
+        let cipher = aes::Aes256::new(key.into());
 
-        // Encrypt using CBC mode with the random IV
         let mut iv_block = iv;
         for (i, chunk) in plaintext.chunks(16).enumerate() {
-            let mut block = [0u8; 16];
+            let mut block: [u8; 16] = [0u8; 16];
             block.copy_from_slice(chunk);
 
-            // XOR with IV
             for j in 0..16 {
                 block[j] ^= iv_block[j];
             }
@@ -394,8 +388,7 @@ pub mod v2 {
             // Copy to output (starting at byte 16)
             output[16 + i * 16..16 + (i + 1) * 16].copy_from_slice(encrypted_block.as_slice());
 
-            // Update IV for next block (CBC chaining)
-            iv_block = encrypted_block.into();
+            iv_block.copy_from_slice(encrypted_block.as_slice());
         }
 
         Ok(output)
@@ -419,39 +412,31 @@ pub mod v2 {
             return Err(CryptoError::DecryptionFailed);
         }
 
-        // Extract IV from first 16 bytes
         let mut iv: [u8; 16] = [0u8; 16];
         iv.copy_from_slice(&ciphertext[0..16]);
 
-        // Initialize AES cipher
-        let cipher = Aes256::new(key.into());
+        let cipher = aes::Aes256::new(key.into());
 
-        // Allocate output (excluding IV)
         let encrypted_data = &ciphertext[16..];
         let mut output = vec![0u8; encrypted_data.len()];
 
-        // Decrypt using CBC mode
         let mut iv_block = iv;
         for (i, chunk) in encrypted_data.chunks(16).enumerate() {
-            let mut block = [0u8; 16];
+            let mut block: [u8; 16] = [0u8; 16];
             block.copy_from_slice(chunk);
 
             // Decrypt block
-            let encrypted_block = block;
             let mut decrypted_block: Array<u8, U16> = Array::from(block);
             cipher.decrypt_block(&mut decrypted_block);
 
-            // XOR with IV
-            let mut plaintext_block: [u8; 16] = decrypted_block.into();
+            let mut plaintext_block: [u8; 16] = [0u8; 16];
             for j in 0..16 {
-                plaintext_block[j] ^= iv_block[j];
+                plaintext_block[j] = decrypted_block[j] ^ iv_block[j];
             }
 
-            // Copy to output
             output[i * 16..(i + 1) * 16].copy_from_slice(&plaintext_block);
 
-            // Update IV for next block (CBC chaining)
-            iv_block = encrypted_block;
+            iv_block.copy_from_slice(chunk);
         }
 
         Ok(output)

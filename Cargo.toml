@@ -23,7 +23,7 @@ sha2 = "0.11"
 hmac = "0.13"
 hkdf = "0.13"
 aes = "0.9"
-cbc = { version = "0.2.0-rc.4", features = ["alloc"] }
+cbc = { version = "0.2", features = ["alloc"] }
 cipher = "0.5"
 rand = "0.8"
 subtle = "2.6"
