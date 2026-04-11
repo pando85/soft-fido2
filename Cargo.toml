@@ -22,8 +22,8 @@ p256 = { version = "0.13", features = ["ecdsa", "ecdh"] }
 sha2 = "0.11"
 hmac = "0.13"
 hkdf = "0.13"
-aes = "0.8"
-cbc = { version = "0.1", features = ["alloc"] }
+aes = "0.9"
+cbc = { version = "0.2", features = ["alloc"] }
 rand = "0.8"
 subtle = "2.6"
 zeroize = { version = "1.8", default-features = false, features = ["alloc"] }
