@@ -13,8 +13,6 @@ use crate::{
 
 use soft_fido2_crypto::pin_protocol::{self, v2};
 
-use zeroize::Zeroizing;
-
 use alloc::{
     boxed::Box,
     collections::BTreeMap,
@@ -27,6 +25,7 @@ use alloc::{
 use rand::RngCore;
 use sha2::{Digest, Sha256};
 use subtle::ConstantTimeEq;
+use zeroize::Zeroizing;
 
 /// Type alias for custom command handlers
 type CustomCommandHandler = Box<dyn Fn(&[u8]) -> Result<Vec<u8>, StatusCode> + Send + Sync>;

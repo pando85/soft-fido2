@@ -9,9 +9,10 @@ extern crate alloc;
 
 use crate::error::{CryptoError, Result};
 
-use aes::Aes256;
 use alloc::vec;
 use alloc::vec::Vec;
+
+use aes::Aes256;
 use cbc::cipher::block_padding::Pkcs7;
 use cbc::cipher::{BlockModeDecrypt, BlockModeEncrypt, KeyIvInit};
 use cbc::{Decryptor, Encryptor};
