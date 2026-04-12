@@ -523,6 +523,9 @@ fn compute_rp_id_hash(rp_id: &str) -> [u8; 32] {
 mod tests {
     use super::*;
 
+    use alloc::string::{String, ToString};
+    use alloc::vec;
+
     use crate::{
         UpResult, UvResult,
         authenticator::{Authenticator, AuthenticatorConfig},

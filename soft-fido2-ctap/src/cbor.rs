@@ -594,6 +594,7 @@ impl MapParser {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use alloc::string::ToString;
 
     #[test]
     fn test_stack_buffer_write() {
@@ -831,14 +832,8 @@ mod tests {
 
     #[test]
     fn test_credential_id_round_trip() {
-        // Test that credential IDs (32 random bytes) survive round-trip encoding
-        // This reproduces the bug where credentials created during makeCredential
-        // cannot be found during getAssertion
         let credential_id: Vec<u8> = (0..32).map(|i| i as u8).collect();
 
-        eprintln!("Original credential ID: {:02x?}", credential_id);
-
-        // Build a CBOR map like in authenticatorGetAssertion response
         let cbor = MapBuilder::new()
             .insert(1, "public-key")
             .unwrap()
@@ -847,13 +842,8 @@ mod tests {
             .build()
             .unwrap();
 
-        eprintln!("Encoded CBOR: {:02x?}", &cbor[..cbor.len().min(64)]);
-
-        // Decode and extract credential ID
         let parser = MapParser::from_bytes(&cbor).unwrap();
         let decoded_id = parser.get_bytes(2).unwrap();
-
-        eprintln!("Decoded credential ID: {:02x?}", decoded_id);
 
         assert_eq!(
             credential_id, decoded_id,

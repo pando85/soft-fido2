@@ -13,6 +13,21 @@ use std::time::{SystemTime, UNIX_EPOCH};
 
 use serde::{Deserialize, Serialize};
 
+/// Authenticator data flags (FIDO2 spec section 6.1)
+///
+/// These flags are used in the authenticator data structure to indicate
+/// which optional fields are present and what verification was performed.
+pub mod auth_data_flags {
+    /// User Present (UP) - bit 0
+    pub const UP: u8 = 0x01;
+    /// User Verified (UV) - bit 2
+    pub const UV: u8 = 0x04;
+    /// Attested credential data (AT) - bit 6
+    pub const AT: u8 = 0x40;
+    /// Extension data (ED) - bit 7
+    pub const ED: u8 = 0x80;
+}
+
 /// Relying Party information
 ///
 /// Represents a web service that uses FIDO2 for authentication.
@@ -149,6 +164,7 @@ impl PublicKeyCredentialParameters {
 ///
 /// Common COSE algorithm identifiers used in FIDO2.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[non_exhaustive]
 #[repr(i32)]
 pub enum CoseAlgorithm {
     /// ES256 (ECDSA with P-256 and SHA-256)
@@ -229,6 +245,7 @@ impl AuthenticatorOptions {
 ///
 /// Defines the level of protection for a credential.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[non_exhaustive]
 #[repr(u8)]
 pub enum CredProtect {
     /// User verification optional
@@ -303,6 +320,14 @@ pub struct Credential {
 
     /// User display name
     pub user_display_name: Option<String>,
+
+    /// HMAC-secret credential random (32 bytes)
+    ///
+    /// This is used by the hmac-secret extension to derive HMAC outputs.
+    /// Generated during credential creation when hmac-secret is enabled.
+    /// If None, hmac-secret extension is not supported for this credential.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub cred_random: Option<SecBytes>,
 }
 
 impl Credential {
@@ -319,6 +344,34 @@ impl Credential {
         private_key: SecBytes,
         discoverable: bool,
     ) -> Self {
+        Self::with_cred_random(
+            id,
+            rp_id,
+            rp_name,
+            user_id,
+            user_name,
+            user_display_name,
+            algorithm,
+            private_key,
+            discoverable,
+            None,
+        )
+    }
+
+    /// Create a new credential with hmac-secret support
+    #[allow(clippy::too_many_arguments)]
+    pub fn with_cred_random(
+        id: Vec<u8>,
+        rp_id: String,
+        rp_name: Option<String>,
+        user_id: Vec<u8>,
+        user_name: Option<String>,
+        user_display_name: Option<String>,
+        algorithm: i32,
+        private_key: SecBytes,
+        discoverable: bool,
+        cred_random: Option<SecBytes>,
+    ) -> Self {
         Self {
             id,
             rp_id,
@@ -332,6 +385,7 @@ impl Credential {
             cred_protect: CredProtect::UserVerificationOptional.to_u8(),
             discoverable,
             user_display_name,
+            cred_random,
         }
     }
 }
@@ -355,6 +409,7 @@ fn current_timestamp() -> i64 {
 
 /// Authenticator transport types
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[non_exhaustive]
 pub enum AuthenticatorTransport {
     /// USB
     Usb,
@@ -422,6 +477,16 @@ pub struct PinState {
 
     /// Force PIN change flag
     pub force_pin_change: bool,
+
+    /// Timestamp when PIN is locked until (milliseconds since UNIX epoch)
+    ///
+    /// When set and the current time is before this timestamp, PIN authentication
+    /// is blocked. If `None`, PIN is not locked.
+    ///
+    /// Used for auto-lock feature where PIN is temporarily blocked after
+    /// max failed attempts for a configurable timeout period.
+    #[serde(default)]
+    pub locked_until: Option<u64>,
 }
 
 /// Default value for UV retries for serde deserialization
@@ -445,6 +510,7 @@ impl PinState {
             min_pin_length: DEFAULT_MIN_PIN_LENGTH,
             version: 0,
             force_pin_change: false,
+            locked_until: None,
         }
     }
 
@@ -458,6 +524,17 @@ impl PinState {
         self.retries == 0
     }
 
+    /// Check if PIN is temporarily locked
+    ///
+    /// Returns `true` if `locked_until` is set and current time is before that timestamp.
+    /// Returns `false` if not locked or lock has expired.
+    pub fn is_locked(&self, current_time_ms: u64) -> bool {
+        match self.locked_until {
+            Some(locked_until) => current_time_ms < locked_until,
+            None => false,
+        }
+    }
+
     /// Check if UV is blocked (no UV retries remaining)
     pub fn is_uv_blocked(&self) -> bool {
         self.uv_retries == 0
@@ -467,11 +544,26 @@ impl PinState {
     pub fn increment_version(&mut self) {
         self.version = self.version.saturating_add(1);
     }
+
+    /// Lock PIN until the specified timestamp
+    ///
+    /// # Arguments
+    ///
+    /// * `locked_until` - Unix timestamp in milliseconds when PIN will be unlocked
+    pub fn lock(&mut self, locked_until: u64) {
+        self.locked_until = Some(locked_until);
+    }
+
+    /// Unlock PIN (clear the lock)
+    pub fn unlock(&mut self) {
+        self.locked_until = None;
+    }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use alloc::vec;
 
     #[test]
     fn test_relying_party() {

@@ -22,10 +22,12 @@ hkdf.workspace = true
 aes.workspace = true
 cbc.workspace = true
 rand.workspace = true
+rand_08.workspace = true
 rand_core.workspace = true
 subtle.workspace = true
 zeroize.workspace = true
 thiserror.workspace = true
+ed25519-dalek = { version = "2.1", features = ["zeroize"] }
 
 [dev-dependencies]
 hex.workspace = true

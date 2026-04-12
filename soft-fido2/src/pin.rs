@@ -3,7 +3,7 @@
 //! Provides PIN/UV authentication protocol implementation for CTAP2.
 
 use crate::error::{Error, Result};
-use crate::request::PinUvAuthProtocol;
+use crate::request::{DEFAULT_TIMEOUT_MS, PinUvAuthProtocol};
 use crate::transport::Transport;
 
 use soft_fido2_crypto::pin_protocol;
@@ -16,6 +16,7 @@ use p256::{PublicKey as P256PublicKey, SecretKey as P256SecretKey};
 use zeroize::Zeroizing;
 
 /// PIN protocol version
+#[non_exhaustive]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum PinProtocol {
     /// PIN protocol version 1 (AES-256-CBC + HMAC-SHA-256)
@@ -114,7 +115,7 @@ impl PinUvAuthEncapsulation {
             .map_err(|_| Error::Other)?;
 
         // Send clientPin command (0x06) with 30s timeout
-        let response = transport.send_ctap_command(0x06, &request_bytes, 30000)?;
+        let response = transport.send_ctap_command(0x06, &request_bytes, DEFAULT_TIMEOUT_MS)?;
 
         // Transport layer already checked status byte and returns only CBOR data for success
         if response.is_empty() {
@@ -219,7 +220,7 @@ impl PinUvAuthEncapsulation {
 
         let request_bytes = builder.build().map_err(|_| Error::Other)?;
 
-        let response = transport.send_ctap_command(0x06, &request_bytes, 30000)?;
+        let response = transport.send_ctap_command(0x06, &request_bytes, DEFAULT_TIMEOUT_MS)?;
 
         if response.is_empty() {
             return Err(Error::Other);
@@ -315,7 +316,7 @@ impl PinUvAuthEncapsulation {
         let request_bytes = builder.build().map_err(|_| Error::Other)?;
 
         // Send clientPin command (0x06) with 30s timeout
-        let response = transport.send_ctap_command(0x06, &request_bytes, 30000)?;
+        let response = transport.send_ctap_command(0x06, &request_bytes, DEFAULT_TIMEOUT_MS)?;
 
         // Transport layer already checked status byte and returns only CBOR data for success
         if response.is_empty() {
@@ -550,7 +551,7 @@ impl PinUvAuthEncapsulation {
             .map_err(|_| Error::Other)?;
 
         // Send clientPin command (0x06) with 30s timeout
-        let _response = transport.send_ctap_command(0x06, &request_bytes, 30000)?;
+        let _response = transport.send_ctap_command(0x06, &request_bytes, DEFAULT_TIMEOUT_MS)?;
 
         // Success - empty response means PIN was set
         Ok(())
@@ -662,7 +663,7 @@ impl PinUvAuthEncapsulation {
             .map_err(|_| Error::Other)?;
 
         // Send clientPin command (0x06) with 30s timeout
-        let _response = transport.send_ctap_command(0x06, &request_bytes, 30000)?;
+        let _response = transport.send_ctap_command(0x06, &request_bytes, DEFAULT_TIMEOUT_MS)?;
 
         // Success - empty response means PIN was changed
         Ok(())
@@ -688,7 +689,7 @@ impl PinUvAuthEncapsulation {
             .map_err(|_| Error::Other)?;
 
         // Send clientPin command (0x06) with 30s timeout
-        let response = transport.send_ctap_command(0x06, &request_bytes, 30000)?;
+        let response = transport.send_ctap_command(0x06, &request_bytes, DEFAULT_TIMEOUT_MS)?;
 
         if response.is_empty() {
             return Err(Error::Other);

@@ -48,6 +48,7 @@ const LIFETIME_MS: u64 = 600_000;
 /// bitwise OR.
 #[repr(u8)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[non_exhaustive]
 pub enum Permission {
     /// Make credential permission (0x01)
     ///
@@ -144,10 +145,13 @@ impl PinToken {
     /// Panics if the internal token is not exactly 32 bytes (should never happen
     /// since tokens are always created with 32 bytes).
     pub fn value(&self) -> &[u8; 32] {
+        // SAFETY: PinToken is only created via new() which enforces 32-byte tokens.
+        // The token field is private and cannot be modified externally.
+        // This invariant is guaranteed by the type's constructors.
         self.token
             .as_slice()
             .try_into()
-            .expect("PinToken always contains exactly 32 bytes")
+            .expect("PinToken invariant: always contains exactly 32 bytes")
     }
 
     /// Get the permission bitmask
@@ -363,6 +367,7 @@ impl Default for PinTokenManager {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use alloc::string::ToString;
 
     /// Create a test token with default values
     fn create_test_token(now: u64) -> PinToken {

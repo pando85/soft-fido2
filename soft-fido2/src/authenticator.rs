@@ -50,6 +50,7 @@ impl PinStorageCallbacks for NoOpPinStorage {
 }
 
 /// User presence result
+#[non_exhaustive]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum UpResult {
     Denied,
@@ -73,11 +74,13 @@ impl From<CtapUpResult> for UpResult {
             CtapUpResult::Denied => UpResult::Denied,
             CtapUpResult::Accepted => UpResult::Accepted,
             CtapUpResult::Timeout => UpResult::Timeout,
+            _ => UpResult::Denied,
         }
     }
 }
 
 /// User verification result
+#[non_exhaustive]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum UvResult {
     Denied,
@@ -104,6 +107,7 @@ impl From<CtapUvResult> for UvResult {
             CtapUvResult::Accepted => UvResult::Accepted,
             CtapUvResult::AcceptedWithUp => UvResult::AcceptedWithUp,
             CtapUvResult::Timeout => UvResult::Timeout,
+            _ => UvResult::Denied,
         }
     }
 }
@@ -287,6 +291,7 @@ impl<C: AuthenticatorCallbacks> CredentialStorageCallbacks for CallbackAdapter<C
             created: &credential.created,
             discoverable: &credential.discoverable,
             cred_protect: Some(&credential.cred_protect),
+            cred_random: credential.cred_random.as_ref(),
         };
 
         self.callbacks
@@ -367,6 +372,8 @@ pub struct AuthenticatorConfig {
     pub firmware_version: Option<u32>,
     pub constant_sign_count: bool,
     pub max_msg_size: usize,
+    /// Supported COSE algorithms (e.g., -7 for ES256, -8 for EdDSA)
+    pub algorithms: Vec<i32>,
     /// USB/HID device name
     pub device_name: Option<String>,
     /// USB vendor ID
@@ -375,6 +382,10 @@ pub struct AuthenticatorConfig {
     pub product_id: Option<u16>,
     /// Device version number
     pub device_version: Option<u16>,
+    /// Maximum PIN retry attempts (1-8, default 8)
+    pub max_pin_retries: u8,
+    /// Auto-lock timeout in seconds (0 = permanent lock, default 0)
+    pub auto_lock_timeout: u32,
 }
 
 impl Default for AuthenticatorConfig {
@@ -389,10 +400,13 @@ impl Default for AuthenticatorConfig {
             firmware_version: None,
             constant_sign_count: false,
             max_msg_size: MAX_CTAP_MESSAGE_SIZE,
+            algorithms: vec![-7, -19], // ES256, Ed25519
             device_name: None,
             vendor_id: None,
             product_id: None,
             device_version: None,
+            max_pin_retries: 8,
+            auto_lock_timeout: 0,
         }
     }
 }
@@ -414,10 +428,13 @@ pub struct AuthenticatorConfigBuilder {
     firmware_version: Option<u32>,
     constant_sign_count: bool,
     max_msg_size: usize,
+    algorithms: Vec<i32>,
     device_name: Option<String>,
     vendor_id: Option<u16>,
     product_id: Option<u16>,
     device_version: Option<u16>,
+    max_pin_retries: u8,
+    auto_lock_timeout: u32,
 }
 
 impl Default for AuthenticatorConfigBuilder {
@@ -432,10 +449,13 @@ impl Default for AuthenticatorConfigBuilder {
             firmware_version: None,
             constant_sign_count: false,
             max_msg_size: MAX_CTAP_MESSAGE_SIZE,
+            algorithms: vec![-7, -19], // ES256, Ed25519
             device_name: None,
             vendor_id: None,
             product_id: None,
             device_version: None,
+            max_pin_retries: 0, // 0 means use default (8)
+            auto_lock_timeout: 0,
         }
     }
 }
@@ -510,6 +530,31 @@ impl AuthenticatorConfigBuilder {
         self
     }
 
+    pub fn algorithms(mut self, algorithms: Vec<i32>) -> Self {
+        self.algorithms = algorithms;
+        self
+    }
+
+    /// Set maximum PIN retry attempts (1-8)
+    ///
+    /// Default is 8. After this many failed PIN attempts, the PIN is blocked.
+    pub fn max_pin_retries(mut self, retries: u8) -> Self {
+        self.max_pin_retries = retries;
+        self
+    }
+
+    /// Set auto-lock timeout in seconds
+    ///
+    /// When set to a non-zero value and PIN retries are exhausted, the PIN is
+    /// temporarily locked for this many seconds. After the timeout expires,
+    /// the retry counter is reset and PIN authentication can be attempted again.
+    ///
+    /// When set to 0 (default), PIN is permanently blocked after max retries.
+    pub fn auto_lock_timeout(mut self, timeout_seconds: u32) -> Self {
+        self.auto_lock_timeout = timeout_seconds;
+        self
+    }
+
     pub fn build(self) -> AuthenticatorConfig {
         AuthenticatorConfig {
             aaguid: self.aaguid,
@@ -529,10 +574,21 @@ impl AuthenticatorConfigBuilder {
             firmware_version: self.firmware_version,
             constant_sign_count: self.constant_sign_count,
             max_msg_size: self.max_msg_size,
+            algorithms: if self.algorithms.is_empty() {
+                vec![-7, -8] // Default: ES256, EdDSA
+            } else {
+                self.algorithms
+            },
             device_name: self.device_name,
             vendor_id: self.vendor_id,
             product_id: self.product_id,
             device_version: self.device_version,
+            max_pin_retries: if self.max_pin_retries == 0 {
+                8
+            } else {
+                self.max_pin_retries
+            },
+            auto_lock_timeout: self.auto_lock_timeout,
         }
     }
 }
@@ -622,7 +678,10 @@ impl<C: AuthenticatorCallbacks> Authenticator<C> {
             .with_extensions(config.extensions)
             .with_force_resident_keys(config.force_resident_keys)
             .with_constant_sign_count(config.constant_sign_count)
-            .with_max_msg_size(config.max_msg_size);
+            .with_max_msg_size(config.max_msg_size)
+            .with_algorithms(config.algorithms)
+            .with_max_pin_retries(config.max_pin_retries)
+            .with_auto_lock_timeout(config.auto_lock_timeout);
 
         if let Some(fw_version) = config.firmware_version {
             ctap_config = ctap_config.with_firmware_version(fw_version);

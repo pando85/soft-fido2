@@ -8,7 +8,7 @@ extern crate alloc;
 use crate::error::{CryptoError, Result};
 
 use alloc::vec::Vec;
-use p256::elliptic_curve::Generate;
+use p256::elliptic_curve::rand_core::OsRng;
 use p256::elliptic_curve::sec1::ToEncodedPoint;
 use p256::{PublicKey, SecretKey};
 use zeroize::Zeroizing;
@@ -30,9 +30,8 @@ impl KeyPair {
     /// let keypair = KeyPair::generate().unwrap();
     /// ```
     pub fn generate() -> Result<Self> {
-        let mut rng = rand::rngs::SysRng;
-        let secret = SecretKey::try_generate_from_rng(&mut rng)
-            .map_err(|_| CryptoError::InvalidPrivateKey)?;
+        let mut rng = OsRng;
+        let secret = SecretKey::random(&mut rng);
         let public = secret.public_key();
         Ok(Self { secret, public })
     }
@@ -54,8 +53,17 @@ impl KeyPair {
     /// ```
     pub fn public_key_cose(&self) -> ([u8; 32], [u8; 32]) {
         let point = self.public.to_encoded_point(false);
-        let x = point.x().expect("uncompressed point has x coordinate");
-        let y = point.y().expect("uncompressed point has y coordinate");
+        // SAFETY: to_encoded_point(false) produces an uncompressed point (0x04 prefix),
+        // which always contains both x and y coordinates for P-256 curve points.
+        // The P-256 curve is defined over a prime field where all valid points have
+        // both coordinates, and SecretKey::public_key() always produces valid points.
+        let x = point
+            .x()
+            .expect("uncompressed P-256 point always has x coordinate");
+        // SAFETY: Same as above - uncompressed P-256 points always have both coordinates.
+        let y = point
+            .y()
+            .expect("uncompressed P-256 point always has y coordinate");
 
         let mut x_bytes = [0u8; 32];
         let mut y_bytes = [0u8; 32];

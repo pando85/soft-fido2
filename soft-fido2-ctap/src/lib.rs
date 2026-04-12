@@ -20,6 +20,8 @@ pub mod extensions;
 pub mod pin_token;
 pub mod sec_bytes;
 pub mod status;
+#[cfg(test)]
+pub mod test_utils;
 pub mod types;
 
 // Re-export commonly used types

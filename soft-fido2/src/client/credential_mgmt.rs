@@ -5,8 +5,8 @@ use crate::Transport;
 use crate::ctap::CtapCommand;
 use crate::error::Result;
 use crate::request::{
-    CredentialManagementRequest, DeleteCredentialRequest, EnumerateCredentialsRequest,
-    UpdateUserRequest,
+    CredentialManagementRequest, DEFAULT_TIMEOUT_MS, DeleteCredentialRequest,
+    EnumerateCredentialsRequest, UpdateUserRequest,
 };
 use crate::response::{
     CredentialEnumerationBeginResponse, CredentialInfo, CredentialsMetadata,
@@ -73,7 +73,7 @@ pub fn get_credentials_metadata(
     let response = transport.send_ctap_command(
         CtapCommand::CredentialManagement.as_u8(),
         &request_bytes,
-        30000,
+        DEFAULT_TIMEOUT_MS,
     )?;
     CredentialsMetadata::from_cbor(&response)
 }
@@ -109,7 +109,7 @@ pub fn enumerate_rps_begin(
     let response = transport.send_ctap_command(
         CtapCommand::CredentialManagement.as_u8(),
         &request_bytes,
-        30000,
+        DEFAULT_TIMEOUT_MS,
     )?;
     RpEnumerationBeginResponse::from_cbor(&response)
 }
@@ -130,7 +130,7 @@ pub fn enumerate_rps_get_next(transport: &mut Transport) -> Result<RpInfo> {
     let response = transport.send_ctap_command(
         CtapCommand::CredentialManagement.as_u8(),
         &request_bytes,
-        30000,
+        DEFAULT_TIMEOUT_MS,
     )?;
     crate::response::RpEnumerationNextResponse::from_cbor(&response)
 }
@@ -209,7 +209,7 @@ pub fn enumerate_credentials_begin(
     let response = transport.send_ctap_command(
         CtapCommand::CredentialManagement.as_u8(),
         &request_bytes,
-        30000,
+        DEFAULT_TIMEOUT_MS,
     )?;
     CredentialEnumerationBeginResponse::from_cbor(&response)
 }
@@ -230,7 +230,7 @@ pub fn enumerate_credentials_get_next(transport: &mut Transport) -> Result<Crede
     let response = transport.send_ctap_command(
         CtapCommand::CredentialManagement.as_u8(),
         &request_bytes,
-        30000,
+        DEFAULT_TIMEOUT_MS,
     )?;
     crate::response::CredentialEnumerationNextResponse::from_cbor(&response)
 }
@@ -302,7 +302,7 @@ pub fn delete_credential(
     let _response = transport.send_ctap_command(
         CtapCommand::CredentialManagement.as_u8(),
         &request_bytes,
-        30000,
+        DEFAULT_TIMEOUT_MS,
     )?;
     Ok(())
 }
@@ -361,7 +361,7 @@ pub fn update_user_information(
     let _response = transport.send_ctap_command(
         CtapCommand::CredentialManagement.as_u8(),
         &request_bytes,
-        30000,
+        DEFAULT_TIMEOUT_MS,
     )?;
     Ok(())
 }

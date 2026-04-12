@@ -4,7 +4,9 @@
 //!
 //! - **ECDH**: P-256 key agreement for PIN protocol
 //! - **ECDSA**: ES256 signatures for attestation and assertions
+//! - **EdDSA**: Ed25519 signatures for attestation and assertions
 //! - **PIN Protocols**: V1 (AES-256-CBC + HMAC) and V2 (HMAC-only)
+//! - **HMAC-SHA256**: For hmac-secret extension
 //!
 //! All implementations follow the FIDO2 specification:
 //! <https://fidoalliance.org/specs/fido-v2.2-rd-20230321/fido-client-to-authenticator-protocol-v2.2-rd-20230321.html>
@@ -13,6 +15,7 @@
 
 pub mod ecdh;
 pub mod ecdsa;
+pub mod eddsa;
 pub mod error;
 pub mod pin_protocol;
 
@@ -21,3 +24,29 @@ pub use error::{CryptoError, Result};
 
 // Re-export zeroize for callers to use with sensitive data
 pub use zeroize::Zeroizing;
+
+/// Compute HMAC-SHA-256
+///
+/// Used by the hmac-secret extension to derive secrets from credentials.
+///
+/// # Arguments
+/// * `key` - The HMAC key (e.g., credential random)
+/// * `data` - The data to authenticate (e.g., salt)
+///
+/// # Returns
+/// 32-byte HMAC-SHA-256 output
+pub fn hmac_sha256(key: &[u8], data: &[u8]) -> [u8; 32] {
+    use hmac::{Hmac, KeyInit, Mac};
+    use sha2::Sha256;
+
+    // SAFETY: HMAC-SHA256 accepts keys of any size per RFC 2104.
+    // If the key is shorter than the block size, it's padded with zeros.
+    // If longer, it's hashed first. This never fails.
+    let mut mac = Hmac::<Sha256>::new_from_slice(key).expect("HMAC-SHA256 accepts any key size");
+    mac.update(data);
+    let result = mac.finalize();
+
+    let mut output = [0u8; 32];
+    output.copy_from_slice(&result.into_bytes());
+    output
+}

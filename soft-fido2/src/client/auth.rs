@@ -3,7 +3,7 @@
 use crate::error::{Error, Result};
 use crate::request::PinUvAuthProtocol;
 
-use hmac::{Hmac, Mac};
+use hmac::{Hmac, KeyInit, Mac};
 use sha2::Sha256;
 
 type HmacSha256 = Hmac<Sha256>;

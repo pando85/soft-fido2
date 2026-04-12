@@ -13,9 +13,9 @@ use aes::Aes256;
 use alloc::vec;
 use alloc::vec::Vec;
 use cbc::cipher::block_padding::Pkcs7;
-use cbc::cipher::{BlockDecryptMut, BlockEncryptMut, KeyIvInit};
+use cbc::cipher::{BlockModeDecrypt, BlockModeEncrypt, KeyIvInit};
 use cbc::{Decryptor, Encryptor};
-use hmac::{Hmac, Mac};
+use hmac::{Hmac, KeyInit, Mac};
 use sha2::{Digest, Sha256};
 use subtle::ConstantTimeEq;
 use zeroize::Zeroizing;
@@ -66,7 +66,7 @@ pub mod v1 {
 
         let cipher = Aes256CbcEnc::new(key.into(), &iv.into());
         let ciphertext = cipher
-            .encrypt_padded_mut::<Pkcs7>(&mut buffer, plaintext.len())
+            .encrypt_padded::<Pkcs7>(&mut buffer, plaintext.len())
             .map_err(|_| CryptoError::EncryptionFailed)?;
 
         Ok(ciphertext.to_vec())
@@ -104,7 +104,7 @@ pub mod v1 {
 
         let cipher = Aes256CbcDec::new(key.into(), &iv.into());
         let plaintext = cipher
-            .decrypt_padded_mut::<Pkcs7>(&mut buffer)
+            .decrypt_padded::<Pkcs7>(&mut buffer)
             .map_err(|_| CryptoError::DecryptionFailed)?;
 
         Ok(plaintext.to_vec())
@@ -135,7 +135,9 @@ pub mod v1 {
     /// assert_eq!(mac.len(), 16);
     /// ```
     pub fn authenticate(key: &[u8; 32], data: &[u8]) -> [u8; 16] {
-        let mut mac = HmacSha256::new_from_slice(key).expect("HMAC accepts any key size");
+        // SAFETY: HMAC-SHA256 accepts keys of any size per RFC 2104.
+        // The 32-byte key is valid and will never cause this to fail.
+        let mut mac = HmacSha256::new_from_slice(key).expect("HMAC-SHA256 accepts any key size");
         mac.update(data);
         let result = mac.finalize();
 
@@ -245,10 +247,13 @@ pub mod v2 {
     /// assert_eq!(mac.len(), 32);
     /// ```
     pub fn authenticate(key: &[u8; 32], data: &[u8]) -> [u8; 32] {
-        use hmac::{Hmac, Mac};
+        use hmac::{Hmac, KeyInit, Mac};
         use sha2::Sha256;
 
-        let mut mac = Hmac::<Sha256>::new_from_slice(key).expect("HMAC can accept key of any size");
+        // SAFETY: HMAC-SHA256 accepts keys of any size per RFC 2104.
+        // The 32-byte key is valid and will never cause this to fail.
+        let mut mac =
+            Hmac::<Sha256>::new_from_slice(key).expect("HMAC-SHA256 accepts any key size");
         mac.update(data);
 
         let result = mac.finalize();
@@ -321,8 +326,10 @@ pub mod v2 {
 
         let hkdf = Hkdf::<Sha256>::new(Some(&salt), shared_secret);
         let mut key = Zeroizing::new([0u8; 32]);
+        // SAFETY: HKDF-SHA-256 can expand up to 255 * 32 = 8160 bytes.
+        // Requesting 32 bytes is always valid.
         hkdf.expand(info, &mut *key)
-            .expect("32 bytes is valid length for HKDF-SHA-256");
+            .expect("32 bytes is valid length for HKDF-SHA-256 (max is 8160)");
 
         key
     }
@@ -345,48 +352,37 @@ pub mod v2 {
     ///
     /// IV prepended ciphertext (length = 16 + plaintext.len())
     pub fn encrypt(key: &[u8; 32], plaintext: &[u8]) -> Result<Vec<u8>> {
-        use aes::Aes256;
-        use aes::cipher::{BlockEncrypt, KeyInit};
+        use aes::cipher::{BlockCipherEncrypt, KeyInit};
         use rand::Rng;
 
         if !plaintext.len().is_multiple_of(16) {
             return Err(CryptoError::EncryptionFailed);
         }
 
-        // Generate random IV
         let mut rng = rand::rng();
         let mut iv: [u8; 16] = [0u8; 16];
         rng.fill(&mut iv);
 
-        // Allocate output: IV + ciphertext
         let mut output = vec![0u8; 16 + plaintext.len()];
 
-        // Copy IV to first 16 bytes
         output[0..16].copy_from_slice(&iv);
 
-        // Initialize AES cipher
-        let cipher = Aes256::new(key.into());
+        let cipher = aes::Aes256::new(key.into());
 
-        // Encrypt using CBC mode with the random IV
         let mut iv_block = iv;
         for (i, chunk) in plaintext.chunks(16).enumerate() {
-            let mut block = [0u8; 16];
+            let mut block: [u8; 16] = [0u8; 16];
             block.copy_from_slice(chunk);
 
-            // XOR with IV
             for j in 0..16 {
                 block[j] ^= iv_block[j];
             }
 
-            // Encrypt block
-            let mut encrypted_block = block.into();
-            cipher.encrypt_block(&mut encrypted_block);
+            cipher.encrypt_block((&mut block).into());
 
-            // Copy to output (starting at byte 16)
-            output[16 + i * 16..16 + (i + 1) * 16].copy_from_slice(&encrypted_block);
+            output[16 + i * 16..16 + (i + 1) * 16].copy_from_slice(&block);
 
-            // Update IV for next block (CBC chaining)
-            iv_block = encrypted_block.into();
+            iv_block.copy_from_slice(&block);
         }
 
         Ok(output)
@@ -406,46 +402,35 @@ pub mod v2 {
     ///
     /// Decrypted plaintext
     pub fn decrypt(key: &[u8; 32], ciphertext: &[u8]) -> Result<Vec<u8>> {
-        use aes::Aes256;
-        use aes::cipher::{BlockDecrypt, KeyInit};
+        use aes::cipher::{BlockCipherDecrypt, KeyInit};
 
         if ciphertext.len() < 16 || !(ciphertext.len() - 16).is_multiple_of(16) {
             return Err(CryptoError::DecryptionFailed);
         }
 
-        // Extract IV from first 16 bytes
         let mut iv: [u8; 16] = [0u8; 16];
         iv.copy_from_slice(&ciphertext[0..16]);
 
-        // Initialize AES cipher
-        let cipher = Aes256::new(key.into());
+        let cipher = aes::Aes256::new(key.into());
 
-        // Allocate output (excluding IV)
         let encrypted_data = &ciphertext[16..];
         let mut output = vec![0u8; encrypted_data.len()];
 
-        // Decrypt using CBC mode
         let mut iv_block = iv;
         for (i, chunk) in encrypted_data.chunks(16).enumerate() {
-            let mut block = [0u8; 16];
+            let mut block: [u8; 16] = [0u8; 16];
             block.copy_from_slice(chunk);
 
-            // Decrypt block
-            let encrypted_block = block;
-            let mut decrypted_block = block.into();
-            cipher.decrypt_block(&mut decrypted_block);
+            cipher.decrypt_block((&mut block).into());
 
-            // XOR with IV
-            let mut plaintext_block: [u8; 16] = decrypted_block.into();
+            let mut plaintext_block: [u8; 16] = [0u8; 16];
             for j in 0..16 {
-                plaintext_block[j] ^= iv_block[j];
+                plaintext_block[j] = block[j] ^ iv_block[j];
             }
 
-            // Copy to output
             output[i * 16..(i + 1) * 16].copy_from_slice(&plaintext_block);
 
-            // Update IV for next block (CBC chaining)
-            iv_block = encrypted_block;
+            iv_block.copy_from_slice(chunk);
         }
 
         Ok(output)
@@ -472,8 +457,10 @@ pub mod v2 {
 
         let hkdf = Hkdf::<Sha256>::new(Some(&salt), shared_secret);
         let mut key = Zeroizing::new([0u8; 32]);
+        // SAFETY: HKDF-SHA-256 can expand up to 255 * 32 = 8160 bytes.
+        // Requesting 32 bytes is always valid.
         hkdf.expand(info, &mut *key)
-            .expect("32 bytes is valid length for HKDF-SHA-256");
+            .expect("32 bytes is valid length for HKDF-SHA-256 (max is 8160)");
 
         key
     }

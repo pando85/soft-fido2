@@ -9,13 +9,16 @@ use crate::{
     authenticator::Authenticator,
     callbacks::AuthenticatorCallbacks,
     cbor::{MapBuilder, MapParser},
-    commands::make_credential::get_user_verified_flag_value,
-    extensions::GetAssertionExtensions,
+    commands::make_credential::{
+        MAX_CREDENTIAL_ID_LENGTH, get_user_present_flag_value, get_user_verified_flag_value,
+    },
+    extensions::{GetAssertionExtensions, compute_hmac_secret},
     status::{Result, StatusCode},
-    types::PublicKeyCredentialDescriptor,
+    types::{PublicKeyCredentialDescriptor, auth_data_flags},
 };
 
 use soft_fido2_crypto::ecdsa;
+use soft_fido2_crypto::eddsa;
 
 use alloc::{
     format,
@@ -25,6 +28,12 @@ use alloc::{
 
 use sha2::{Digest, Sha256};
 use zeroize::Zeroizing;
+
+/// Maximum RP ID length (typical domain name limit)
+const MAX_RP_ID_LENGTH: usize = 256;
+
+/// Maximum number of credentials in allow list
+const MAX_ALLOW_LIST_SIZE: usize = 128;
 
 /// GetAssertion request parameter keys
 mod req_keys {
@@ -82,9 +91,12 @@ pub fn handle<C: AuthenticatorCallbacks>(
     // Required parameters
     let rp_id: String = parser.get(req_keys::RP_ID)?;
 
-    // Validate RP ID is not empty (empty RP ID could match unintended credentials)
+    // Validate RP ID
     if rp_id.is_empty() {
         return Err(StatusCode::InvalidParameter);
+    }
+    if rp_id.len() > MAX_RP_ID_LENGTH {
+        return Err(StatusCode::InvalidLength);
     }
 
     let client_data_hash: Vec<u8> = parser.get_bytes(req_keys::CLIENT_DATA_HASH)?;
@@ -98,6 +110,10 @@ pub fn handle<C: AuthenticatorCallbacks>(
     {
         match raw_allow_list {
             crate::cbor::Value::Array(arr) => {
+                // Validate allow list size
+                if arr.len() > MAX_ALLOW_LIST_SIZE {
+                    return Err(StatusCode::LimitExceeded);
+                }
                 let mut descriptors = Vec::new();
                 for elem in arr.iter() {
                     if let crate::cbor::Value::Map(map) = elem {
@@ -161,6 +177,10 @@ pub fn handle<C: AuthenticatorCallbacks>(
                         }
 
                         if let (Some(cred_type), Some(id)) = (cred_type, id) {
+                            // Validate credential ID size (per CTAP spec max is 1023 bytes)
+                            if id.len() > MAX_CREDENTIAL_ID_LENGTH {
+                                return Err(StatusCode::InvalidLength);
+                            }
                             descriptors.push(PublicKeyCredentialDescriptor {
                                 r#type: cred_type,
                                 id,
@@ -367,6 +387,12 @@ pub fn handle<C: AuthenticatorCallbacks>(
             // Step 7.1.5: Set "uv" bit in response
             response_state.uv = true;
 
+            // Also check if user presence was confirmed during token acquisition
+            let user_present_flag_value = get_user_present_flag_value(auth);
+            if user_present_flag_value {
+                response_state.up = true;
+            }
+
             // Continue to Step 8
         } else if options.uv {
             // Step 7.2: "uv" option is present and true (pinUvAuthParam is not present)
@@ -391,22 +417,16 @@ pub fn handle<C: AuthenticatorCallbacks>(
                     return Err(StatusCode::UserActionTimeout);
                 }
                 UvResult::Denied => {
-                    // UV failed - decrement retry counter
                     auth.decrement_uv_retries();
 
-                    // Check if UV is now blocked
                     if auth.is_uv_blocked() {
                         return Err(StatusCode::UvBlocked);
                     }
 
-                    // Check if clientPin is supported and noMcGaPermissionsWithClientPin is absent/false
-                    if auth.config().options.client_pin.unwrap_or(false)
-                        && !auth.config().options.pin_uv_auth_token
-                    {
+                    if auth.is_pin_set() {
                         return Err(StatusCode::PuatRequired);
                     }
 
-                    // Otherwise return operation denied
                     return Err(StatusCode::OperationDenied);
                 }
             }
@@ -432,6 +452,8 @@ pub fn handle<C: AuthenticatorCallbacks>(
                 && cred_rp_id == rp_id
             {
                 // Create a temporary credential from unwrapped data
+                // Note: Non-discoverable credentials don't support hmac-secret
+                // because cred_random isn't stored in the wrapped credential
                 let cred = crate::types::Credential {
                     id: desc.id.clone(),
                     rp_id: cred_rp_id,
@@ -445,6 +467,7 @@ pub fn handle<C: AuthenticatorCallbacks>(
                     created: 0,          // Not tracked
                     discoverable: false, // Non-resident
                     cred_protect: 0,     // Not tracked
+                    cred_random: None,   // Not supported for non-resident creds
                 };
                 creds.push(cred);
             }
@@ -515,7 +538,8 @@ pub fn handle<C: AuthenticatorCallbacks>(
 
     // Step 11: Process extensions
     // Extensions are processed; outputs will be added to authenticator data
-    let extension_outputs = extensions.build_outputs();
+    let mut extension_outputs = extensions.build_outputs();
+    // Note: hmac-secret output is computed after credential selection
 
     // Step 12: Credential selection
     let (selected_cred, user_selected) = if allow_list.is_some() {
@@ -554,6 +578,40 @@ pub fn handle<C: AuthenticatorCallbacks>(
         }
     };
 
+    // Compute hmac-secret output if requested and credential supports it
+    if extensions.has_hmac_secret()
+        && let Some(hmac_input) = extensions.get_hmac_secret()
+    {
+        // Get the stored keypair for the PIN protocol version
+        // This keypair was established via getKeyAgreement clientPIN subcommand
+        let keypair = auth.get_pin_protocol_keypair(hmac_input.pin_uv_auth_protocol);
+
+        if let Some(auth_keypair) = keypair
+            && let Some(cred_random) = &selected_cred.cred_random
+        {
+            // Compute hmac-secret output using the stored keypair
+            if let Some(encrypted_output) =
+                compute_hmac_secret(hmac_input, cred_random.as_slice(), auth_keypair)
+            {
+                // Add hmac-secret to extension outputs
+                // Per spec, the output is just the encrypted bytes
+                let ext_name = crate::extensions::ext_ids::HMAC_SECRET;
+                if let Some(crate::cbor::Value::Map(ref mut map)) = extension_outputs {
+                    map.push((
+                        crate::cbor::Value::Text(ext_name.to_string()),
+                        crate::cbor::Value::Bytes(encrypted_output),
+                    ));
+                } else {
+                    use alloc::vec;
+                    extension_outputs = Some(crate::cbor::Value::Map(vec![(
+                        crate::cbor::Value::Text(ext_name.to_string()),
+                        crate::cbor::Value::Bytes(encrypted_output),
+                    )]));
+                }
+            }
+        }
+    }
+
     // Step 13: Attestation statement generation
     // Simplified: Only generate attestation if attestationFormatsPreference is present and not ["none"]
     // For now, we skip attestation generation (most common case)
@@ -584,7 +642,7 @@ pub fn handle<C: AuthenticatorCallbacks>(
         extension_outputs.as_ref(),
     )?;
 
-    // Generate signature
+    // Generate signature based on credential algorithm
     let sig_data = [&auth_data[..], &client_data_hash[..]].concat();
 
     let key_bytes = selected_cred.private_key.as_slice();
@@ -599,7 +657,10 @@ pub fn handle<C: AuthenticatorCallbacks>(
         arr
     });
 
-    let signature = ecdsa::sign(&priv_key_array, &sig_data)?;
+    let signature = match selected_cred.algorithm {
+        -8 | -19 => eddsa::sign(&priv_key_array, &sig_data)?,
+        _ => ecdsa::sign(&priv_key_array, &sig_data)?,
+    };
 
     // Build credential descriptor
     let credential_desc = PublicKeyCredentialDescriptor {
@@ -708,13 +769,13 @@ fn build_authenticator_data(
     // Flags (1 byte)
     let mut flags = 0u8;
     if up {
-        flags |= 0x01; // UP
+        flags |= auth_data_flags::UP;
     }
     if uv {
-        flags |= 0x04; // UV
+        flags |= auth_data_flags::UV;
     }
     if extensions.is_some() {
-        flags |= 0x80; // ED (extension data present)
+        flags |= auth_data_flags::ED;
     }
     auth_data.push(flags);
 

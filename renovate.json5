@@ -19,6 +19,18 @@
       matchUpdateTypes: [
         'patch',
       ],
+      automerge: true,
+      automergeType: 'pr',
+      ignoreTests: false,
+      platformAutomerge: true,
+      matchPackageNames: [
+        '/.*/',
+      ],
+    },
+    {
+      matchUpdateTypes: [
+        'minor',
+      ],
       matchCurrentVersion: '!/^0/',
       automerge: true,
       automergeType: 'pr',
@@ -40,6 +52,15 @@
         'after 4am and before 10am on the first day of the month',
       ],
       enabled: true,
+    },
+    {
+      matchPackageNames: [
+        'sha2',
+        'hmac',
+        'hkdf',
+      ],
+      groupName: 'digest crates (sha2, hmac, hkdf)',
+      groupSlug: 'digest-crates',
     },
   ],
 }

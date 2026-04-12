@@ -5,7 +5,11 @@ use crate::error::{Error, Result};
 use soft_fido2_ctap::types::{RelyingParty, User};
 
 use alloc::string::String;
+use alloc::vec;
 use alloc::vec::Vec;
+
+/// Default timeout for CTAP operations (30 seconds)
+pub const DEFAULT_TIMEOUT_MS: i32 = 30000;
 
 /// A validated client data hash (must be exactly 32 bytes)
 ///
@@ -58,6 +62,7 @@ impl From<[u8; 32]> for ClientDataHash {
 }
 
 /// Type of credential
+#[non_exhaustive]
 #[derive(Default, Debug, Clone, Copy, PartialEq, Eq)]
 pub enum CredentialType {
     /// Public key credential (the only type currently defined in CTAP2)
@@ -104,6 +109,7 @@ impl CredentialDescriptor {
 }
 
 /// PIN/UV authentication protocol version
+#[non_exhaustive]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 #[repr(u8)]
 pub enum PinUvAuthProtocol {
@@ -174,6 +180,7 @@ pub struct MakeCredentialRequest {
     pub(crate) timeout_ms: i32,
     pub(crate) resident_key: Option<bool>,
     pub(crate) user_verification: Option<bool>,
+    pub(crate) algorithms: Vec<i32>,
 }
 
 impl MakeCredentialRequest {
@@ -190,9 +197,10 @@ impl MakeCredentialRequest {
             rp,
             user,
             pin_uv_auth: None,
-            timeout_ms: 30000, // 30 second default
+            timeout_ms: DEFAULT_TIMEOUT_MS, // 30 second default
             resident_key: None,
             user_verification: None,
+            algorithms: vec![-7], // Default: ES256
         }
     }
 
@@ -202,7 +210,7 @@ impl MakeCredentialRequest {
         self
     }
 
-    /// Set the timeout in milliseconds (default: 30000ms)
+    /// Set the timeout in milliseconds (default: 30000ms = DEFAULT_TIMEOUT_MS)
     pub fn with_timeout(mut self, timeout_ms: i32) -> Self {
         self.timeout_ms = timeout_ms;
         self
@@ -217,6 +225,17 @@ impl MakeCredentialRequest {
     /// Set whether to require user verification
     pub fn with_user_verification(mut self, user_verification: bool) -> Self {
         self.user_verification = Some(user_verification);
+        self
+    }
+
+    /// Set the preferred algorithms (default: [-7] for ES256)
+    ///
+    /// Common algorithms:
+    /// - `-7`: ES256 (P-256 + SHA-256)
+    /// - `-8`: EdDSA (Ed25519) - WebAuthn preferred
+    /// - `-19`: Ed25519 - IANA recommended
+    pub fn with_algorithms(mut self, algorithms: Vec<i32>) -> Self {
+        self.algorithms = algorithms;
         self
     }
 
@@ -243,6 +262,11 @@ impl MakeCredentialRequest {
     /// Get the timeout in milliseconds
     pub fn timeout_ms(&self) -> i32 {
         self.timeout_ms
+    }
+
+    /// Get the algorithms
+    pub fn algorithms(&self) -> &[i32] {
+        &self.algorithms
     }
 }
 
@@ -272,7 +296,7 @@ impl GetAssertionRequest {
             rp_id: rp_id.into(),
             allow_list: Vec::new(),
             pin_uv_auth: None,
-            timeout_ms: 30000, // 30 second default
+            timeout_ms: DEFAULT_TIMEOUT_MS, // 30 second default
             user_verification: None,
         }
     }
@@ -295,7 +319,7 @@ impl GetAssertionRequest {
         self
     }
 
-    /// Set the timeout in milliseconds (default: 30000ms)
+    /// Set the timeout in milliseconds (default: 30000ms = DEFAULT_TIMEOUT_MS)
     pub fn with_timeout(mut self, timeout_ms: i32) -> Self {
         self.timeout_ms = timeout_ms;
         self
@@ -336,6 +360,7 @@ impl GetAssertionRequest {
 /// PIN/UV auth token permissions
 ///
 /// These correspond to the permission bits defined in FIDO 2.2 spec.
+#[non_exhaustive]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 #[repr(u8)]
 pub enum Permission {

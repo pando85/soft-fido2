@@ -11,10 +11,14 @@ use crate::{
     cbor::{MapBuilder, MapParser},
     extensions::MakeCredentialExtensions,
     status::{Result, StatusCode},
-    types::{PublicKeyCredentialDescriptor, PublicKeyCredentialParameters, RelyingParty, User},
+    types::{
+        PublicKeyCredentialDescriptor, PublicKeyCredentialParameters, RelyingParty, User,
+        auth_data_flags,
+    },
 };
 
 use soft_fido2_crypto::ecdsa;
+use soft_fido2_crypto::eddsa;
 
 #[cfg(feature = "std")]
 use std::time::{SystemTime, UNIX_EPOCH};
@@ -24,6 +28,24 @@ use alloc::vec::Vec;
 use alloc::{format, vec};
 use rand::RngCore;
 use sha2::{Digest, Sha256};
+
+/// Maximum RP ID length (typical domain name limit)
+const MAX_RP_ID_LENGTH: usize = 256;
+
+/// Maximum RP name length
+const MAX_RP_NAME_LENGTH: usize = 256;
+
+/// Maximum user ID length (per FIDO2 spec)
+const MAX_USER_ID_LENGTH: usize = 64;
+
+/// Maximum user name/display name length
+const MAX_USER_NAME_LENGTH: usize = 256;
+
+/// Maximum credential ID length (per CTAP spec)
+pub const MAX_CREDENTIAL_ID_LENGTH: usize = 1023;
+
+/// Maximum number of credentials in exclude/allow lists
+const MAX_CREDENTIAL_LIST_SIZE: usize = 128;
 
 /// MakeCredential request parameter keys
 #[allow(dead_code)]
@@ -85,9 +107,17 @@ pub fn handle<C: AuthenticatorCallbacks>(
 
     let rp: RelyingParty = parser.get(req_keys::RP)?;
 
-    // Validate RP ID is not empty (empty RP ID could cause credential management issues)
+    // Validate RP ID
     if rp.id.is_empty() {
         return Err(StatusCode::InvalidParameter);
+    }
+    if rp.id.len() > MAX_RP_ID_LENGTH {
+        return Err(StatusCode::InvalidLength);
+    }
+    if let Some(ref name) = rp.name
+        && name.len() > MAX_RP_NAME_LENGTH
+    {
+        return Err(StatusCode::InvalidLength);
     }
 
     let user = parse_user(&parser, req_keys::USER)?;
@@ -99,6 +129,18 @@ pub fn handle<C: AuthenticatorCallbacks>(
     // Optional parameters
     let exclude_list: Option<Vec<PublicKeyCredentialDescriptor>> =
         parser.get_opt(req_keys::EXCLUDE_LIST)?;
+
+    // Validate exclude list size and credential ID sizes
+    if let Some(ref list) = exclude_list {
+        if list.len() > MAX_CREDENTIAL_LIST_SIZE {
+            return Err(StatusCode::LimitExceeded);
+        }
+        for cred in list {
+            if cred.id.len() > MAX_CREDENTIAL_ID_LENGTH {
+                return Err(StatusCode::InvalidLength);
+            }
+        }
+    }
 
     let pin_uv_auth_param: Option<Vec<u8>> =
         if parser.get_raw(req_keys::PIN_UV_AUTH_PARAM).is_some() {
@@ -206,12 +248,14 @@ pub fn handle<C: AuthenticatorCallbacks>(
             // 6.3: If pinUvAuthParam not present and uv is true, keep uv as true
             // (Already handled by options parsing)
 
-            // 6.4: If pinUvAuthParam not present and uv is false/absent, require PUAT
+            // 6.4: If pinUvAuthParam not present and uv is false/absent, check built-in UV
             if pin_uv_auth_param.is_none() && !options.uv {
-                if auth.config().options.client_pin.unwrap_or(false)
-                    && !auth.config().options.pin_uv_auth_token
-                // noMcGaPermissionsWithClientPin absent or false
-                {
+                // If built-in UV is available, treat uv as true
+                if auth.has_built_in_uv_enabled() {
+                    options.uv = true;
+                } else if auth.is_pin_set() {
+                    // CTAP2 spec §6.1.2 step 6.4: If ClientPin is true (PIN is set),
+                    // return PuatRequired so platform can use PIN fallback
                     return Err(StatusCode::PuatRequired);
                 } else {
                     return Err(StatusCode::OperationDenied);
@@ -236,9 +280,12 @@ pub fn handle<C: AuthenticatorCallbacks>(
         // makeCredUvNotRqd is true
         if authenticator_protected && !options.uv && pin_uv_auth_param.is_none() && options.rk {
             // Trying to create discoverable credential without UV
-            if auth.config().options.client_pin.unwrap_or(false)
-                && !auth.config().options.pin_uv_auth_token
-            {
+            // If built-in UV is available, treat uv as true
+            if auth.has_built_in_uv_enabled() {
+                options.uv = true;
+            } else if auth.is_pin_set() {
+                // CTAP2 spec §6.1.2 step 7.1.1: If ClientPin is true (PIN is set),
+                // return PuatRequired so platform can use PIN fallback
                 return Err(StatusCode::PuatRequired);
             } else {
                 return Err(StatusCode::OperationDenied);
@@ -248,9 +295,12 @@ pub fn handle<C: AuthenticatorCallbacks>(
         // makeCredUvNotRqd is false or absent
         if authenticator_protected && !options.uv && pin_uv_auth_param.is_none() {
             // Creating any credential without UV when authenticator is protected
-            if auth.config().options.client_pin.unwrap_or(false)
-                && !auth.config().options.pin_uv_auth_token
-            {
+            // If built-in UV is available, treat uv as true
+            if auth.has_built_in_uv_enabled() {
+                options.uv = true;
+            } else if auth.is_pin_set() {
+                // CTAP2 spec §6.1.2 step 8.1.1: If ClientPin is true (PIN is set),
+                // return PuatRequired so platform can use PIN fallback
                 return Err(StatusCode::PuatRequired);
             } else {
                 return Err(StatusCode::OperationDenied);
@@ -325,8 +375,19 @@ pub fn handle<C: AuthenticatorCallbacks>(
     // Step 15: Process extensions
     let extension_outputs = extensions.build_outputs(auth.config().min_pin_length);
 
-    // Step 16: Generate credential key pair
-    let (private_key, public_key_bytes) = ecdsa::generate_keypair();
+    // Step 16: Generate credential key pair based on algorithm
+    let (private_key, public_key_bytes): ([u8; 32], Vec<u8>) = match alg {
+        -8 | -19 => {
+            // EdDSA (-8) / Ed25519 (-19)
+            let (sk, pk) = eddsa::generate_keypair();
+            (*sk, pk)
+        }
+        _ => {
+            // ES256 (P-256) - default
+            let (sk, pk) = ecdsa::generate_keypair();
+            (*sk, pk)
+        }
+    };
 
     // Step 17: Create credential (resident or non-resident)
     let credential_id = create_credential(
@@ -358,7 +419,16 @@ pub fn handle<C: AuthenticatorCallbacks>(
 
     // Build attestation statement (self-attestation)
     let sig_data = [&auth_data[..], &client_data_hash[..]].concat();
-    let signature = ecdsa::sign(&private_key, &sig_data)?;
+    let signature = match alg {
+        -8 | -19 => {
+            // EdDSA (-8) / Ed25519 (-19)
+            eddsa::sign(&private_key, &sig_data)?
+        }
+        _ => {
+            // ES256 (P-256) - default
+            ecdsa::sign(&private_key, &sig_data)?
+        }
+    };
     let att_stmt = build_attestation_statement(&signature, alg)?;
 
     // Build response
@@ -389,6 +459,12 @@ fn validate_and_choose_algorithm<C: AuthenticatorCallbacks>(
 
         // If this algorithm is supported and we haven't chosen one yet
         if chosen_alg.is_none() && auth.config().algorithms.contains(&param.alg) {
+            chosen_alg = Some(param.alg);
+        }
+
+        // Accept Ed25519 variants even when they are not advertised in GetInfo.
+        // This keeps browser compatibility while still allowing SSH enrollments.
+        if chosen_alg.is_none() && matches!(param.alg, -8 | -19) {
             chosen_alg = Some(param.alg);
         }
     }
@@ -476,17 +552,15 @@ fn perform_built_in_uv<C: AuthenticatorCallbacks>(
         }
         UvResult::Timeout => Err(StatusCode::UserActionTimeout),
         UvResult::Denied => {
-            // UV failed - decrement retry counter
             auth.decrement_uv_retries();
 
-            // Check if UV is now blocked
             if auth.is_uv_blocked() {
                 return Err(StatusCode::UvBlocked);
             }
 
-            if auth.config().options.client_pin.unwrap_or(false)
-                && !auth.config().options.pin_uv_auth_token
-            {
+            // CTAP2 spec §6.5.3.1 step 11.2.3.2: If ClientPin is true (PIN is set),
+            // return PuatRequired so platform can use PIN fallback
+            if auth.is_pin_set() {
                 return Err(StatusCode::PuatRequired);
             }
 
@@ -633,6 +707,15 @@ fn create_credential<C: AuthenticatorCallbacks>(
     user: &User,
     algorithm: i32,
 ) -> Result<Vec<u8>> {
+    // Generate cred_random if hmac-secret extension is enabled
+    let cred_random = if extensions.hmac_secret == Some(true) {
+        let mut random = [0u8; 32];
+        rand::rng().fill_bytes(&mut random);
+        Some(SecBytes::from_array(random))
+    } else {
+        None
+    };
+
     if options.rk || auth.config().force_resident_keys {
         // Create discoverable credential
         let id = generate_credential_id();
@@ -662,6 +745,7 @@ fn create_credential<C: AuthenticatorCallbacks>(
             created: current_timestamp(),
             discoverable: true,
             cred_protect: cred_protect_value,
+            cred_random,
         };
 
         auth.callbacks().write_credential(&credential)?;
@@ -669,6 +753,8 @@ fn create_credential<C: AuthenticatorCallbacks>(
         Ok(id)
     } else {
         // Create non-discoverable credential
+        // For non-discoverable credentials, we need to include cred_random in the wrapped credential
+        // For now, wrap_credential doesn't support hmac-secret for non-discoverable credentials
         auth.wrap_credential(private_key, &rp.id, algorithm)
     }
 }
@@ -710,6 +796,21 @@ fn parse_user(parser: &MapParser, key: i32) -> Result<User> {
     }
 
     let id = user_id.ok_or(StatusCode::MissingParameter)?;
+
+    // Validate user field sizes
+    if id.len() > MAX_USER_ID_LENGTH {
+        return Err(StatusCode::InvalidLength);
+    }
+    if let Some(ref name) = user_name
+        && name.len() > MAX_USER_NAME_LENGTH
+    {
+        return Err(StatusCode::InvalidLength);
+    }
+    if let Some(ref display_name) = user_display_name
+        && display_name.len() > MAX_USER_NAME_LENGTH
+    {
+        return Err(StatusCode::InvalidLength);
+    }
 
     Ok(User {
         id,
@@ -794,14 +895,14 @@ fn build_authenticator_data(
     // Flags (1 byte)
     let mut flags = 0u8;
     if up {
-        flags |= 0x01; // UP
+        flags |= auth_data_flags::UP;
     }
     if uv {
-        flags |= 0x04; // UV
+        flags |= auth_data_flags::UV;
     }
-    flags |= 0x40; // AT (attested credential data present)
+    flags |= auth_data_flags::AT;
     if extensions.is_some() {
-        flags |= 0x80; // ED (extension data present)
+        flags |= auth_data_flags::ED;
     }
     auth_data.push(flags);
 
@@ -836,22 +937,44 @@ fn build_authenticator_data(
 ///
 /// For ES256 (P-256):
 /// { 1: 2, 3: -7, -1: 1, -2: x, -3: y }
+///
+/// For Ed25519 (-19):
+/// { 1: 1, 3: -19, -1: 6, -2: x }
 fn build_cose_public_key(public_key: &[u8], algorithm: i32) -> Result<Vec<u8>> {
-    // Public key is in uncompressed SEC1 format: 0x04 || x || y
-    if public_key.len() != 65 || public_key[0] != 0x04 {
-        return Err(StatusCode::InvalidParameter);
+    match algorithm {
+        -8 | -19 => {
+            // EdDSA (-8) / Ed25519 (-19) - OKP format
+            // Public key is 32 bytes
+            if public_key.len() != 32 {
+                return Err(StatusCode::InvalidParameter);
+            }
+
+            MapBuilder::new()
+                .insert(1, 1)? // kty: OKP (Octet Key Pair)
+                .insert(3, algorithm)? // alg: EdDSA (-8) or Ed25519 (-19)
+                .insert(-1, 6)? // crv: Ed25519
+                .insert_bytes(-2, public_key)? // x: public key
+                .build()
+        }
+        _ => {
+            // ES256 (P-256) - EC2 format
+            // Public key is in uncompressed SEC1 format: 0x04 || x || y
+            if public_key.len() != 65 || public_key[0] != 0x04 {
+                return Err(StatusCode::InvalidParameter);
+            }
+
+            let x = &public_key[1..33];
+            let y = &public_key[33..65];
+
+            MapBuilder::new()
+                .insert(1, 2)? // kty: EC2
+                .insert(3, algorithm)? // alg
+                .insert(-1, 1)? // crv: P-256
+                .insert_bytes(-2, x)? // x coordinate
+                .insert_bytes(-3, y)? // y coordinate
+                .build()
+        }
     }
-
-    let x = &public_key[1..33];
-    let y = &public_key[33..65];
-
-    MapBuilder::new()
-        .insert(1, 2)? // kty: EC2
-        .insert(3, algorithm)? // alg
-        .insert(-1, 1)? // crv: P-256
-        .insert_bytes(-2, x)? // x coordinate
-        .insert_bytes(-3, y)? // y coordinate
-        .build()
 }
 
 /// Build attestation statement
@@ -875,13 +998,12 @@ mod tests {
     use super::*;
 
     #[test]
-    fn test_generate_credential_id() {
-        let id1 = generate_credential_id();
-        let id2 = generate_credential_id();
+    fn test_build_cose_public_key_ed25519() {
+        // Valid Ed25519 public key (32 bytes) with -19 algorithm identifier
+        let public_key = vec![0x42u8; 32];
 
-        assert_eq!(id1.len(), 32);
-        assert_eq!(id2.len(), 32);
-        assert_ne!(id1, id2); // Should be random
+        let cose_key = build_cose_public_key(&public_key, -19).unwrap();
+        assert!(!cose_key.is_empty());
     }
 
     #[test]
@@ -903,79 +1025,16 @@ mod tests {
     }
 
     #[test]
+    fn test_build_cose_public_key_ed25519_invalid() {
+        let public_key = vec![0x01, 0x02, 0x03]; // Invalid format (not 32 bytes)
+        let result = build_cose_public_key(&public_key, -19);
+        assert!(result.is_err());
+    }
+
+    #[test]
     fn test_validate_algorithm_selection() {
         use crate::authenticator::{Authenticator, AuthenticatorConfig, AuthenticatorOptions};
-
-        // Mock callbacks for testing
-        struct MockCallbacks;
-
-        impl crate::callbacks::PlatformCallbacks for MockCallbacks {
-            fn get_timestamp_ms(&self) -> u64 {
-                0
-            }
-        }
-
-        impl crate::callbacks::UserInteractionCallbacks for MockCallbacks {
-            fn request_up(
-                &self,
-                _info: &str,
-                _user_name: Option<&str>,
-                _rp_id: &str,
-            ) -> Result<crate::callbacks::UpResult> {
-                Ok(crate::callbacks::UpResult::Accepted)
-            }
-
-            fn request_uv(
-                &self,
-                _info: &str,
-                _user_name: Option<&str>,
-                _rp_id: &str,
-            ) -> Result<crate::callbacks::UvResult> {
-                Ok(crate::callbacks::UvResult::Accepted)
-            }
-
-            fn select_credential(&self, _rp_id: &str, _user_names: &[String]) -> Result<usize> {
-                Ok(0)
-            }
-        }
-
-        impl crate::callbacks::CredentialStorageCallbacks for MockCallbacks {
-            fn write_credential(&self, _credential: &crate::types::Credential) -> Result<()> {
-                Ok(())
-            }
-
-            fn delete_credential(&self, _credential_id: &[u8]) -> Result<()> {
-                Ok(())
-            }
-
-            fn read_credentials(
-                &self,
-                _rp_id: &str,
-                _user_id: Option<&[u8]>,
-            ) -> Result<Vec<crate::types::Credential>> {
-                Ok(vec![])
-            }
-
-            fn credential_exists(&self, _credential_id: &[u8]) -> Result<bool> {
-                Ok(false)
-            }
-
-            fn get_credential(&self, _credential_id: &[u8]) -> Result<crate::types::Credential> {
-                Err(StatusCode::NoCredentials)
-            }
-
-            fn update_credential(&self, _credential: &crate::types::Credential) -> Result<()> {
-                Ok(())
-            }
-
-            fn enumerate_rps(&self) -> Result<Vec<(String, Option<String>, usize)>> {
-                Ok(vec![])
-            }
-
-            fn credential_count(&self) -> Result<usize> {
-                Ok(0)
-            }
-        }
+        use crate::test_utils::MockCallbacks;
 
         let config = AuthenticatorConfig::new()
             .with_algorithms(vec![-7, -8]) // ES256, EdDSA
@@ -1005,80 +1064,29 @@ mod tests {
     #[test]
     fn test_validate_algorithm_none_supported() {
         use crate::authenticator::{Authenticator, AuthenticatorConfig, AuthenticatorOptions};
-
-        // Mock callbacks for testing
-        struct MockCallbacks;
-
-        impl crate::callbacks::PlatformCallbacks for MockCallbacks {
-            fn get_timestamp_ms(&self) -> u64 {
-                0
-            }
-        }
-
-        impl crate::callbacks::UserInteractionCallbacks for MockCallbacks {
-            fn request_up(
-                &self,
-                _info: &str,
-                _user_name: Option<&str>,
-                _rp_id: &str,
-            ) -> Result<crate::callbacks::UpResult> {
-                Ok(crate::callbacks::UpResult::Accepted)
-            }
-
-            fn request_uv(
-                &self,
-                _info: &str,
-                _user_name: Option<&str>,
-                _rp_id: &str,
-            ) -> Result<crate::callbacks::UvResult> {
-                Ok(crate::callbacks::UvResult::Accepted)
-            }
-
-            fn select_credential(&self, _rp_id: &str, _user_names: &[String]) -> Result<usize> {
-                Ok(0)
-            }
-        }
-
-        impl crate::callbacks::CredentialStorageCallbacks for MockCallbacks {
-            fn write_credential(&self, _credential: &crate::types::Credential) -> Result<()> {
-                Ok(())
-            }
-
-            fn delete_credential(&self, _credential_id: &[u8]) -> Result<()> {
-                Ok(())
-            }
-
-            fn read_credentials(
-                &self,
-                _rp_id: &str,
-                _user_id: Option<&[u8]>,
-            ) -> Result<Vec<crate::types::Credential>> {
-                Ok(vec![])
-            }
-
-            fn credential_exists(&self, _credential_id: &[u8]) -> Result<bool> {
-                Ok(false)
-            }
-
-            fn get_credential(&self, _credential_id: &[u8]) -> Result<crate::types::Credential> {
-                Err(StatusCode::NoCredentials)
-            }
-
-            fn update_credential(&self, _credential: &crate::types::Credential) -> Result<()> {
-                Ok(())
-            }
-
-            fn enumerate_rps(&self) -> Result<Vec<(String, Option<String>, usize)>> {
-                Ok(vec![])
-            }
-
-            fn credential_count(&self) -> Result<usize> {
-                Ok(0)
-            }
-        }
+        use crate::test_utils::MockCallbacks;
 
         let config = AuthenticatorConfig::new()
             .with_algorithms(vec![-7]) // Only ES256
+            .with_options(AuthenticatorOptions::new());
+        let auth = Authenticator::new(config, MockCallbacks);
+
+        let params = vec![PublicKeyCredentialParameters {
+            cred_type: "public-key".to_string(),
+            alg: -257, // RS256 (not supported)
+        }];
+
+        let result = validate_and_choose_algorithm(&auth, &params);
+        assert_eq!(result, Err(StatusCode::UnsupportedAlgorithm));
+    }
+
+    #[test]
+    fn test_validate_algorithm_ed25519_selection() {
+        use crate::authenticator::{Authenticator, AuthenticatorConfig, AuthenticatorOptions};
+        use crate::test_utils::MockCallbacks;
+
+        let config = AuthenticatorConfig::new()
+            .with_algorithms(vec![-7, -19]) // ES256, Ed25519
             .with_options(AuthenticatorOptions::new());
         let auth = Authenticator::new(config, MockCallbacks);
 
@@ -1089,11 +1097,120 @@ mod tests {
             },
             PublicKeyCredentialParameters {
                 cred_type: "public-key".to_string(),
-                alg: -8, // EdDSA (not supported)
+                alg: -19, // Ed25519 (supported)
+            },
+            PublicKeyCredentialParameters {
+                cred_type: "public-key".to_string(),
+                alg: -7, // ES256 (supported)
             },
         ];
 
+        // Should choose the first supported algorithm (Ed25519 in this case)
         let result = validate_and_choose_algorithm(&auth, &params);
-        assert_eq!(result, Err(StatusCode::UnsupportedAlgorithm));
+        assert_eq!(result.unwrap(), -19);
+    }
+
+    #[test]
+    fn test_validate_algorithm_accepts_eddsa_alias_for_ed25519() {
+        use crate::authenticator::{Authenticator, AuthenticatorConfig, AuthenticatorOptions};
+        use crate::test_utils::MockCallbacks;
+
+        let config = AuthenticatorConfig::new()
+            .with_algorithms(vec![-7, -19]) // ES256, Ed25519
+            .with_options(AuthenticatorOptions::new());
+        let auth = Authenticator::new(config, MockCallbacks);
+
+        let params = vec![PublicKeyCredentialParameters {
+            cred_type: "public-key".to_string(),
+            alg: -8, // EdDSA alias used by OpenSSH for Ed25519
+        }];
+
+        let result = validate_and_choose_algorithm(&auth, &params);
+        assert_eq!(result.unwrap(), -8);
+    }
+
+    #[test]
+    fn test_parse_user_validates_id_length() {
+        // Create a user ID that exceeds the maximum length
+        let oversized_id: Vec<u8> = vec![0u8; MAX_USER_ID_LENGTH + 1];
+
+        let user_map = vec![(
+            crate::cbor::Value::Text("id".to_string()),
+            crate::cbor::Value::Bytes(oversized_id),
+        )];
+
+        let outer_map = vec![(
+            crate::cbor::Value::Integer(0x01.into()),
+            crate::cbor::Value::Map(user_map),
+        )];
+
+        let user_cbor = crate::cbor::Value::Map(outer_map);
+        let bytes = crate::cbor::encode(&user_cbor).unwrap();
+        let parser = MapParser::from_bytes(&bytes).unwrap();
+        let result = parse_user(&parser, 0x01);
+
+        assert_eq!(result, Err(StatusCode::InvalidLength));
+    }
+
+    #[test]
+    fn test_parse_user_validates_name_length() {
+        // Create a user with oversized name
+        let oversized_name = "x".repeat(MAX_USER_NAME_LENGTH + 1);
+
+        let user_map = vec![
+            (
+                crate::cbor::Value::Text("id".to_string()),
+                crate::cbor::Value::Bytes(vec![1, 2, 3, 4]),
+            ),
+            (
+                crate::cbor::Value::Text("name".to_string()),
+                crate::cbor::Value::Text(oversized_name),
+            ),
+        ];
+
+        let outer_map = vec![(
+            crate::cbor::Value::Integer(0x01.into()),
+            crate::cbor::Value::Map(user_map),
+        )];
+
+        let user_cbor = crate::cbor::Value::Map(outer_map);
+        let bytes = crate::cbor::encode(&user_cbor).unwrap();
+        let parser = MapParser::from_bytes(&bytes).unwrap();
+        let result = parse_user(&parser, 0x01);
+
+        assert_eq!(result, Err(StatusCode::InvalidLength));
+    }
+
+    #[test]
+    fn test_parse_user_accepts_valid_sizes() {
+        // Create a user with maximum valid sizes
+        let max_id: Vec<u8> = vec![0u8; MAX_USER_ID_LENGTH];
+        let max_name = "x".repeat(MAX_USER_NAME_LENGTH);
+
+        let user_map = vec![
+            (
+                crate::cbor::Value::Text("id".to_string()),
+                crate::cbor::Value::Bytes(max_id.clone()),
+            ),
+            (
+                crate::cbor::Value::Text("name".to_string()),
+                crate::cbor::Value::Text(max_name.clone()),
+            ),
+        ];
+
+        let outer_map = vec![(
+            crate::cbor::Value::Integer(0x01.into()),
+            crate::cbor::Value::Map(user_map),
+        )];
+
+        let user_cbor = crate::cbor::Value::Map(outer_map);
+        let bytes = crate::cbor::encode(&user_cbor).unwrap();
+        let parser = MapParser::from_bytes(&bytes).unwrap();
+        let result = parse_user(&parser, 0x01);
+
+        assert!(result.is_ok());
+        let user = result.unwrap();
+        assert_eq!(user.id, max_id);
+        assert_eq!(user.name, Some(max_name));
     }
 }

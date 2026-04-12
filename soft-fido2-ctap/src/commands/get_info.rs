@@ -217,101 +217,12 @@ pub fn handle<C: AuthenticatorCallbacks>(auth: &Authenticator<C>) -> Result<Vec<
 mod tests {
     use super::*;
 
-    use crate::{
-        UpResult, UvResult,
-        authenticator::AuthenticatorConfig,
-        callbacks::{CredentialStorageCallbacks, PlatformCallbacks, UserInteractionCallbacks},
-        cbor::MapParser,
-        status::StatusCode,
-        types::Credential,
-    };
-
-    // Simple mock for testing
-    struct MockCallbacks;
-
-    impl PlatformCallbacks for MockCallbacks {
-        fn get_timestamp_ms(&self) -> u64 {
-            0
-        }
-    }
-
-    impl MockCallbacks {
-        fn new() -> Self {
-            Self
-        }
-    }
-
-    impl UserInteractionCallbacks for MockCallbacks {
-        fn request_up(
-            &self,
-            _info: &str,
-            _user_name: Option<&str>,
-            _rp_id: &str,
-        ) -> crate::status::Result<UpResult> {
-            Ok(UpResult::Accepted)
-        }
-
-        fn request_uv(
-            &self,
-            _info: &str,
-            _user_name: Option<&str>,
-            _rp_id: &str,
-        ) -> crate::status::Result<UvResult> {
-            Ok(UvResult::Accepted)
-        }
-
-        fn select_credential(
-            &self,
-            _rp_id: &str,
-            _user_names: &[String],
-        ) -> crate::status::Result<usize> {
-            Ok(0)
-        }
-    }
-
-    impl CredentialStorageCallbacks for MockCallbacks {
-        fn write_credential(&self, _credential: &Credential) -> crate::status::Result<()> {
-            Ok(())
-        }
-
-        fn delete_credential(&self, _credential_id: &[u8]) -> crate::status::Result<()> {
-            Ok(())
-        }
-
-        fn read_credentials(
-            &self,
-            _rp_id: &str,
-            _user_id: Option<&[u8]>,
-        ) -> crate::status::Result<Vec<Credential>> {
-            Ok(Vec::new())
-        }
-
-        fn get_credential(&self, _credential_id: &[u8]) -> crate::status::Result<Credential> {
-            Err(StatusCode::NoCredentials)
-        }
-
-        fn update_credential(&self, _credential: &Credential) -> crate::status::Result<()> {
-            Ok(())
-        }
-
-        fn enumerate_rps(&self) -> crate::status::Result<Vec<(String, Option<String>, usize)>> {
-            Ok(Vec::new())
-        }
-
-        fn credential_exists(&self, _credential_id: &[u8]) -> crate::status::Result<bool> {
-            Ok(false)
-        }
-
-        fn credential_count(&self) -> crate::status::Result<usize> {
-            Ok(0)
-        }
-    }
+    use crate::{authenticator::AuthenticatorConfig, cbor::MapParser, test_utils::MockCallbacks};
 
     #[test]
     fn test_get_info_basic() {
         let config = AuthenticatorConfig::new();
-        let callbacks = MockCallbacks::new();
-        let auth = Authenticator::new(config, callbacks);
+        let auth = Authenticator::new(config, MockCallbacks);
 
         let response = handle(&auth).unwrap();
         let parser = MapParser::from_bytes(&response).unwrap();
@@ -332,8 +243,7 @@ mod tests {
     fn test_get_info_with_extensions() {
         let config = AuthenticatorConfig::new()
             .with_extensions(vec!["credProtect".to_string(), "hmac-secret".to_string()]);
-        let callbacks = MockCallbacks::new();
-        let auth = Authenticator::new(config, callbacks);
+        let auth = Authenticator::new(config, MockCallbacks);
 
         let response = handle(&auth).unwrap();
         let parser = MapParser::from_bytes(&response).unwrap();
@@ -346,8 +256,7 @@ mod tests {
     #[test]
     fn test_get_info_with_algorithms() {
         let config = AuthenticatorConfig::new().with_algorithms(vec![-7, -8]); // ES256, EdDSA
-        let callbacks = MockCallbacks::new();
-        let auth = Authenticator::new(config, callbacks);
+        let auth = Authenticator::new(config, MockCallbacks);
 
         let response = handle(&auth).unwrap();
         let parser = MapParser::from_bytes(&response).unwrap();

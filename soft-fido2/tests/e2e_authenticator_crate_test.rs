@@ -239,6 +239,10 @@ fn test_authenticator_crate_webauthn_flow() -> Result<(), Box<dyn std::error::Er
                 .with_client_pin(Some(false))
                 .with_credential_management(Some(false)),
         )
+        // Mozilla's authenticator stack currently behaves more reliably with
+        // ES256-only advertisement in GetInfo, even though soft-fido2 accepts
+        // hidden Ed25519 variants during makeCredential for SSH compatibility.
+        .algorithms(vec![-7])
         .build();
 
     let authenticator = Authenticator::with_config(callbacks, config)?;

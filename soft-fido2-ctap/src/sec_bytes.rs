@@ -5,8 +5,8 @@
 
 use alloc::vec::Vec;
 use serde::{
-    Deserialize, Deserializer, Serialize, Serializer,
     de::{self, Visitor},
+    Deserialize, Deserializer, Serialize, Serializer,
 };
 use zeroize::{Zeroize, Zeroizing};
 
@@ -332,6 +332,8 @@ impl From<SecPinHash> for SecBytes {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use alloc::format;
+    use alloc::vec;
 
     #[test]
     fn test_sec_pin_hash_new() {
