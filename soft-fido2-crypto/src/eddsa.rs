@@ -15,8 +15,8 @@ use crate::error::{CryptoError, Result};
 use alloc::vec::Vec;
 use ed25519_dalek::Signer;
 use ed25519_dalek::{Signature, SigningKey, Verifier, VerifyingKey};
-use rand_08::rngs::OsRng;
 use rand_08::RngCore;
+use rand_08::rngs::OsRng;
 use zeroize::Zeroizing;
 
 pub use ed25519_dalek::PUBLIC_KEY_LENGTH;

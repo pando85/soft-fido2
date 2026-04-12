@@ -10,7 +10,6 @@ use soft_fido2_crypto::pin_protocol;
 use soft_fido2_ctap::SecBytes;
 use soft_fido2_ctap::cbor::{MapBuilder, Value};
 
-use p256::elliptic_curve::Generate;
 use p256::elliptic_curve::sec1::ToEncodedPoint;
 use p256::{PublicKey as P256PublicKey, SecretKey as P256SecretKey};
 use zeroize::Zeroizing;
@@ -87,7 +86,7 @@ impl PinUvAuthEncapsulation {
     pub fn initialize(&mut self, transport: &mut Transport) -> Result<()> {
         // Generate platform key pair (using SecretKey for persistence)
         let platform_secret_key =
-            P256SecretKey::try_generate_from_rng(&mut rand::rngs::SysRng).unwrap();
+            P256SecretKey::random(&mut p256::elliptic_curve::rand_core::OsRng);
         let platform_public_key = platform_secret_key.public_key();
         let platform_public_point = platform_public_key.to_encoded_point(false);
 

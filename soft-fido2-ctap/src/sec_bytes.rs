@@ -5,8 +5,8 @@
 
 use alloc::vec::Vec;
 use serde::{
-    de::{self, Visitor},
     Deserialize, Deserializer, Serialize, Serializer,
+    de::{self, Visitor},
 };
 use zeroize::{Zeroize, Zeroizing};
 

@@ -4,11 +4,11 @@
 //! PIN management, and overall state coordination.
 
 use crate::{
+    CoseAlgorithm, SecBytes, SecPinHash, StatusCode,
     callbacks::{AuthenticatorCallbacks, PinStorageCallbacks},
     cbor::MAX_CTAP_MESSAGE_SIZE,
     pin_token::{Permission, PinToken, PinTokenManager},
-    types::{PinState, MAX_UV_RETRIES},
-    CoseAlgorithm, SecBytes, SecPinHash, StatusCode,
+    types::{MAX_UV_RETRIES, PinState},
 };
 
 use soft_fido2_crypto::pin_protocol::{self, v2};
@@ -1183,10 +1183,10 @@ mod tests {
     use alloc::vec;
 
     use crate::{
+        UpResult, UvResult,
         callbacks::{CredentialStorageCallbacks, PlatformCallbacks, UserInteractionCallbacks},
         test_utils::MockCallbacks,
         types::{Credential, MAX_PIN_RETRIES},
-        UpResult, UvResult,
     };
 
     fn create_test_authenticator() -> Authenticator<MockCallbacks> {
@@ -1291,9 +1291,10 @@ mod tests {
             .unwrap();
 
         // Should succeed with correct permission and RP
-        assert!(auth
-            .verify_pin_uv_auth_token(Permission::MakeCredential, Some("example.com"))
-            .is_ok());
+        assert!(
+            auth.verify_pin_uv_auth_token(Permission::MakeCredential, Some("example.com"))
+                .is_ok()
+        );
 
         // Should fail with wrong permission
         assert_eq!(
