@@ -19,6 +19,7 @@ use std::io::{self, Write};
 
 #[cfg(not(feature = "std"))]
 use core2::io::{self, Write};
+
 use serde::{Deserialize, Serialize};
 use smallvec::SmallVec;
 

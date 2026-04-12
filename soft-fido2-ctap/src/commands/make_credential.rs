@@ -17,15 +17,15 @@ use crate::{
     },
 };
 
-use soft_fido2_crypto::ecdsa;
-use soft_fido2_crypto::eddsa;
-
-#[cfg(feature = "std")]
-use std::time::{SystemTime, UNIX_EPOCH};
+use soft_fido2_crypto::{ecdsa, eddsa};
 
 use alloc::string::{String, ToString};
 use alloc::vec::Vec;
 use alloc::{format, vec};
+
+#[cfg(feature = "std")]
+use std::time::{SystemTime, UNIX_EPOCH};
+
 use rand::RngCore;
 use sha2::{Digest, Sha256};
 

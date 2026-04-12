@@ -17,6 +17,7 @@ use crate::{
 };
 
 use alloc::{string::String, vec::Vec};
+
 use zeroize::Zeroizing;
 
 /// Find the length of a null-terminated string in constant time

@@ -7,6 +7,7 @@ use crate::request::{DEFAULT_TIMEOUT_MS, PinUvAuthProtocol};
 use crate::transport::Transport;
 
 use soft_fido2_crypto::pin_protocol;
+
 use soft_fido2_ctap::SecBytes;
 use soft_fido2_ctap::cbor::{MapBuilder, Value};
 
