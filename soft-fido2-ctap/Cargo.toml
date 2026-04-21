@@ -34,7 +34,7 @@ thiserror = { workspace = true, optional = true }
 smallvec.workspace = true
 
 # no_std support
-core2 = { version = "0.4", default-features = false, features = ["alloc"] }
+core3 = { version = "0.1", default-features = false, features = ["alloc"] }
 
 [dev-dependencies]
 hex.workspace = true
