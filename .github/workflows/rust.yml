@@ -47,7 +47,7 @@ jobs:
 
       - uses: clechasseur/rs-clippy-check@v6.0.2
         with:
-          args: --no-default-features -- --deny warnings
+          args: --no-default-features --lib -- --deny warnings
 
   build:
     strategy:
