@@ -15,8 +15,8 @@ use crate::error::{CryptoError, Result};
 use alloc::vec::Vec;
 use ed25519_dalek::Signer;
 use ed25519_dalek::{Signature, SigningKey, Verifier, VerifyingKey};
-use rand::RngCore;
-use rand::rngs::OsRng;
+use rand_08::RngCore;
+use rand_08::rngs::OsRng;
 use zeroize::Zeroizing;
 
 pub use ed25519_dalek::PUBLIC_KEY_LENGTH;
@@ -155,6 +155,7 @@ pub fn public_from_private(private_key: &[u8; 32]) -> Result<Vec<u8>> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use alloc::vec;
 
     #[test]
     fn test_keypair_generation() {

@@ -9,9 +9,10 @@ extern crate alloc;
 
 use crate::error::{CryptoError, Result};
 
-use aes::Aes256;
 use alloc::vec;
 use alloc::vec::Vec;
+
+use aes::Aes256;
 use cbc::cipher::block_padding::Pkcs7;
 use cbc::cipher::{BlockModeDecrypt, BlockModeEncrypt, KeyIvInit};
 use cbc::{Decryptor, Encryptor};
@@ -359,7 +360,7 @@ pub mod v2 {
             return Err(CryptoError::EncryptionFailed);
         }
 
-        let mut rng = rand::thread_rng();
+        let mut rng = rand::rng();
         let mut iv: [u8; 16] = [0u8; 16];
         rng.fill(&mut iv);
 

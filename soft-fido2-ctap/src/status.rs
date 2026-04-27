@@ -392,6 +392,7 @@ pub type Result<T> = core::result::Result<T, StatusCode>;
 #[cfg(test)]
 mod tests {
     use super::*;
+    use alloc::vec;
 
     #[test]
     fn test_status_code_round_trip() {

@@ -116,6 +116,7 @@ impl<C: AuthenticatorCallbacks> CommandDispatcher<C> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use alloc::vec;
 
     use crate::authenticator::AuthenticatorConfig;
     use crate::test_utils::MockCallbacks;
