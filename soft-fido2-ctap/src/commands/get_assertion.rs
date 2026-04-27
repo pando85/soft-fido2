@@ -556,7 +556,7 @@ pub fn handle<C: AuthenticatorCallbacks>(
             // For this implementation, we assume no display or simplified behavior
 
             // Order credentials by creation time (reverse order - most recent first)
-            credentials.sort_by(|a, b| b.created.cmp(&a.created));
+            credentials.sort_by_key(|c| core::cmp::Reverse(c.created));
 
             // If no display or (UV and UP are false), use account selection
             let user_names: Vec<String> = credentials
