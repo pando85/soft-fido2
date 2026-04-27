@@ -12,16 +12,13 @@
 use crate::status::{Result, StatusCode};
 
 use alloc::{collections::BTreeMap, vec::Vec};
+use cbor4ii::core::enc::Write;
 use core::{cmp::Ordering, fmt};
-
-#[cfg(feature = "std")]
-use std::io::{self, Write};
-
-#[cfg(not(feature = "std"))]
-use core2::io::{self, Write};
-
 use serde::{Deserialize, Serialize};
 use smallvec::SmallVec;
+
+#[cfg(feature = "std")]
+use std::io;
 
 pub type Value = cbor4ii::core::Value;
 
@@ -124,7 +121,40 @@ impl<const N: usize> StackBuffer<N> {
     }
 }
 
+impl<const N: usize> StackBuffer<N> {
+    pub fn write_all(&mut self, data: &[u8]) -> core::result::Result<(), BufferOverflowError> {
+        let available = self.buf.len() - self.pos;
+        if data.len() > available {
+            return Err(BufferOverflowError);
+        }
+
+        self.buf[self.pos..self.pos + data.len()].copy_from_slice(data);
+        self.pos += data.len();
+        Ok(())
+    }
+}
+
+#[derive(Debug, Clone, Copy)]
+pub struct BufferOverflowError;
+
+impl fmt::Display for BufferOverflowError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "buffer overflow: CBOR message exceeds buffer size")
+    }
+}
+
+impl core::error::Error for BufferOverflowError {}
+
 impl<const N: usize> Write for StackBuffer<N> {
+    type Error = BufferOverflowError;
+
+    fn push(&mut self, data: &[u8]) -> core::result::Result<(), Self::Error> {
+        self.write_all(data)
+    }
+}
+
+#[cfg(feature = "std")]
+impl<const N: usize> io::Write for StackBuffer<N> {
     fn write(&mut self, data: &[u8]) -> io::Result<usize> {
         let available = self.buf.len() - self.pos;
         if data.len() > available {
@@ -217,11 +247,11 @@ pub fn from_value<T: for<'de> Deserialize<'de>>(value: &Value) -> Result<T> {
 
 /// Encode a value directly to a writer (compatibility helper, std only)
 #[cfg(feature = "std")]
-pub fn into_writer<T: Serialize, W: Write>(value: &T, writer: W) -> Result<()> {
+pub fn into_writer<T: Serialize, W: io::Write>(value: &T, writer: W) -> Result<()> {
     cbor4ii::serde::to_writer(writer, value).map_err(|_| StatusCode::InvalidCbor)
 }
 
-/// Encode a value directly to a writer (no_std fallback)
+/// Encode a value directly to a Vec (no_std fallback)
 #[cfg(not(feature = "std"))]
 pub fn into_writer<T: Serialize>(value: &T, writer: &mut Vec<u8>) -> Result<()> {
     let bytes = encode(value)?;
