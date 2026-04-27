@@ -756,7 +756,7 @@ fn test_mozilla_authenticator_crate_compat_with_pin() {
 
     // Generate platform key pair
     let mut rng = p256::elliptic_curve::rand_core::OsRng;
-    let platform_secret = EphemeralSecret::random(&mut rng).unwrap();
+    let platform_secret = EphemeralSecret::random(&mut rng);
     let platform_public = platform_secret.public_key();
 
     // Parse authenticator's public key
@@ -872,8 +872,7 @@ fn test_mozilla_authenticator_crate_compat_with_pin() {
     let auth_cose_key = extract_cose_key(&response).expect("Failed to extract COSE key");
 
     // Step 2: Perform ECDH again
-    let platform_secret = EphemeralSecret::try_generate_from_rng(&mut rng)
-        .expect("Failed to generate ephemeral secret");
+    let platform_secret = EphemeralSecret::random(&mut rng);
     let platform_public = platform_secret.public_key();
 
     let auth_key_value: Value = soft_fido2_ctap::cbor::decode(&auth_cose_key)
@@ -1488,8 +1487,7 @@ fn test_mozilla_authenticator_crate_compat_credential_management() {
         platform_cose_key_bytes
     };
 
-    let platform_secret = EphemeralSecret::try_generate_from_rng(&mut rng)
-        .expect("Failed to generate ephemeral secret");
+    let platform_secret = EphemeralSecret::random(&mut rng);
     let platform_public = platform_secret.public_key();
 
     let (x_bytes, y_bytes) = parse_cose_key(&auth_cose_key);
@@ -1572,8 +1570,7 @@ fn test_mozilla_authenticator_crate_compat_credential_management() {
 
     let auth_cose_key = extract_cose_key(&response).expect("Failed to extract COSE key");
 
-    let platform_secret = EphemeralSecret::try_generate_from_rng(&mut rng)
-        .expect("Failed to generate ephemeral secret");
+    let platform_secret = EphemeralSecret::random(&mut rng);
     let platform_public = platform_secret.public_key();
 
     let (x_bytes, y_bytes) = parse_cose_key(&auth_cose_key);
@@ -1765,8 +1762,7 @@ fn test_mozilla_authenticator_crate_compat_credential_management() {
 
     let auth_cose_key = extract_cose_key(&response).expect("Failed to extract COSE key");
 
-    let platform_secret = EphemeralSecret::try_generate_from_rng(&mut rng)
-        .expect("Failed to generate ephemeral secret");
+    let platform_secret = EphemeralSecret::random(&mut rng);
     let platform_public = platform_secret.public_key();
 
     let (x_bytes, y_bytes) = parse_cose_key(&auth_cose_key);
@@ -2179,8 +2175,7 @@ fn test_pin_storage_persistence() {
 
     // Step 2: Perform ECDH and encrypt PIN
     let mut rng = p256::elliptic_curve::rand_core::OsRng;
-    let platform_secret = EphemeralSecret::try_generate_from_rng(&mut rng)
-        .expect("Failed to generate ephemeral secret");
+    let platform_secret = EphemeralSecret::random(&mut rng);
     let platform_public = platform_secret.public_key();
 
     use soft_fido2_ctap::cbor::Value;
@@ -2307,8 +2302,7 @@ fn test_pin_storage_persistence() {
 
     let auth_cose_key = extract_cose_key(&response).expect("Failed to extract COSE key");
 
-    let platform_secret = EphemeralSecret::try_generate_from_rng(&mut rng)
-        .expect("Failed to generate ephemeral secret");
+    let platform_secret = EphemeralSecret::random(&mut rng);
     let platform_public = platform_secret.public_key();
 
     let auth_key_value: Value = soft_fido2_ctap::cbor::decode(&auth_cose_key)
@@ -2514,8 +2508,7 @@ fn test_pin_storage_persistence() {
 
     let auth_cose_key = extract_cose_key(&response).expect("Failed to extract COSE key");
 
-    let platform_secret = EphemeralSecret::try_generate_from_rng(&mut rng)
-        .expect("Failed to generate ephemeral secret");
+    let platform_secret = EphemeralSecret::random(&mut rng);
     let platform_public = platform_secret.public_key();
 
     let auth_key_value: Value = soft_fido2_ctap::cbor::decode(&auth_cose_key)
