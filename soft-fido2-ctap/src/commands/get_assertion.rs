@@ -17,8 +17,7 @@ use crate::{
     types::{PublicKeyCredentialDescriptor, auth_data_flags},
 };
 
-use soft_fido2_crypto::ecdsa;
-use soft_fido2_crypto::eddsa;
+use soft_fido2_crypto::{ecdsa, eddsa};
 
 use alloc::{
     format,

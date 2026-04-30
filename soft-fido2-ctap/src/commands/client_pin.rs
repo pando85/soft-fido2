@@ -17,6 +17,7 @@ use crate::{
 };
 
 use alloc::{string::String, vec::Vec};
+
 use zeroize::Zeroizing;
 
 /// Find the length of a null-terminated string in constant time
@@ -724,6 +725,7 @@ fn parse_cose_key(cose_key: &crate::cbor::Value) -> Result<Vec<u8>> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use alloc::vec;
 
     use crate::{
         authenticator::{Authenticator, AuthenticatorConfig},

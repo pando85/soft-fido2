@@ -31,6 +31,7 @@ use crate::status::Result;
 
 use alloc::string::ToString;
 use alloc::{vec, vec::Vec};
+
 use rand::RngCore;
 use serde::{Deserialize, Serialize};
 
@@ -200,7 +201,7 @@ impl MakeCredentialExtensions {
         if let Some(true) = self.large_blob_key {
             // Generate random 32-byte key
             let mut key = vec![0u8; 32];
-            rand::thread_rng().fill_bytes(&mut key);
+            rand::rng().fill_bytes(&mut key);
 
             outputs.push((
                 crate::cbor::Value::Text(ext_ids::LARGE_BLOB_KEY.to_string()),
@@ -532,6 +533,7 @@ pub fn compute_hmac_secret(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use alloc::vec;
 
     #[test]
     fn test_cred_protect_policy() {

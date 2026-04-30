@@ -13,8 +13,6 @@ use crate::{
 
 use soft_fido2_crypto::pin_protocol::{self, v2};
 
-use zeroize::Zeroizing;
-
 use alloc::{
     boxed::Box,
     collections::BTreeMap,
@@ -27,6 +25,7 @@ use alloc::{
 use rand::RngCore;
 use sha2::{Digest, Sha256};
 use subtle::ConstantTimeEq;
+use zeroize::Zeroizing;
 
 /// Type alias for custom command handlers
 type CustomCommandHandler = Box<dyn Fn(&[u8]) -> Result<Vec<u8>, StatusCode> + Send + Sync>;
@@ -390,7 +389,7 @@ impl<C: AuthenticatorCallbacks> Authenticator<C> {
         let credential_wrapping_key =
             SecBytes::from_array(config.credential_wrapping_key.unwrap_or_else(|| {
                 let mut key = [0u8; 32];
-                rand::thread_rng().fill_bytes(&mut key);
+                rand::rng().fill_bytes(&mut key);
                 key
             }));
 
@@ -689,7 +688,7 @@ impl<C: AuthenticatorCallbacks> Authenticator<C> {
     ) -> Result<[u8; 32], StatusCode> {
         // Generate random token
         let mut token_bytes = [0u8; 32];
-        rand::thread_rng().fill_bytes(&mut token_bytes);
+        rand::rng().fill_bytes(&mut token_bytes);
 
         // Create and store token
         let now = self.callbacks.get_timestamp_ms();
@@ -1180,6 +1179,7 @@ impl<C: AuthenticatorCallbacks> Authenticator<C> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use alloc::vec;
 
     use crate::{
         UpResult, UvResult,
