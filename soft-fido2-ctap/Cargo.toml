@@ -36,6 +36,7 @@ smallvec.workspace = true
 [dev-dependencies]
 hex.workspace = true
 soft-fido2-transport = { path = "../soft-fido2-transport" }
+spin.workspace = true
 
 [features]
 default = ["std"]

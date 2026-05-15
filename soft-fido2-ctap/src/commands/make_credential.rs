@@ -17,15 +17,15 @@ use crate::{
     },
 };
 
-use soft_fido2_crypto::ecdsa;
-use soft_fido2_crypto::eddsa;
-
-#[cfg(feature = "std")]
-use std::time::{SystemTime, UNIX_EPOCH};
+use soft_fido2_crypto::{ecdsa, eddsa};
 
 use alloc::string::{String, ToString};
 use alloc::vec::Vec;
 use alloc::{format, vec};
+
+#[cfg(feature = "std")]
+use std::time::{SystemTime, UNIX_EPOCH};
+
 use rand::RngCore;
 use sha2::{Digest, Sha256};
 
@@ -710,7 +710,7 @@ fn create_credential<C: AuthenticatorCallbacks>(
     // Generate cred_random if hmac-secret extension is enabled
     let cred_random = if extensions.hmac_secret == Some(true) {
         let mut random = [0u8; 32];
-        rand::thread_rng().fill_bytes(&mut random);
+        rand::rng().fill_bytes(&mut random);
         Some(SecBytes::from_array(random))
     } else {
         None
@@ -855,7 +855,7 @@ struct AttestationCredential {
 /// Generate a random credential ID
 fn generate_credential_id() -> Vec<u8> {
     let mut id = vec![0u8; 32];
-    rand::thread_rng().fill_bytes(&mut id);
+    rand::rng().fill_bytes(&mut id);
     id
 }
 

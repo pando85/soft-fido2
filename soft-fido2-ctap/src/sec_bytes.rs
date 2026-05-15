@@ -4,15 +4,16 @@
 //! with automatic memory zeroing and optional memory locking.
 
 use alloc::vec::Vec;
+
 use serde::{
     Deserialize, Deserializer, Serialize, Serializer,
     de::{self, Visitor},
 };
+use subtle::ConstantTimeEq;
 use zeroize::{Zeroize, Zeroizing};
 
 #[cfg(feature = "std")]
 use secstr::SecVec;
-use subtle::ConstantTimeEq;
 
 /// Secure bytes for sensitive data (private keys, PINs, tokens)
 ///
@@ -332,6 +333,8 @@ impl From<SecPinHash> for SecBytes {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use alloc::format;
+    use alloc::vec;
 
     #[test]
     fn test_sec_pin_hash_new() {
