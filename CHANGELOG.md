@@ -5,6 +5,29 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/), and this project
 adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [v0.13.0](https://github.com/pando85/soft-fido2/tree/v0.13.0) - 2026-05-24
+
+### Fixed
+
+- Update sha2 and hmac to compatible versions for hkdf 0.13 ([4dc6d39](https://github.com/pando85/soft-fido2/commit/4dc6d39976c10ce9837252b403ad845666420767))
+- Add KeyInit trait import for hmac 0.13 compatibility ([9a121b7](https://github.com/pando85/soft-fido2/commit/9a121b7ccd2fe3c079e3c89be8ada6dd7e5f0c12))
+- Remove yanked core2 dependency, use cbor4ii Write trait (#99) ([dbde8e6](https://github.com/pando85/soft-fido2/commit/dbde8e6dfa2d16bf58f07d612650202606f929d5))
+- Support getNextAssertion for resident credentials (#107) ([e599b62](https://github.com/pando85/soft-fido2/commit/e599b6223d4d795d49aa60b2c43afe312982ae3c))
+
+### Build
+
+- deps: Update Rust crate hkdf to 0.13 ([9676c13](https://github.com/pando85/soft-fido2/commit/9676c139d14cf56d057eca958e004f253af3cd4f))
+- deps: Configure Renovate to group sha2, hmac, hkdf crates ([99f7c97](https://github.com/pando85/soft-fido2/commit/99f7c974cf4d5407c2a6920f10e0db23920d28c3))
+- deps: Update Rust crate cbc to 0.2 (#95) ([6b3410c](https://github.com/pando85/soft-fido2/commit/6b3410c1bb417cb32b14ebe39f256571aa085a6b))
+- deps: Update softprops/action-gh-release action to v3 (#96) ([6dd4dca](https://github.com/pando85/soft-fido2/commit/6dd4dca6df2d24658ee9a91ee932ab3b383e4a75))
+- deps: Update clechasseur/rs-clippy-check action to v6 (#97) ([cae5a43](https://github.com/pando85/soft-fido2/commit/cae5a4349824e40c28dfb0a57c70f21a43dcfc0e))
+- deps: Update clechasseur/rs-clippy-check action to v6.0.3 (#100) ([a9109d1](https://github.com/pando85/soft-fido2/commit/a9109d14094fcc3d836249e76bd945b15d74eb53))
+- deps: Update pre-commit hook alessandrojcm/commitlint-pre-commit-hook to v9.25.0 (#101) ([6fb3015](https://github.com/pando85/soft-fido2/commit/6fb30156b09bcd50bbebc9720d470439337143eb))
+- deps: Update clechasseur/rs-clippy-check action to v6.0.4 (#102) ([95e0aec](https://github.com/pando85/soft-fido2/commit/95e0aecd750226004bd5cc6a565fc2fa9ff31e41))
+- deps: Update Rust crate spin to 0.11 (#103) ([0118539](https://github.com/pando85/soft-fido2/commit/0118539f3aad22460c3180ca3ce696a06b46ccd2))
+- deps: Update mindsers/changelog-reader-action action to v2.3.0 (#104) ([c06f70f](https://github.com/pando85/soft-fido2/commit/c06f70f806a1e1ef827ee5490b0e791397d7b8ec))
+- deps: Update mindsers/changelog-reader-action action to v2.4.0 (#105) ([c64bb97](https://github.com/pando85/soft-fido2/commit/c64bb97a52c8c7af14089779f6d6ee592eb94471))
+
 ## [v0.12.2](https://github.com/pando85/soft-fido2/tree/v0.12.2) - 2026-03-13
 
 ### Fixed
