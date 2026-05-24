@@ -330,6 +330,23 @@ impl AuthenticatorOptions {
     }
 }
 
+const ASSERTION_STATE_TIMEOUT_MS: u64 = 30_000;
+
+/// Context shared by authenticatorGetAssertion and authenticatorGetNextAssertion.
+#[derive(Clone)]
+pub struct AssertionContext {
+    pub client_data_hash: Vec<u8>,
+    pub rp_id: String,
+    pub up: bool,
+    pub uv: bool,
+}
+
+struct AssertionState {
+    remaining_credentials: Vec<crate::types::Credential>,
+    context: AssertionContext,
+    created_at: u64,
+}
+
 /// Authenticator state machine
 ///
 /// Central component managing authenticator configuration, PIN state,
@@ -376,6 +393,9 @@ pub struct Authenticator<C: AuthenticatorCallbacks> {
 
     /// Current index in credential enumeration
     credential_enumeration_index: usize,
+
+    /// Assertion state for getNextAssertion
+    assertion_state: Option<AssertionState>,
 }
 
 impl<C: AuthenticatorCallbacks> Authenticator<C> {
@@ -408,6 +428,7 @@ impl<C: AuthenticatorCallbacks> Authenticator<C> {
             rp_enumeration_index: 0,
             credential_enumeration_state: None,
             credential_enumeration_index: 0,
+            assertion_state: None,
         }
     }
 
@@ -884,6 +905,68 @@ impl<C: AuthenticatorCallbacks> Authenticator<C> {
         Ok(cred)
     }
 
+    /// Store remaining assertion credentials for getNextAssertion.
+    pub fn start_assertion(
+        &mut self,
+        remaining_credentials: Vec<crate::types::Credential>,
+        client_data_hash: Vec<u8>,
+        rp_id: String,
+        up: bool,
+        uv: bool,
+    ) {
+        if remaining_credentials.is_empty() {
+            self.assertion_state = None;
+            return;
+        }
+
+        self.assertion_state = Some(AssertionState {
+            remaining_credentials,
+            context: AssertionContext {
+                client_data_hash,
+                rp_id,
+                up,
+                uv,
+            },
+            created_at: self.callbacks.get_timestamp_ms(),
+        });
+    }
+
+    /// Return the next assertion credential and its original assertion context.
+    pub fn get_next_assertion(
+        &mut self,
+    ) -> Result<(crate::types::Credential, AssertionContext, usize), StatusCode> {
+        let now = self.callbacks.get_timestamp_ms();
+        let state = self
+            .assertion_state
+            .as_mut()
+            .ok_or(StatusCode::NoCredentials)?;
+
+        if now.saturating_sub(state.created_at) > ASSERTION_STATE_TIMEOUT_MS {
+            self.assertion_state = None;
+            return Err(StatusCode::UserActionTimeout);
+        }
+
+        if state.remaining_credentials.is_empty() {
+            self.assertion_state = None;
+            return Err(StatusCode::NoCredentials);
+        }
+
+        let credential = state.remaining_credentials.remove(0);
+        let context = state.context.clone();
+        let remaining = state.remaining_credentials.len();
+
+        if remaining == 0 {
+            self.assertion_state = None;
+        }
+
+        Ok((credential, context, remaining))
+    }
+
+    /// Clear pending getNextAssertion state.
+    pub fn clear_assertion_state(&mut self) {
+        self.assertion_state = None;
+    }
+
     /// Register a custom command handler
     ///
     /// # Arguments
@@ -982,6 +1065,7 @@ impl<C: AuthenticatorCallbacks> Authenticator<C> {
         self.pin_state = PinState::new();
         self.pin_tokens.clear_token();
         self.pin_protocol_keypairs.clear();
+        self.assertion_state = None;
 
         // Persist reset state if storage is configured
         self.save_pin_state()?;
