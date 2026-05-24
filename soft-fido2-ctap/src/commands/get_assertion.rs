@@ -87,6 +87,7 @@ pub fn handle<C: AuthenticatorCallbacks>(
     data: &[u8],
 ) -> Result<Vec<u8>> {
     let parser = MapParser::from_bytes(data)?;
+    auth.clear_assertion_state();
 
     // ===== Parse all parameters first =====
 
@@ -702,10 +703,13 @@ pub fn handle<C: AuthenticatorCallbacks>(
     // Add numberOfCredentials if multiple credentials and no allowList
     if allow_list.is_none() && number_of_credentials > 1 {
         builder = builder.insert(resp_keys::NUMBER_OF_CREDENTIALS, number_of_credentials)?;
-        // Note: For authenticatorGetNextAssertion support, we would need to:
-        // - Store the remaining credentials
-        // - Start a timer
-        // - Track credential counter
+        auth.start_assertion(
+            credentials,
+            client_data_hash.clone(),
+            rp_id.clone(),
+            response_state.up,
+            response_state.uv,
+        );
     }
 
     // Add userSelected if credential was selected by user via authenticator interaction
