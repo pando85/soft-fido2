@@ -24,7 +24,9 @@ hmac = "0.13"
 hkdf = "0.13"
 aes = "0.9"
 cbc = { version = "0.2", features = ["alloc"] }
-rand = "0.8"
+rand = "0.9"
+rand_08 = { package = "rand", version = "0.8" }
+rand_core = "0.9"
 subtle = "2.6"
 zeroize = { version = "1.8", default-features = false, features = ["alloc"] }
 

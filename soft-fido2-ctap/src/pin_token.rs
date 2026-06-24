@@ -367,6 +367,7 @@ impl Default for PinTokenManager {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use alloc::string::ToString;
 
     /// Create a test token with default values
     fn create_test_token(now: u64) -> PinToken {

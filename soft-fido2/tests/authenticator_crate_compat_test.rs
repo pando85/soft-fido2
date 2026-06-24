@@ -755,7 +755,7 @@ fn test_mozilla_authenticator_crate_compat_with_pin() {
     let pin = "123456";
 
     // Generate platform key pair
-    let mut rng = rand::thread_rng();
+    let mut rng = p256::elliptic_curve::rand_core::OsRng;
     let platform_secret = EphemeralSecret::random(&mut rng);
     let platform_public = platform_secret.public_key();
 
@@ -1415,7 +1415,7 @@ fn test_mozilla_authenticator_crate_compat_credential_management() {
     let mut auth =
         Authenticator::with_config(callbacks.clone(), config).expect("Failed to create auth");
 
-    let mut rng = rand::thread_rng();
+    let mut rng = p256::elliptic_curve::rand_core::OsRng;
     let pin = "654321";
 
     // ========================================
@@ -2174,7 +2174,7 @@ fn test_pin_storage_persistence() {
     eprintln!("[Test] ✓ Got authenticator key agreement");
 
     // Step 2: Perform ECDH and encrypt PIN
-    let mut rng = rand::thread_rng();
+    let mut rng = p256::elliptic_curve::rand_core::OsRng;
     let platform_secret = EphemeralSecret::random(&mut rng);
     let platform_public = platform_secret.public_key();
 
