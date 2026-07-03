@@ -8,8 +8,8 @@ extern crate alloc;
 use crate::error::{CryptoError, Result};
 
 use alloc::vec::Vec;
-use p256::elliptic_curve::sec1::ToSec1Point;
 use p256::elliptic_curve::Generate;
+use p256::elliptic_curve::sec1::ToSec1Point;
 use p256::{PublicKey, SecretKey};
 use zeroize::Zeroizing;
 
