@@ -8,9 +8,9 @@ extern crate alloc;
 use crate::error::{CryptoError, Result};
 
 use alloc::vec::Vec;
-use p256::elliptic_curve::sec1::ToEncodedPoint;
+use p256::elliptic_curve::sec1::ToSec1Point;
+use p256::elliptic_curve::Generate;
 use p256::{PublicKey, SecretKey};
-use rand::rngs::OsRng;
 use zeroize::Zeroizing;
 
 /// P-256 key pair for ECDH key agreement
@@ -30,7 +30,7 @@ impl KeyPair {
     /// let keypair = KeyPair::generate().unwrap();
     /// ```
     pub fn generate() -> Result<Self> {
-        let secret = SecretKey::random(&mut OsRng);
+        let secret = SecretKey::generate();
         let public = secret.public_key();
         Ok(Self { secret, public })
     }
@@ -51,7 +51,7 @@ impl KeyPair {
     /// assert_eq!(y.len(), 32);
     /// ```
     pub fn public_key_cose(&self) -> ([u8; 32], [u8; 32]) {
-        let point = self.public.to_encoded_point(false);
+        let point = self.public.to_sec1_point(false);
         // SAFETY: to_encoded_point(false) produces an uncompressed point (0x04 prefix),
         // which always contains both x and y coordinates for P-256 curve points.
         // The P-256 curve is defined over a prime field where all valid points have
@@ -87,7 +87,7 @@ impl KeyPair {
     /// assert_eq!(bytes[0], 0x04);  // Uncompressed point marker
     /// ```
     pub fn public_key_bytes(&self) -> Vec<u8> {
-        self.public.to_encoded_point(false).as_bytes().to_vec()
+        self.public.to_sec1_point(false).as_bytes().to_vec()
     }
 
     /// Compute shared secret with peer's public key

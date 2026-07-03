@@ -15,7 +15,7 @@ use crate::error::{CryptoError, Result};
 use alloc::vec::Vec;
 use p256::ecdsa::signature::{Signer, Verifier};
 use p256::ecdsa::{Signature, SigningKey, VerifyingKey};
-use rand::rngs::OsRng;
+use p256::elliptic_curve::Generate;
 use zeroize::Zeroizing;
 
 /// Generate new random ES256 key pair
@@ -35,14 +35,14 @@ use zeroize::Zeroizing;
 /// assert_eq!(public_key[0], 0x04);
 /// ```
 pub fn generate_keypair() -> (Zeroizing<[u8; 32]>, Vec<u8>) {
-    let signing_key = SigningKey::random(&mut OsRng);
+    let signing_key = SigningKey::generate();
     let verifying_key = signing_key.verifying_key();
 
     let mut private_key = Zeroizing::new([0u8; 32]);
     private_key.copy_from_slice(&signing_key.to_bytes());
 
     // Public key in uncompressed SEC1 format
-    let public_key = verifying_key.to_encoded_point(false).as_bytes().to_vec();
+    let public_key = verifying_key.to_sec1_point(false).as_bytes().to_vec();
 
     (private_key, public_key)
 }
@@ -224,7 +224,7 @@ pub fn public_from_private(private_key: &[u8; 32]) -> Result<Vec<u8>> {
         SigningKey::from_bytes(private_key.into()).map_err(|_| CryptoError::InvalidPrivateKey)?;
 
     let verifying_key = signing_key.verifying_key();
-    Ok(verifying_key.to_encoded_point(false).as_bytes().to_vec())
+    Ok(verifying_key.to_sec1_point(false).as_bytes().to_vec())
 }
 
 #[cfg(test)]
