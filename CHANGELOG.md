@@ -7,10 +7,18 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [v0.13.1](https://github.com/pando85/soft-fido2/tree/v0.13.1) - 2026-07-06
 
+### Added
+
+- Expose uv retry reset api (#114) ([b3e6ca5](https://github.com/pando85/soft-fido2/commit/b3e6ca5))
+
 ### Build
 
-- Improve release tooling for shallow clones (#117) ([9dcd69d](https://github.com/pando85/soft-fido2/commit/9dcd69d))
+- deps: Update Rust crate spin to 0.12 (#106) ([473af76](https://github.com/pando85/soft-fido2/commit/473af76))
 - deps: Update actions/checkout action to v7 (#109) ([bf9e086](https://github.com/pando85/soft-fido2/commit/bf9e086))
+- deps: Update actions/cache action to v6 (#110) ([b6ac1fc](https://github.com/pando85/soft-fido2/commit/b6ac1fc))
+- deps: Update clechasseur/rs-clippy-check action to v6.0.5 (#111) ([25b4d60](https://github.com/pando85/soft-fido2/commit/25b4d60))
+- deps: Update pre-commit hook alessandrojcm/commitlint-pre-commit-hook to v9.26.0 (#112) ([761cd85](https://github.com/pando85/soft-fido2/commit/761cd85))
+- deps: Update Rust crate p256 to 0.14 (#113) ([5777d36](https://github.com/pando85/soft-fido2/commit/5777d36))
 
 ## [v0.13.0](https://github.com/pando85/soft-fido2/tree/v0.13.0) - 2026-05-24
 
