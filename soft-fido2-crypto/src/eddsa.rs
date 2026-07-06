@@ -15,8 +15,8 @@ use crate::error::{CryptoError, Result};
 use alloc::vec::Vec;
 use ed25519_dalek::Signer;
 use ed25519_dalek::{Signature, SigningKey, Verifier, VerifyingKey};
-use rand::RngCore;
-use rand::rngs::OsRng;
+use rand::TryRng;
+use rand::rngs::SysRng;
 use zeroize::Zeroizing;
 
 pub use ed25519_dalek::PUBLIC_KEY_LENGTH;
@@ -40,7 +40,7 @@ pub use ed25519_dalek::SIGNATURE_LENGTH;
 /// ```
 pub fn generate_keypair() -> (Zeroizing<[u8; 32]>, Vec<u8>) {
     let mut secret_key = [0u8; 32];
-    OsRng.fill_bytes(&mut secret_key);
+    SysRng.try_fill_bytes(&mut secret_key).expect("SysRng failed");
 
     let signing_key = SigningKey::from_bytes(&secret_key);
     let verifying_key = signing_key.verifying_key();

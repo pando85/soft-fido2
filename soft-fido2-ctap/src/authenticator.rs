@@ -24,7 +24,7 @@ use alloc::{
     vec::Vec,
 };
 
-use rand::RngCore;
+use rand::Rng;
 use sha2::{Digest, Sha256};
 use subtle::ConstantTimeEq;
 
@@ -410,7 +410,7 @@ impl<C: AuthenticatorCallbacks> Authenticator<C> {
         let credential_wrapping_key =
             SecBytes::from_array(config.credential_wrapping_key.unwrap_or_else(|| {
                 let mut key = [0u8; 32];
-                rand::thread_rng().fill_bytes(&mut key);
+                rand::rng().fill_bytes(&mut key);
                 key
             }));
 
@@ -710,7 +710,7 @@ impl<C: AuthenticatorCallbacks> Authenticator<C> {
     ) -> Result<[u8; 32], StatusCode> {
         // Generate random token
         let mut token_bytes = [0u8; 32];
-        rand::thread_rng().fill_bytes(&mut token_bytes);
+        rand::rng().fill_bytes(&mut token_bytes);
 
         // Create and store token
         let now = self.callbacks.get_timestamp_ms();
