@@ -36,7 +36,8 @@ use soft_fido2::{Authenticator, AuthenticatorConfig, AuthenticatorOptions};
 use common::TestCallbacks;
 use p256::PublicKey;
 use p256::ecdh::EphemeralSecret;
-use p256::elliptic_curve::sec1::ToEncodedPoint;
+use p256::elliptic_curve::Generate;
+use p256::elliptic_curve::sec1::ToSec1Point;
 use sha2::{Digest, Sha256};
 use soft_fido2_crypto::pin_protocol::v2;
 
@@ -755,8 +756,7 @@ fn test_mozilla_authenticator_crate_compat_with_pin() {
     let pin = "123456";
 
     // Generate platform key pair
-    let mut rng = rand::thread_rng();
-    let platform_secret = EphemeralSecret::random(&mut rng);
+    let platform_secret = EphemeralSecret::generate();
     let platform_public = platform_secret.public_key();
 
     // Parse authenticator's public key
@@ -819,7 +819,7 @@ fn test_mozilla_authenticator_crate_compat_with_pin() {
     let pin_auth = v2::authenticate(&hmac_key, &pin_enc).to_vec();
 
     // Encode platform public key as COSE_Key
-    let platform_pubkey_point = platform_public.to_encoded_point(false);
+    let platform_pubkey_point = platform_public.to_sec1_point(false);
     let platform_cose_key = Value::Map(vec![
         (Value::Integer(1.into()), Value::Integer(2.into())), // kty: EC2
         (Value::Integer(3.into()), Value::Integer((-25).into())), // alg: ECDH-ES+HKDF-256
@@ -872,7 +872,7 @@ fn test_mozilla_authenticator_crate_compat_with_pin() {
     let auth_cose_key = extract_cose_key(&response).expect("Failed to extract COSE key");
 
     // Step 2: Perform ECDH again
-    let platform_secret = EphemeralSecret::random(&mut rng);
+    let platform_secret = EphemeralSecret::generate();
     let platform_public = platform_secret.public_key();
 
     let auth_key_value: Value = soft_fido2_ctap::cbor::decode(&auth_cose_key)
@@ -928,7 +928,7 @@ fn test_mozilla_authenticator_crate_compat_with_pin() {
     let pin_hash_enc = v2::encrypt(&enc_key, &pin_hash[..16]).expect("Failed to encrypt PIN hash");
 
     // Encode platform public key
-    let platform_pubkey_point = platform_public.to_encoded_point(false);
+    let platform_pubkey_point = platform_public.to_sec1_point(false);
     let platform_cose_key = Value::Map(vec![
         (Value::Integer(1.into()), Value::Integer(2.into())),
         (Value::Integer(3.into()), Value::Integer((-25).into())),
@@ -1415,7 +1415,6 @@ fn test_mozilla_authenticator_crate_compat_credential_management() {
     let mut auth =
         Authenticator::with_config(callbacks.clone(), config).expect("Failed to create auth");
 
-    let mut rng = rand::thread_rng();
     let pin = "654321";
 
     // ========================================
@@ -1466,7 +1465,7 @@ fn test_mozilla_authenticator_crate_compat_credential_management() {
 
     // Helper function to encode platform public key
     let encode_platform_key = |public_key: &p256::PublicKey| -> Vec<u8> {
-        let pubkey_point = public_key.to_encoded_point(false);
+        let pubkey_point = public_key.to_sec1_point(false);
         let platform_cose_key = Value::Map(vec![
             (Value::Integer(1.into()), Value::Integer(2.into())),
             (Value::Integer(3.into()), Value::Integer((-25).into())),
@@ -1487,7 +1486,7 @@ fn test_mozilla_authenticator_crate_compat_credential_management() {
         platform_cose_key_bytes
     };
 
-    let platform_secret = EphemeralSecret::random(&mut rng);
+    let platform_secret = EphemeralSecret::generate();
     let platform_public = platform_secret.public_key();
 
     let (x_bytes, y_bytes) = parse_cose_key(&auth_cose_key);
@@ -1570,7 +1569,7 @@ fn test_mozilla_authenticator_crate_compat_credential_management() {
 
     let auth_cose_key = extract_cose_key(&response).expect("Failed to extract COSE key");
 
-    let platform_secret = EphemeralSecret::random(&mut rng);
+    let platform_secret = EphemeralSecret::generate();
     let platform_public = platform_secret.public_key();
 
     let (x_bytes, y_bytes) = parse_cose_key(&auth_cose_key);
@@ -1762,7 +1761,7 @@ fn test_mozilla_authenticator_crate_compat_credential_management() {
 
     let auth_cose_key = extract_cose_key(&response).expect("Failed to extract COSE key");
 
-    let platform_secret = EphemeralSecret::random(&mut rng);
+    let platform_secret = EphemeralSecret::generate();
     let platform_public = platform_secret.public_key();
 
     let (x_bytes, y_bytes) = parse_cose_key(&auth_cose_key);
@@ -2174,8 +2173,7 @@ fn test_pin_storage_persistence() {
     eprintln!("[Test] ✓ Got authenticator key agreement");
 
     // Step 2: Perform ECDH and encrypt PIN
-    let mut rng = rand::thread_rng();
-    let platform_secret = EphemeralSecret::random(&mut rng);
+    let platform_secret = EphemeralSecret::generate();
     let platform_public = platform_secret.public_key();
 
     use soft_fido2_ctap::cbor::Value;
@@ -2229,7 +2227,7 @@ fn test_pin_storage_persistence() {
     let pin_enc = v2::encrypt(&enc_key, pin_padded.as_bytes()).expect("Failed to encrypt PIN");
     let pin_auth = v2::authenticate(&hmac_key, &pin_enc).to_vec();
 
-    let platform_pubkey_point = platform_public.to_encoded_point(false);
+    let platform_pubkey_point = platform_public.to_sec1_point(false);
     let platform_cose_key = Value::Map(vec![
         (Value::Integer(1.into()), Value::Integer(2.into())),
         (Value::Integer(3.into()), Value::Integer((-25).into())),
@@ -2302,7 +2300,7 @@ fn test_pin_storage_persistence() {
 
     let auth_cose_key = extract_cose_key(&response).expect("Failed to extract COSE key");
 
-    let platform_secret = EphemeralSecret::random(&mut rng);
+    let platform_secret = EphemeralSecret::generate();
     let platform_public = platform_secret.public_key();
 
     let auth_key_value: Value = soft_fido2_ctap::cbor::decode(&auth_cose_key)
@@ -2355,7 +2353,7 @@ fn test_pin_storage_persistence() {
     let wrong_pin_hash_enc =
         v2::encrypt(&enc_key, &wrong_pin_hash[..16]).expect("Failed to encrypt wrong PIN hash");
 
-    let platform_pubkey_point = platform_public.to_encoded_point(false);
+    let platform_pubkey_point = platform_public.to_sec1_point(false);
     let platform_cose_key = Value::Map(vec![
         (Value::Integer(1.into()), Value::Integer(2.into())),
         (Value::Integer(3.into()), Value::Integer((-25).into())),
@@ -2508,7 +2506,7 @@ fn test_pin_storage_persistence() {
 
     let auth_cose_key = extract_cose_key(&response).expect("Failed to extract COSE key");
 
-    let platform_secret = EphemeralSecret::random(&mut rng);
+    let platform_secret = EphemeralSecret::generate();
     let platform_public = platform_secret.public_key();
 
     let auth_key_value: Value = soft_fido2_ctap::cbor::decode(&auth_cose_key)
@@ -2559,7 +2557,7 @@ fn test_pin_storage_persistence() {
     let correct_pin_hash_enc =
         v2::encrypt(&enc_key, &correct_pin_hash[..16]).expect("Failed to encrypt correct PIN hash");
 
-    let platform_pubkey_point = platform_public.to_encoded_point(false);
+    let platform_pubkey_point = platform_public.to_sec1_point(false);
     let platform_cose_key = Value::Map(vec![
         (Value::Integer(1.into()), Value::Integer(2.into())),
         (Value::Integer(3.into()), Value::Integer((-25).into())),

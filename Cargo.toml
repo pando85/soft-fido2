@@ -18,7 +18,7 @@ soft-fido2-ctap = { path = "soft-fido2-ctap", default-features = false, version 
 soft-fido2-transport = { path = "soft-fido2-transport", version = "0.13.0" }
 
 # Cryptography (well-audited crates)
-p256 = { version = "0.13", features = ["ecdsa", "ecdh"] }
+p256 = { version = "0.14", features = ["ecdsa", "ecdh", "getrandom"] }
 sha2 = "0.11"
 hmac = "0.13"
 hkdf = "0.13"
