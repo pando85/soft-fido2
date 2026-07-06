@@ -824,6 +824,70 @@ impl<C: AuthenticatorCallbacks> Authenticator<C> {
             .authenticator_mut()
             .register_custom_command(command, handler);
     }
+
+    /// Get the number of UV retries remaining.
+    pub fn uv_retries(&self) -> Result<u8> {
+        #[cfg(feature = "std")]
+        let dispatcher = self.dispatcher.lock().map_err(|_| Error::Other)?;
+        #[cfg(not(feature = "std"))]
+        let dispatcher = self.dispatcher.lock();
+
+        Ok(dispatcher.authenticator().uv_retries())
+    }
+
+    /// Reset UV retry counter to maximum value
+    ///
+    /// Delegates to the underlying CTAP authenticator's UV retry logic.
+    pub fn reset_uv_retries(&mut self) -> Result<()> {
+        #[cfg(feature = "std")]
+        let mut dispatcher = self.dispatcher.lock().map_err(|_| Error::Other)?;
+        #[cfg(not(feature = "std"))]
+        let mut dispatcher = self.dispatcher.lock();
+
+        dispatcher.authenticator_mut().reset_uv_retries();
+        Ok(())
+    }
+
+    /// Verify that a PIN/UV auth parameter is valid and carries credential-management permission.
+    ///
+    /// Vendor commands can use this to require the same PIN authorization as standard
+    /// CTAP credential-management commands. `auth_data` must be the exact byte string
+    /// authenticated by the client when computing `pin_uv_auth_param`.
+    pub fn verify_credential_management_pin_uv_auth(
+        &mut self,
+        pin_uv_auth_protocol: u8,
+        pin_uv_auth_param: &[u8],
+        auth_data: &[u8],
+    ) -> Result<()> {
+        #[cfg(feature = "std")]
+        let mut dispatcher = self.dispatcher.lock().map_err(|_| Error::Other)?;
+        #[cfg(not(feature = "std"))]
+        let mut dispatcher = self.dispatcher.lock();
+
+        dispatcher.authenticator_mut().verify_pin_uv_auth_param(
+            pin_uv_auth_protocol,
+            pin_uv_auth_param,
+            auth_data,
+        )?;
+
+        dispatcher.authenticator_mut().verify_pin_uv_auth_token(
+            soft_fido2_ctap::pin_token::Permission::CredentialManagement,
+            None,
+        )?;
+
+        Ok(())
+    }
+
+    #[cfg(test)]
+    fn decrement_uv_retries_for_testing(&mut self) -> Result<()> {
+        #[cfg(feature = "std")]
+        let mut dispatcher = self.dispatcher.lock().map_err(|_| Error::Other)?;
+        #[cfg(not(feature = "std"))]
+        let mut dispatcher = self.dispatcher.lock();
+
+        dispatcher.authenticator_mut().decrement_uv_retries();
+        Ok(())
+    }
 }
 
 mod tests {
@@ -888,5 +952,29 @@ mod tests {
 
         assert_eq!(config.aaguid, [1u8; 16]);
         assert_eq!(config.max_credentials, 50);
+    }
+
+    #[test]
+    fn test_reset_uv_retries_restores_exhausted_counter() {
+        let callbacks = TestCallbacks;
+        let mut auth = Authenticator::new(callbacks).unwrap();
+
+        assert_eq!(auth.uv_retries().unwrap(), 3);
+        auth.decrement_uv_retries_for_testing().unwrap();
+        auth.decrement_uv_retries_for_testing().unwrap();
+        auth.decrement_uv_retries_for_testing().unwrap();
+        assert_eq!(auth.uv_retries().unwrap(), 0);
+
+        auth.reset_uv_retries().unwrap();
+        assert_eq!(auth.uv_retries().unwrap(), 3);
+    }
+
+    #[test]
+    fn test_credential_management_pin_uv_auth_rejects_invalid_param() {
+        let callbacks = TestCallbacks;
+        let mut auth = Authenticator::new(callbacks).unwrap();
+
+        let result = auth.verify_credential_management_pin_uv_auth(1, &[0u8; 16], &[0u8; 32]);
+        assert!(result.is_err());
     }
 }
