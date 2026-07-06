@@ -621,7 +621,7 @@ fn test_comprehensive_webauthn_flows() {
     );
 
     // Authentication
-    use rand::RngCore;
+    use rand::Rng;
     let mut challenge_bytes = vec![0u8; 32];
     rand::rng().fill_bytes(&mut challenge_bytes);
 
