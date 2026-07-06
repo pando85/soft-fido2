@@ -9,6 +9,7 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Build
 
+- Improve release tooling for shallow clones (#117) ([9dcd69d](https://github.com/pando85/soft-fido2/commit/9dcd69d))
 - deps: Update actions/checkout action to v7 (#109) ([bf9e086](https://github.com/pando85/soft-fido2/commit/bf9e086))
 
 ## [v0.13.0](https://github.com/pando85/soft-fido2/tree/v0.13.0) - 2026-05-24
