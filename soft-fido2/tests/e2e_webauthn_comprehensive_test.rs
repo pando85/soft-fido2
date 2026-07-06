@@ -623,7 +623,7 @@ fn test_comprehensive_webauthn_flows() {
     // Authentication
     use rand::RngCore;
     let mut challenge_bytes = vec![0u8; 32];
-    rand::thread_rng().fill_bytes(&mut challenge_bytes);
+    rand::rng().fill_bytes(&mut challenge_bytes);
 
     let client_data_hash = compute_client_data_hash(&challenge_bytes, "webauthn.get");
     let get_assertion_cbor = build_get_assertion_request(&client_data_hash, Some(&credential_id1));
@@ -683,7 +683,7 @@ fn test_comprehensive_webauthn_flows() {
 
     // Authenticate WITHOUT providing credential ID (discoverable flow)
     let mut challenge_bytes = vec![0u8; 32];
-    rand::thread_rng().fill_bytes(&mut challenge_bytes);
+    rand::rng().fill_bytes(&mut challenge_bytes);
 
     let client_data_hash = compute_client_data_hash(&challenge_bytes, "webauthn.get");
     let get_assertion_cbor = build_get_assertion_request(&client_data_hash, None); // No cred ID!
@@ -708,7 +708,7 @@ fn test_comprehensive_webauthn_flows() {
 
     // First authentication
     let mut challenge1 = vec![0u8; 32];
-    rand::thread_rng().fill_bytes(&mut challenge1);
+    rand::rng().fill_bytes(&mut challenge1);
     let client_data_hash1 = compute_client_data_hash(&challenge1, "webauthn.get");
     let get_assertion_cbor1 =
         build_get_assertion_request(&client_data_hash1, Some(&credential_id1));
@@ -725,7 +725,7 @@ fn test_comprehensive_webauthn_flows() {
 
     // Second authentication
     let mut challenge2 = vec![0u8; 32];
-    rand::thread_rng().fill_bytes(&mut challenge2);
+    rand::rng().fill_bytes(&mut challenge2);
     let client_data_hash2 = compute_client_data_hash(&challenge2, "webauthn.get");
     let get_assertion_cbor2 =
         build_get_assertion_request(&client_data_hash2, Some(&credential_id1));
