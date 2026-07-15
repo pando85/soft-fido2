@@ -54,6 +54,7 @@
 use crate::error::{Error, Result};
 
 use soft_fido2_ctap::SecBytes;
+use soft_fido2_ctap::key_provider::CredentialKey;
 
 use alloc::borrow::ToOwned;
 use alloc::string::ToString;
@@ -210,7 +211,7 @@ impl From<soft_fido2_ctap::types::Credential> for Credential {
             },
             sign_count: cred.sign_count,
             alg: cred.algorithm,
-            private_key: cred.private_key,
+            private_key: cred.key.material.clone(),
             created: cred.created,
             discoverable: cred.discoverable,
             extensions: Extensions {
@@ -233,7 +234,8 @@ impl From<Credential> for soft_fido2_ctap::types::Credential {
             user_display_name: cred.user.display_name,
             sign_count: cred.sign_count,
             algorithm: cred.alg,
-            private_key: cred.private_key,
+            key: CredentialKey::software(cred.private_key),
+            private_key: SecBytes::new(Vec::new()),
             created: cred.created,
             discoverable: cred.discoverable,
             cred_protect: cred.extensions.cred_protect.unwrap_or(1),

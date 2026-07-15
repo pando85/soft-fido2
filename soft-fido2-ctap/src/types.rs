@@ -3,6 +3,7 @@
 //! Core data structures used in CTAP protocol messages.
 //! All types support CBOR serialization as required by the FIDO2 spec.
 
+use crate::key_provider::CredentialKey;
 use crate::sec_bytes::{SecBytes, SecPinHash};
 
 use alloc::string::{String, ToString};
@@ -276,7 +277,7 @@ impl CredProtect {
 /// Credential data stored by authenticator
 ///
 /// Internal representation of a credential with all metadata.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 pub struct Credential {
     /// Credential ID
     #[serde(with = "serde_bytes")]
@@ -304,12 +305,19 @@ pub struct Credential {
     /// Signature counter
     pub sign_count: u32,
 
-    /// Private key (32 bytes for P-256)
+    /// Opaque credential key material owned by a key provider.
     ///
-    /// Protected using `SecBytes` which:
-    /// - Zeros memory on drop (prevents heap retention attacks)
-    /// - Uses mlock in std builds (prevents swapping to disk)
-    /// - Provides constant-time equality
+    /// For the default software provider this contains the raw 32-byte
+    /// private key. For external providers it contains opaque,
+    /// provider-specific material (e.g. TPM blobs).
+    pub key: CredentialKey,
+
+    /// Legacy private key field kept for backward-compatible deserialization.
+    ///
+    /// When deserializing an old credential that only has `private_key`,
+    /// the value is migrated into `key` as a software provider key.
+    /// This field is never written on serialization.
+    #[serde(skip)]
     pub private_key: SecBytes,
 
     /// Credential protection level
@@ -330,6 +338,63 @@ pub struct Credential {
     pub cred_random: Option<SecBytes>,
 }
 
+impl<'de> Deserialize<'de> for Credential {
+    fn deserialize<D>(deserializer: D) -> core::result::Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        #[derive(Deserialize)]
+        struct CredentialHelper {
+            #[serde(with = "serde_bytes")]
+            id: Vec<u8>,
+            rp_id: String,
+            created: i64,
+            rp_name: Option<String>,
+            #[serde(with = "serde_bytes")]
+            user_id: Vec<u8>,
+            algorithm: i32,
+            user_name: Option<String>,
+            sign_count: u32,
+            #[serde(default)]
+            key: Option<CredentialKey>,
+            #[serde(default)]
+            private_key: Option<SecBytes>,
+            cred_protect: u8,
+            discoverable: bool,
+            user_display_name: Option<String>,
+            #[serde(default)]
+            cred_random: Option<SecBytes>,
+        }
+
+        let helper = CredentialHelper::deserialize(deserializer)?;
+
+        let key = if let Some(key) = helper.key {
+            key
+        } else if let Some(pk) = helper.private_key {
+            CredentialKey::software(pk)
+        } else {
+            return Err(serde::de::Error::missing_field("key or private_key"));
+        };
+
+        Ok(Credential {
+            id: helper.id,
+            rp_id: helper.rp_id,
+            created: helper.created,
+            rp_name: helper.rp_name,
+            user_id: helper.user_id,
+            algorithm: helper.algorithm,
+            user_name: helper.user_name,
+            sign_count: helper.sign_count,
+            key,
+            private_key: SecBytes::new(Vec::new()),
+            cred_protect: helper.cred_protect,
+            discoverable: helper.discoverable,
+            user_display_name: helper.user_display_name,
+            cred_random: helper.cred_random,
+        })
+    }
+}
+
 impl Credential {
     /// Create a new credential
     #[allow(clippy::too_many_arguments)]
@@ -341,7 +406,7 @@ impl Credential {
         user_name: Option<String>,
         user_display_name: Option<String>,
         algorithm: i32,
-        private_key: SecBytes,
+        key: CredentialKey,
         discoverable: bool,
     ) -> Self {
         Self::with_cred_random(
@@ -352,7 +417,7 @@ impl Credential {
             user_name,
             user_display_name,
             algorithm,
-            private_key,
+            key,
             discoverable,
             None,
         )
@@ -368,7 +433,7 @@ impl Credential {
         user_name: Option<String>,
         user_display_name: Option<String>,
         algorithm: i32,
-        private_key: SecBytes,
+        key: CredentialKey,
         discoverable: bool,
         cred_random: Option<SecBytes>,
     ) -> Self {
@@ -381,7 +446,8 @@ impl Credential {
             algorithm,
             user_name,
             sign_count: 0,
-            private_key,
+            key,
+            private_key: SecBytes::new(Vec::new()),
             cred_protect: CredProtect::UserVerificationOptional.to_u8(),
             discoverable,
             user_display_name,
@@ -636,7 +702,7 @@ mod tests {
             Some("user@example.com".to_string()),
             Some("User Name".to_string()),
             -7,
-            SecBytes::new(vec![0u8; 32]),
+            CredentialKey::software(SecBytes::new(vec![0u8; 32])),
             true,
         );
 

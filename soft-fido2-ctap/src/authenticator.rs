@@ -7,6 +7,7 @@ use crate::{
     CoseAlgorithm, SecBytes, SecPinHash, StatusCode,
     callbacks::{AuthenticatorCallbacks, PinStorageCallbacks},
     cbor::MAX_CTAP_MESSAGE_SIZE,
+    key_provider::CredentialKey,
     pin_token::{Permission, PinToken, PinTokenManager},
     types::{MAX_UV_RETRIES, PinState},
 };
@@ -1086,112 +1087,105 @@ impl<C: AuthenticatorCallbacks> Authenticator<C> {
 
     /// Wrap credential data into a credential ID (for non-resident credentials)
     ///
-    /// Encrypts the private key and metadata into the credential ID itself.
+    /// Encrypts the credential key and metadata into the credential ID itself.
     /// This allows non-resident credentials to work without storing them.
     ///
-    /// Format: version(1) || IV(16) || encrypted_data || HMAC(16)
-    /// Encrypted data contains: private_key(32) || rp_id_len(1) || rp_id || algorithm(4)
+    /// Version 2 format: version(1) || IV(16) || encrypted_data || HMAC(16)
+    /// Encrypted data contains:
+    ///   provider_id(16) || format_version(2) || material_len(2) || material || rp_id_len(1) || rp_id || algorithm(4)
     pub fn wrap_credential(
         &self,
-        private_key: &[u8],
+        key: &CredentialKey,
         rp_id: &str,
         algorithm: i32,
     ) -> Result<Vec<u8>, StatusCode> {
-        // Version byte (1 = wrapped credential v1)
-        let version: u8 = 1;
+        let version: u8 = 2;
 
-        // Build plaintext: private_key || rp_id_len || rp_id || algorithm
+        let material = key.material.as_slice();
+        let material_len = material.len();
+        if material_len > u16::MAX as usize {
+            return Err(StatusCode::InvalidLength);
+        }
+
         let mut plaintext = Vec::new();
-        plaintext.extend_from_slice(private_key); // 32 bytes
-        plaintext.push(rp_id.len() as u8); // 1 byte
+        plaintext.extend_from_slice(key.provider.as_bytes());
+        plaintext.extend_from_slice(&key.format_version.to_be_bytes());
+        plaintext.extend_from_slice(&(material_len as u16).to_be_bytes());
+        plaintext.extend_from_slice(material);
+        plaintext.push(rp_id.len() as u8);
         plaintext.extend_from_slice(rp_id.as_bytes());
-        plaintext.extend_from_slice(&algorithm.to_be_bytes()); // 4 bytes
+        plaintext.extend_from_slice(&algorithm.to_be_bytes());
 
-        // Pad to 16-byte boundary for AES-CBC
         while plaintext.len() % 16 != 0 {
             plaintext.push(0);
         }
 
-        // Get wrapping key as fixed-size array reference
-        // SAFETY: credential_wrapping_key is initialized in Authenticator::new()
-        // and is always exactly 32 bytes. The field is private and cannot be
-        // modified after initialization.
         let wrapping_key: &[u8; 32] = self
             .credential_wrapping_key
             .as_slice()
             .try_into()
             .expect("credential_wrapping_key invariant: always 32 bytes");
 
-        // Encrypt using PIN protocol V2 (AES-256-CBC with random IV)
         let encrypted = v2::encrypt(wrapping_key, &plaintext).map_err(|_| StatusCode::Other)?;
 
-        // Build credential ID: version || encrypted_data
         let mut credential_id = Vec::new();
         credential_id.push(version);
         credential_id.extend_from_slice(&encrypted);
 
-        // Add HMAC for integrity
         let hmac = v2::authenticate(wrapping_key, &credential_id);
-        credential_id.extend_from_slice(&hmac[..16]); // First 16 bytes of HMAC
+        credential_id.extend_from_slice(&hmac[..16]);
 
         Ok(credential_id)
     }
 
     /// Unwrap credential data from a credential ID (for non-resident credentials)
     ///
-    /// Decrypts and verifies a wrapped credential ID, returning the private key
+    /// Decrypts and verifies a wrapped credential ID, returning the credential key
     /// and metadata if valid.
     ///
-    /// Returns: (private_key, rp_id, algorithm)
+    /// Returns: (key, rp_id, algorithm)
     pub fn unwrap_credential(
         &self,
         credential_id: &[u8],
-    ) -> Result<(SecBytes, String, i32), StatusCode> {
-        // Minimum size: version(1) + IV(16) + min_encrypted(16) + HMAC(16) = 49 bytes
+    ) -> Result<(CredentialKey, String, i32), StatusCode> {
         if credential_id.len() < 49 {
             return Err(StatusCode::InvalidParameter);
         }
 
-        // Split: version || encrypted_data || HMAC
         let version = credential_id[0];
         let hmac_start = credential_id.len() - 16;
         let data_with_version = &credential_id[..hmac_start];
         let hmac_received = &credential_id[hmac_start..];
 
-        // Verify version
-        if version != 1 {
-            return Err(StatusCode::InvalidParameter);
-        }
-
-        // Get wrapping key as fixed-size array reference
-        // SAFETY: credential_wrapping_key is initialized in Authenticator::new()
-        // and is always exactly 32 bytes. The field is private and cannot be
-        // modified after initialization.
         let wrapping_key: &[u8; 32] = self
             .credential_wrapping_key
             .as_slice()
             .try_into()
             .expect("credential_wrapping_key invariant: always 32 bytes");
 
-        // Verify HMAC
         let hmac_computed = v2::authenticate(wrapping_key, data_with_version);
         let hmac_valid: bool = hmac_computed[..16].ct_eq(hmac_received).into();
         if !hmac_valid {
             return Err(StatusCode::InvalidParameter);
         }
 
-        // Decrypt with protected buffer
         let encrypted = &credential_id[1..hmac_start];
         let plaintext = Zeroizing::new(
             v2::decrypt(wrapping_key, encrypted).map_err(|_| StatusCode::InvalidParameter)?,
         );
 
-        // Parse plaintext: private_key(32) || rp_id_len(1) || rp_id || algorithm(4)
+        match version {
+            1 => Self::parse_wrapped_v1(&plaintext),
+            2 => Self::parse_wrapped_v2(&plaintext),
+            _ => Err(StatusCode::InvalidParameter),
+        }
+    }
+
+    fn parse_wrapped_v1(plaintext: &[u8]) -> Result<(CredentialKey, String, i32), StatusCode> {
         if plaintext.len() < 37 {
             return Err(StatusCode::InvalidParameter);
         }
 
-        // Extract into SecBytes immediately
         let private_key = SecBytes::from_slice(&plaintext[0..32]);
         let rp_id_len = plaintext[32] as usize;
 
@@ -1210,8 +1204,51 @@ impl<C: AuthenticatorCallbacks> Authenticator<C> {
             plaintext[36 + rp_id_len],
         ]);
 
-        // plaintext dropped and zeroed here
-        Ok((private_key, rp_id, algorithm))
+        let key = CredentialKey::software(private_key);
+        Ok((key, rp_id, algorithm))
+    }
+
+    fn parse_wrapped_v2(plaintext: &[u8]) -> Result<(CredentialKey, String, i32), StatusCode> {
+        if plaintext.len() < 20 {
+            return Err(StatusCode::InvalidParameter);
+        }
+
+        let mut provider_bytes = [0u8; 16];
+        provider_bytes.copy_from_slice(&plaintext[0..16]);
+        let provider = crate::key_provider::CredentialKeyProviderId::new_fixed(provider_bytes);
+
+        let format_version = u16::from_be_bytes([plaintext[16], plaintext[17]]);
+
+        let material_len = u16::from_be_bytes([plaintext[18], plaintext[19]]) as usize;
+
+        let offset = 20;
+        if plaintext.len() < offset + material_len + 1 {
+            return Err(StatusCode::InvalidParameter);
+        }
+
+        let material = SecBytes::from_slice(&plaintext[offset..offset + material_len]);
+        let rp_id_len_offset = offset + material_len;
+        let rp_id_len = plaintext[rp_id_len_offset] as usize;
+
+        if plaintext.len() < rp_id_len_offset + 1 + rp_id_len + 4 {
+            return Err(StatusCode::InvalidParameter);
+        }
+
+        let rp_id_start = rp_id_len_offset + 1;
+        let rp_id = core::str::from_utf8(&plaintext[rp_id_start..rp_id_start + rp_id_len])
+            .map_err(|_| StatusCode::InvalidParameter)?
+            .to_string();
+
+        let alg_start = rp_id_start + rp_id_len;
+        let algorithm = i32::from_be_bytes([
+            plaintext[alg_start],
+            plaintext[alg_start + 1],
+            plaintext[alg_start + 2],
+            plaintext[alg_start + 3],
+        ]);
+
+        let key = CredentialKey::new(provider, format_version, material);
+        Ok((key, rp_id, algorithm))
     }
 
     /// Get the number of UV retries remaining.
@@ -1268,6 +1305,7 @@ mod tests {
     use crate::{
         UpResult, UvResult,
         callbacks::{CredentialStorageCallbacks, PlatformCallbacks, UserInteractionCallbacks},
+        key_provider::CredentialKey,
         test_utils::MockCallbacks,
         types::{Credential, MAX_PIN_RETRIES},
     };
@@ -1590,7 +1628,8 @@ mod tests {
             user_id: vec![1],
             user_name: Some("user1".to_string()),
             user_display_name: None,
-            private_key: crate::SecBytes::from_slice(&[0u8; 32]),
+            key: CredentialKey::software(crate::SecBytes::from_slice(&[0u8; 32])),
+            private_key: crate::SecBytes::new(Vec::new()),
             algorithm: CoseAlgorithm::ES256.to_i32(),
             sign_count: 0,
             created: 0,
@@ -1606,7 +1645,8 @@ mod tests {
             user_id: vec![2],
             user_name: Some("user2".to_string()),
             user_display_name: None,
-            private_key: crate::SecBytes::from_slice(&[0u8; 32]),
+            key: CredentialKey::software(crate::SecBytes::from_slice(&[0u8; 32])),
+            private_key: crate::SecBytes::new(Vec::new()),
             algorithm: CoseAlgorithm::ES256.to_i32(),
             sign_count: 0,
             created: 0,
@@ -1811,7 +1851,8 @@ mod tests {
             user_id: vec![1],
             user_name: Some("user1".to_string()),
             user_display_name: None,
-            private_key: crate::SecBytes::from_slice(&[0u8; 32]),
+            key: CredentialKey::software(crate::SecBytes::from_slice(&[0u8; 32])),
+            private_key: crate::SecBytes::new(Vec::new()),
             algorithm: CoseAlgorithm::ES256.to_i32(),
             sign_count: 0,
             created: 0,

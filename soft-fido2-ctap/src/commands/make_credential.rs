@@ -5,20 +5,18 @@
 //! Spec: <https://fidoalliance.org/specs/fido-v2.2-rd-20230321/fido-client-to-authenticator-protocol-v2.2-rd-20230321.html#authenticatorMakeCredential>
 
 use crate::{
-    CredProtect, SecBytes, UpResult, UvResult,
+    CredProtect, CredentialKey, SecBytes, UpResult, UvResult,
     authenticator::Authenticator,
     callbacks::AuthenticatorCallbacks,
     cbor::{MapBuilder, MapParser},
     extensions::MakeCredentialExtensions,
+    key_provider::{CredentialKeyProvider, SoftwareCredentialKeyProvider},
     status::{Result, StatusCode},
     types::{
         PublicKeyCredentialDescriptor, PublicKeyCredentialParameters, RelyingParty, User,
         auth_data_flags,
     },
 };
-
-use soft_fido2_crypto::ecdsa;
-use soft_fido2_crypto::eddsa;
 
 #[cfg(feature = "std")]
 use std::time::{SystemTime, UNIX_EPOCH};
@@ -375,19 +373,12 @@ pub fn handle<C: AuthenticatorCallbacks>(
     // Step 15: Process extensions
     let extension_outputs = extensions.build_outputs(auth.config().min_pin_length);
 
-    // Step 16: Generate credential key pair based on algorithm
-    let (private_key, public_key_bytes): ([u8; 32], Vec<u8>) = match alg {
-        -8 | -19 => {
-            // EdDSA (-8) / Ed25519 (-19)
-            let (sk, pk) = eddsa::generate_keypair();
-            (*sk, pk)
-        }
-        _ => {
-            // ES256 (P-256) - default
-            let (sk, pk) = ecdsa::generate_keypair();
-            (*sk, pk)
-        }
-    };
+    // Step 16: Generate credential key pair via provider
+    let provider = SoftwareCredentialKeyProvider::new();
+    if !provider.supports_algorithm(alg) {
+        return Err(StatusCode::UnsupportedAlgorithm);
+    }
+    let generated = provider.generate(alg).map_err(StatusCode::from)?;
 
     // Step 17: Create credential (resident or non-resident)
     let credential_id = create_credential(
@@ -395,7 +386,7 @@ pub fn handle<C: AuthenticatorCallbacks>(
         &options,
         &extensions,
         &response_state,
-        &private_key,
+        &generated.key,
         &rp,
         &user,
         alg,
@@ -404,7 +395,7 @@ pub fn handle<C: AuthenticatorCallbacks>(
     // Step 18: Generate attestation
     let cred_data = AttestationCredential {
         id: credential_id,
-        public_key: public_key_bytes,
+        public_key: generated.cose_public_key,
         algorithm: alg,
     };
 
@@ -419,16 +410,9 @@ pub fn handle<C: AuthenticatorCallbacks>(
 
     // Build attestation statement (self-attestation)
     let sig_data = [&auth_data[..], &client_data_hash[..]].concat();
-    let signature = match alg {
-        -8 | -19 => {
-            // EdDSA (-8) / Ed25519 (-19)
-            eddsa::sign(&private_key, &sig_data)?
-        }
-        _ => {
-            // ES256 (P-256) - default
-            ecdsa::sign(&private_key, &sig_data)?
-        }
-    };
+    let signature = provider
+        .sign(&generated.key, alg, &sig_data)
+        .map_err(StatusCode::from)?;
     let att_stmt = build_attestation_statement(&signature, alg)?;
 
     // Build response
@@ -702,7 +686,7 @@ fn create_credential<C: AuthenticatorCallbacks>(
     options: &MakeCredentialOptions,
     extensions: &MakeCredentialExtensions,
     response_state: &ResponseState,
-    private_key: &[u8; 32],
+    key: &CredentialKey,
     rp: &RelyingParty,
     user: &User,
     algorithm: i32,
@@ -739,7 +723,8 @@ fn create_credential<C: AuthenticatorCallbacks>(
             user_id: user.id.clone(),
             user_name: user.name.clone(),
             user_display_name: user.display_name.clone(),
-            private_key: SecBytes::from_array(*private_key),
+            key: key.clone(),
+            private_key: SecBytes::new(Vec::new()),
             algorithm,
             sign_count: 0,
             created: current_timestamp(),
@@ -753,9 +738,7 @@ fn create_credential<C: AuthenticatorCallbacks>(
         Ok(id)
     } else {
         // Create non-discoverable credential
-        // For non-discoverable credentials, we need to include cred_random in the wrapped credential
-        // For now, wrap_credential doesn't support hmac-secret for non-discoverable credentials
-        auth.wrap_credential(private_key, &rp.id, algorithm)
+        auth.wrap_credential(key, &rp.id, algorithm)
     }
 }
 

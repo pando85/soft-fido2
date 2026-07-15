@@ -13,12 +13,10 @@ use crate::{
         MAX_CREDENTIAL_ID_LENGTH, get_user_present_flag_value, get_user_verified_flag_value,
     },
     extensions::{GetAssertionExtensions, compute_hmac_secret},
+    key_provider::{CredentialKeyProvider, SoftwareCredentialKeyProvider},
     status::{Result, StatusCode},
     types::{PublicKeyCredentialDescriptor, auth_data_flags},
 };
-
-use soft_fido2_crypto::ecdsa;
-use soft_fido2_crypto::eddsa;
 
 use alloc::{
     format,
@@ -29,7 +27,6 @@ use alloc::{
 use core::cmp::Reverse;
 
 use sha2::{Digest, Sha256};
-use zeroize::Zeroizing;
 
 /// Maximum RP ID length (typical domain name limit)
 const MAX_RP_ID_LENGTH: usize = 256;
@@ -451,7 +448,7 @@ pub fn handle<C: AuthenticatorCallbacks>(
             }
 
             // If not found, try unwrapping (for non-resident credentials)
-            if let Ok((private_key, cred_rp_id, algorithm)) = auth.unwrap_credential(&desc.id)
+            if let Ok((key, cred_rp_id, algorithm)) = auth.unwrap_credential(&desc.id)
                 && cred_rp_id == rp_id
             {
                 // Create a temporary credential from unwrapped data
@@ -464,7 +461,8 @@ pub fn handle<C: AuthenticatorCallbacks>(
                     user_id: Vec::new(),     // Not stored in wrapped cred
                     user_name: None,         // Not stored in wrapped cred
                     user_display_name: None, // Not stored in wrapped cred
-                    private_key,
+                    key,
+                    private_key: crate::SecBytes::new(Vec::new()),
                     algorithm,
                     sign_count: 0,       // Wrapped creds don't track sign count
                     created: 0,          // Not tracked
@@ -648,22 +646,10 @@ pub fn handle<C: AuthenticatorCallbacks>(
     // Generate signature based on credential algorithm
     let sig_data = [&auth_data[..], &client_data_hash[..]].concat();
 
-    let key_bytes = selected_cred.private_key.as_slice();
-    if key_bytes.len() != 32 {
-        return Err(StatusCode::InvalidCredential);
-    }
-
-    // Copy private key to Zeroizing wrapper (zeroed on drop)
-    let priv_key_array = Zeroizing::new({
-        let mut arr = [0u8; 32];
-        arr.copy_from_slice(key_bytes);
-        arr
-    });
-
-    let signature = match selected_cred.algorithm {
-        -8 | -19 => eddsa::sign(&priv_key_array, &sig_data)?,
-        _ => ecdsa::sign(&priv_key_array, &sig_data)?,
-    };
+    let provider = SoftwareCredentialKeyProvider::new();
+    let signature = provider
+        .sign(&selected_cred.key, selected_cred.algorithm, &sig_data)
+        .map_err(StatusCode::from)?;
 
     // Build credential descriptor
     let credential_desc = PublicKeyCredentialDescriptor {

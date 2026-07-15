@@ -9,16 +9,14 @@ use crate::{
     authenticator::{AssertionContext, Authenticator},
     callbacks::AuthenticatorCallbacks,
     cbor::MapBuilder,
+    key_provider::{CredentialKeyProvider, SoftwareCredentialKeyProvider},
     status::{Result, StatusCode},
     types::{PublicKeyCredentialDescriptor, auth_data_flags},
 };
 
-use soft_fido2_crypto::{ecdsa, eddsa};
-
 use alloc::{string::ToString, vec::Vec};
 
 use sha2::{Digest, Sha256};
-use zeroize::Zeroizing;
 
 mod resp_keys {
     pub const CREDENTIAL: i32 = 0x01;
@@ -61,21 +59,10 @@ fn build_assertion_response<C: AuthenticatorCallbacks>(
         build_authenticator_data(&context.rp_id, context.up, context.uv, new_sign_count);
     let sig_data = [&auth_data[..], &context.client_data_hash[..]].concat();
 
-    let key_bytes = credential.private_key.as_slice();
-    if key_bytes.len() != 32 {
-        return Err(StatusCode::InvalidCredential);
-    }
-
-    let priv_key_array = Zeroizing::new({
-        let mut arr = [0u8; 32];
-        arr.copy_from_slice(key_bytes);
-        arr
-    });
-
-    let signature = match credential.algorithm {
-        -8 | -19 => eddsa::sign(&priv_key_array, &sig_data)?,
-        _ => ecdsa::sign(&priv_key_array, &sig_data)?,
-    };
+    let provider = SoftwareCredentialKeyProvider::new();
+    let signature = provider
+        .sign(&credential.key, credential.algorithm, &sig_data)
+        .map_err(StatusCode::from)?;
 
     let credential_desc = PublicKeyCredentialDescriptor {
         id: credential.id.clone(),
