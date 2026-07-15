@@ -287,7 +287,7 @@ impl<C: AuthenticatorCallbacks> CredentialStorageCallbacks for CallbackAdapter<C
             user_display_name: credential.user_display_name.as_deref(),
             sign_count: &credential.sign_count,
             alg: &credential.algorithm,
-            private_key: &credential.private_key,
+            credential_key: &credential.credential_key,
             created: &credential.created,
             discoverable: &credential.discoverable,
             cred_protect: Some(&credential.cred_protect),

@@ -15,6 +15,7 @@ pub mod bridge;
 pub mod callbacks;
 pub mod cbor;
 pub mod commands;
+pub mod credential_key;
 pub mod dispatcher;
 pub mod extensions;
 pub mod pin_token;
@@ -31,6 +32,10 @@ pub use bridge::TransportBridge;
 pub use callbacks::{
     AuthenticatorCallbacks, CredentialStorageCallbacks, PinStorageCallbacks, UpResult,
     UserInteractionCallbacks, UvResult,
+};
+pub use credential_key::{
+    CredentialKey, CredentialKeyError, CredentialKeyProvider, CredentialKeyProviderId,
+    GeneratedCredentialKey, SoftwareCredentialKeyProvider,
 };
 pub use dispatcher::CommandDispatcher;
 pub use pin_token::{Permission, PinToken, PinTokenManager};

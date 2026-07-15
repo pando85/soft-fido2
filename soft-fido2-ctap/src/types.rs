@@ -3,6 +3,7 @@
 //! Core data structures used in CTAP protocol messages.
 //! All types support CBOR serialization as required by the FIDO2 spec.
 
+use crate::credential_key::CredentialKey;
 use crate::sec_bytes::{SecBytes, SecPinHash};
 
 use alloc::string::{String, ToString};
@@ -304,13 +305,8 @@ pub struct Credential {
     /// Signature counter
     pub sign_count: u32,
 
-    /// Private key (32 bytes for P-256)
-    ///
-    /// Protected using `SecBytes` which:
-    /// - Zeros memory on drop (prevents heap retention attacks)
-    /// - Uses mlock in std builds (prevents swapping to disk)
-    /// - Provides constant-time equality
-    pub private_key: SecBytes,
+    /// Opaque credential key owned by a key provider
+    pub credential_key: CredentialKey,
 
     /// Credential protection level
     pub cred_protect: u8,
@@ -341,7 +337,7 @@ impl Credential {
         user_name: Option<String>,
         user_display_name: Option<String>,
         algorithm: i32,
-        private_key: SecBytes,
+        credential_key: CredentialKey,
         discoverable: bool,
     ) -> Self {
         Self::with_cred_random(
@@ -352,7 +348,7 @@ impl Credential {
             user_name,
             user_display_name,
             algorithm,
-            private_key,
+            credential_key,
             discoverable,
             None,
         )
@@ -368,7 +364,7 @@ impl Credential {
         user_name: Option<String>,
         user_display_name: Option<String>,
         algorithm: i32,
-        private_key: SecBytes,
+        credential_key: CredentialKey,
         discoverable: bool,
         cred_random: Option<SecBytes>,
     ) -> Self {
@@ -381,7 +377,7 @@ impl Credential {
             algorithm,
             user_name,
             sign_count: 0,
-            private_key,
+            credential_key,
             cred_protect: CredProtect::UserVerificationOptional.to_u8(),
             discoverable,
             user_display_name,
@@ -636,7 +632,7 @@ mod tests {
             Some("user@example.com".to_string()),
             Some("User Name".to_string()),
             -7,
-            SecBytes::new(vec![0u8; 32]),
+            CredentialKey::software(vec![0u8; 32]),
             true,
         );
 

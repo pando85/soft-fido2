@@ -9,6 +9,7 @@ use crate::{
     authenticator::Authenticator,
     callbacks::AuthenticatorCallbacks,
     cbor::{MapBuilder, MapParser},
+    credential_key::{CredentialKey, CredentialKeyProvider},
     extensions::MakeCredentialExtensions,
     status::{Result, StatusCode},
     types::{
@@ -16,9 +17,6 @@ use crate::{
         auth_data_flags,
     },
 };
-
-use soft_fido2_crypto::ecdsa;
-use soft_fido2_crypto::eddsa;
 
 #[cfg(feature = "std")]
 use std::time::{SystemTime, UNIX_EPOCH};
@@ -91,8 +89,8 @@ struct ResponseState {
 /// Handle authenticatorMakeCredential command
 ///
 /// Implements FIDO 2.2 spec section 6.1.2 authenticatorMakeCredential algorithm
-pub fn handle<C: AuthenticatorCallbacks>(
-    auth: &mut Authenticator<C>,
+pub fn handle<C: AuthenticatorCallbacks, K: CredentialKeyProvider>(
+    auth: &mut Authenticator<C, K>,
     data: &[u8],
 ) -> Result<Vec<u8>> {
     let parser = MapParser::from_bytes(data)?;
@@ -375,19 +373,11 @@ pub fn handle<C: AuthenticatorCallbacks>(
     // Step 15: Process extensions
     let extension_outputs = extensions.build_outputs(auth.config().min_pin_length);
 
-    // Step 16: Generate credential key pair based on algorithm
-    let (private_key, public_key_bytes): ([u8; 32], Vec<u8>) = match alg {
-        -8 | -19 => {
-            // EdDSA (-8) / Ed25519 (-19)
-            let (sk, pk) = eddsa::generate_keypair();
-            (*sk, pk)
-        }
-        _ => {
-            // ES256 (P-256) - default
-            let (sk, pk) = ecdsa::generate_keypair();
-            (*sk, pk)
-        }
-    };
+    // Step 16: Generate credential key pair via provider
+    let generated_key = auth
+        .key_provider()
+        .generate(alg)
+        .map_err(StatusCode::from)?;
 
     // Step 17: Create credential (resident or non-resident)
     let credential_id = create_credential(
@@ -395,7 +385,7 @@ pub fn handle<C: AuthenticatorCallbacks>(
         &options,
         &extensions,
         &response_state,
-        &private_key,
+        &generated_key.key,
         &rp,
         &user,
         alg,
@@ -404,7 +394,7 @@ pub fn handle<C: AuthenticatorCallbacks>(
     // Step 18: Generate attestation
     let cred_data = AttestationCredential {
         id: credential_id,
-        public_key: public_key_bytes,
+        public_key: generated_key.cose_public_key,
         algorithm: alg,
     };
 
@@ -419,16 +409,10 @@ pub fn handle<C: AuthenticatorCallbacks>(
 
     // Build attestation statement (self-attestation)
     let sig_data = [&auth_data[..], &client_data_hash[..]].concat();
-    let signature = match alg {
-        -8 | -19 => {
-            // EdDSA (-8) / Ed25519 (-19)
-            eddsa::sign(&private_key, &sig_data)?
-        }
-        _ => {
-            // ES256 (P-256) - default
-            ecdsa::sign(&private_key, &sig_data)?
-        }
-    };
+    let signature = auth
+        .key_provider()
+        .sign(&generated_key.key, alg, &sig_data)
+        .map_err(StatusCode::from)?;
     let att_stmt = build_attestation_statement(&signature, alg)?;
 
     // Build response
@@ -445,26 +429,28 @@ pub fn handle<C: AuthenticatorCallbacks>(
 }
 
 /// Step 3: Validate pubKeyCredParams and choose algorithm
-fn validate_and_choose_algorithm<C: AuthenticatorCallbacks>(
-    auth: &Authenticator<C>,
+fn validate_and_choose_algorithm<C: AuthenticatorCallbacks, K: CredentialKeyProvider>(
+    auth: &Authenticator<C, K>,
     params: &[PublicKeyCredentialParameters],
 ) -> Result<i32> {
     let mut chosen_alg: Option<i32> = None;
 
     for param in params {
-        // Validate that type is present and correct
         if param.cred_type != "public-key" {
             return Err(StatusCode::InvalidCbor);
         }
 
-        // If this algorithm is supported and we haven't chosen one yet
-        if chosen_alg.is_none() && auth.config().algorithms.contains(&param.alg) {
+        if chosen_alg.is_none()
+            && auth.config().algorithms.contains(&param.alg)
+            && auth.key_provider().supports_algorithm(param.alg)
+        {
             chosen_alg = Some(param.alg);
         }
 
-        // Accept Ed25519 variants even when they are not advertised in GetInfo.
-        // This keeps browser compatibility while still allowing SSH enrollments.
-        if chosen_alg.is_none() && matches!(param.alg, -8 | -19) {
+        if chosen_alg.is_none()
+            && matches!(param.alg, -8 | -19)
+            && auth.key_provider().supports_algorithm(param.alg)
+        {
             chosen_alg = Some(param.alg);
         }
     }
@@ -474,8 +460,8 @@ fn validate_and_choose_algorithm<C: AuthenticatorCallbacks>(
 
 /// Step 11: Perform user verification
 #[allow(clippy::too_many_arguments)]
-fn perform_user_verification<C: AuthenticatorCallbacks>(
-    auth: &mut Authenticator<C>,
+fn perform_user_verification<C: AuthenticatorCallbacks, K: CredentialKeyProvider>(
+    auth: &mut Authenticator<C, K>,
     response_state: &mut ResponseState,
     options: &mut MakeCredentialOptions,
     pin_uv_auth_param: &Option<Vec<u8>>,
@@ -534,8 +520,8 @@ fn perform_user_verification<C: AuthenticatorCallbacks>(
 }
 
 /// Step 11.2: Perform built-in user verification
-fn perform_built_in_uv<C: AuthenticatorCallbacks>(
-    auth: &mut Authenticator<C>,
+fn perform_built_in_uv<C: AuthenticatorCallbacks, K: CredentialKeyProvider>(
+    auth: &mut Authenticator<C, K>,
     _internal_retry: bool,
     rp: &RelyingParty,
     user: &User,
@@ -574,8 +560,8 @@ fn perform_built_in_uv<C: AuthenticatorCallbacks>(
 /// Per FIDO2 spec, this returns true only if a valid PIN token exists
 /// that was obtained via PIN verification (getPinToken or
 /// getPinUvAuthTokenUsingPinWithPermissions).
-pub(crate) fn get_user_verified_flag_value<C: AuthenticatorCallbacks>(
-    auth: &Authenticator<C>,
+pub(crate) fn get_user_verified_flag_value<C: AuthenticatorCallbacks, K: CredentialKeyProvider>(
+    auth: &Authenticator<C, K>,
 ) -> bool {
     // Check if there is a valid PIN token with UV flag set
     // The token must exist and be within its validity window
@@ -586,8 +572,8 @@ pub(crate) fn get_user_verified_flag_value<C: AuthenticatorCallbacks>(
 ///
 /// Per FIDO2 spec, this returns true if user presence was confirmed
 /// during the current PIN token session.
-pub(crate) fn get_user_present_flag_value<C: AuthenticatorCallbacks>(
-    auth: &Authenticator<C>,
+pub(crate) fn get_user_present_flag_value<C: AuthenticatorCallbacks, K: CredentialKeyProvider>(
+    auth: &Authenticator<C, K>,
 ) -> bool {
     // User presence is confirmed if there's a valid PIN token
     // that was recently used (within usage window)
@@ -595,8 +581,8 @@ pub(crate) fn get_user_present_flag_value<C: AuthenticatorCallbacks>(
 }
 
 /// Step 12: Check excludeList for credential exclusion
-fn check_exclude_list<C: AuthenticatorCallbacks>(
-    auth: &Authenticator<C>,
+fn check_exclude_list<C: AuthenticatorCallbacks, K: CredentialKeyProvider>(
+    auth: &Authenticator<C, K>,
     exclude_list: &Option<Vec<PublicKeyCredentialDescriptor>>,
     response_state: &ResponseState,
     pin_uv_auth_param: &Option<Vec<u8>>,
@@ -653,8 +639,8 @@ fn check_exclude_list<C: AuthenticatorCallbacks>(
 }
 
 /// Step 14: Collect user presence
-fn collect_user_presence<C: AuthenticatorCallbacks>(
-    auth: &Authenticator<C>,
+fn collect_user_presence<C: AuthenticatorCallbacks, K: CredentialKeyProvider>(
+    auth: &Authenticator<C, K>,
     response_state: &mut ResponseState,
     pin_uv_auth_param: &Option<Vec<u8>>,
     rp: &RelyingParty,
@@ -697,17 +683,16 @@ fn collect_user_presence<C: AuthenticatorCallbacks>(
 
 /// Step 17: Create credential (resident or non-resident)
 #[allow(clippy::too_many_arguments)]
-fn create_credential<C: AuthenticatorCallbacks>(
-    auth: &mut Authenticator<C>,
+fn create_credential<C: AuthenticatorCallbacks, K: CredentialKeyProvider>(
+    auth: &mut Authenticator<C, K>,
     options: &MakeCredentialOptions,
     extensions: &MakeCredentialExtensions,
     response_state: &ResponseState,
-    private_key: &[u8; 32],
+    credential_key: &CredentialKey,
     rp: &RelyingParty,
     user: &User,
     algorithm: i32,
 ) -> Result<Vec<u8>> {
-    // Generate cred_random if hmac-secret extension is enabled
     let cred_random = if extensions.hmac_secret == Some(true) {
         let mut random = [0u8; 32];
         rand::thread_rng().fill_bytes(&mut random);
@@ -717,10 +702,8 @@ fn create_credential<C: AuthenticatorCallbacks>(
     };
 
     if options.rk || auth.config().force_resident_keys {
-        // Create discoverable credential
         let id = generate_credential_id();
 
-        // Determine credProtect level
         let cred_protect_value = extensions
             .cred_protect
             .map(|p| p.to_u8())
@@ -739,7 +722,7 @@ fn create_credential<C: AuthenticatorCallbacks>(
             user_id: user.id.clone(),
             user_name: user.name.clone(),
             user_display_name: user.display_name.clone(),
-            private_key: SecBytes::from_array(*private_key),
+            credential_key: credential_key.clone(),
             algorithm,
             sign_count: 0,
             created: current_timestamp(),
@@ -752,10 +735,7 @@ fn create_credential<C: AuthenticatorCallbacks>(
 
         Ok(id)
     } else {
-        // Create non-discoverable credential
-        // For non-discoverable credentials, we need to include cred_random in the wrapped credential
-        // For now, wrap_credential doesn't support hmac-secret for non-discoverable credentials
-        auth.wrap_credential(private_key, &rp.id, algorithm)
+        auth.wrap_credential_with_key(credential_key, &rp.id, algorithm)
     }
 }
 

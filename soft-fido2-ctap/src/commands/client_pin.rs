@@ -91,8 +91,8 @@ mod resp_keys {
 ///
 /// Implements the CTAP PIN protocol for secure PIN management.
 /// Supports both PIN protocol V1 (AES-256-CBC) and V2 (HMAC-only).
-pub fn handle<C: AuthenticatorCallbacks>(
-    auth: &mut Authenticator<C>,
+pub fn handle<C: AuthenticatorCallbacks, K: crate::credential_key::CredentialKeyProvider>(
+    auth: &mut Authenticator<C, K>,
     data: &[u8],
 ) -> Result<Vec<u8>> {
     let parser = MapParser::from_bytes(data)?;
@@ -113,15 +113,23 @@ pub fn handle<C: AuthenticatorCallbacks>(
 }
 
 /// Handle getPinRetries subcommand
-fn handle_get_pin_retries<C: AuthenticatorCallbacks>(auth: &Authenticator<C>) -> Result<Vec<u8>> {
+fn handle_get_pin_retries<
+    C: AuthenticatorCallbacks,
+    K: crate::credential_key::CredentialKeyProvider,
+>(
+    auth: &Authenticator<C, K>,
+) -> Result<Vec<u8>> {
     MapBuilder::new()
         .insert(resp_keys::PIN_RETRIES, auth.pin_retries() as i32)?
         .build()
 }
 
 /// Handle getKeyAgreement subcommand
-fn handle_get_key_agreement<C: AuthenticatorCallbacks>(
-    auth: &mut Authenticator<C>,
+fn handle_get_key_agreement<
+    C: AuthenticatorCallbacks,
+    K: crate::credential_key::CredentialKeyProvider,
+>(
+    auth: &mut Authenticator<C, K>,
     parser: &MapParser,
 ) -> Result<Vec<u8>> {
     let protocol: u8 = parser.get(req_keys::PIN_UV_AUTH_PROTOCOL)?;
@@ -153,8 +161,8 @@ fn handle_get_key_agreement<C: AuthenticatorCallbacks>(
 }
 
 /// Handle setPin subcommand
-fn handle_set_pin<C: AuthenticatorCallbacks>(
-    auth: &mut Authenticator<C>,
+fn handle_set_pin<C: AuthenticatorCallbacks, K: crate::credential_key::CredentialKeyProvider>(
+    auth: &mut Authenticator<C, K>,
     parser: &MapParser,
 ) -> Result<Vec<u8>> {
     if auth.is_pin_set() {
@@ -238,8 +246,8 @@ fn handle_set_pin<C: AuthenticatorCallbacks>(
 }
 
 /// Handle changePin subcommand
-fn handle_change_pin<C: AuthenticatorCallbacks>(
-    auth: &mut Authenticator<C>,
+fn handle_change_pin<C: AuthenticatorCallbacks, K: crate::credential_key::CredentialKeyProvider>(
+    auth: &mut Authenticator<C, K>,
     parser: &MapParser,
 ) -> Result<Vec<u8>> {
     if !auth.is_pin_set() {
@@ -349,8 +357,11 @@ fn handle_change_pin<C: AuthenticatorCallbacks>(
 }
 
 /// Handle getPinToken subcommand (CTAP 2.0)
-fn handle_get_pin_token<C: AuthenticatorCallbacks>(
-    auth: &mut Authenticator<C>,
+fn handle_get_pin_token<
+    C: AuthenticatorCallbacks,
+    K: crate::credential_key::CredentialKeyProvider,
+>(
+    auth: &mut Authenticator<C, K>,
     parser: &MapParser,
 ) -> Result<Vec<u8>> {
     if !auth.is_pin_set() {
@@ -429,8 +440,11 @@ fn handle_get_pin_token<C: AuthenticatorCallbacks>(
 /// Handle getPinUvAuthTokenUsingPinWithPermissions subcommand (CTAP 2.1)
 ///
 /// This is the CTAP 2.1 version that adds permissions and rpId support.
-fn handle_get_pin_uv_auth_token_using_pin_with_permissions<C: AuthenticatorCallbacks>(
-    auth: &mut Authenticator<C>,
+fn handle_get_pin_uv_auth_token_using_pin_with_permissions<
+    C: AuthenticatorCallbacks,
+    K: crate::credential_key::CredentialKeyProvider,
+>(
+    auth: &mut Authenticator<C, K>,
     parser: &MapParser,
 ) -> Result<Vec<u8>> {
     if !auth.is_pin_set() {
@@ -509,7 +523,12 @@ fn handle_get_pin_uv_auth_token_using_pin_with_permissions<C: AuthenticatorCallb
 
 /// Handle getUvRetries subcommand
 /// // Gets the remaining built-in UV retries counter.
-fn handle_get_uv_retries<C: AuthenticatorCallbacks>(auth: &Authenticator<C>) -> Result<Vec<u8>> {
+fn handle_get_uv_retries<
+    C: AuthenticatorCallbacks,
+    K: crate::credential_key::CredentialKeyProvider,
+>(
+    auth: &Authenticator<C, K>,
+) -> Result<Vec<u8>> {
     MapBuilder::new()
         .insert(resp_keys::UV_RETRIES, auth.uv_retries())?
         .build()
@@ -519,8 +538,11 @@ fn handle_get_uv_retries<C: AuthenticatorCallbacks>(auth: &Authenticator<C>) -> 
 ///
 /// Gets a PIN/UV auth token using built-in user verification.
 /// Spec: https://fidoalliance.org/specs/fido-v2.2-rd-20230321/fido-client-to-authenticator-protocol-v2.2-rd-20230321.html#getPinUvAuthTokenUsingUvWithPermissions
-fn handle_get_pin_uv_auth_token_using_uv_with_permissions<C: AuthenticatorCallbacks>(
-    auth: &mut Authenticator<C>,
+fn handle_get_pin_uv_auth_token_using_uv_with_permissions<
+    C: AuthenticatorCallbacks,
+    K: crate::credential_key::CredentialKeyProvider,
+>(
+    auth: &mut Authenticator<C, K>,
     parser: &MapParser,
 ) -> Result<Vec<u8>> {
     // Check mandatory parameters

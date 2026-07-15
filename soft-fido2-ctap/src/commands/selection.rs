@@ -20,8 +20,8 @@ use alloc::vec::Vec;
 /// This command requests user presence (typically by blinking an LED or
 /// similar indication) to allow the user to identify which authenticator
 /// they want to use.
-pub fn handle<C: AuthenticatorCallbacks>(
-    auth: &mut Authenticator<C>,
+pub fn handle<C: AuthenticatorCallbacks, K: crate::credential_key::CredentialKeyProvider>(
+    auth: &mut Authenticator<C, K>,
     _data: &[u8],
 ) -> Result<Vec<u8>> {
     // Request user presence with selection-specific message
