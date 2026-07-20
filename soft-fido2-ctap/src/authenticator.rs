@@ -8,7 +8,7 @@ use crate::{
     callbacks::{AuthenticatorCallbacks, PinStorageCallbacks},
     cbor::MAX_CTAP_MESSAGE_SIZE,
     pin_token::{Permission, PinToken, PinTokenManager},
-    types::{MAX_UV_RETRIES, PinState},
+    types::PinState,
 };
 
 use soft_fido2_crypto::pin_protocol::{self, v2};
@@ -414,13 +414,17 @@ impl<C: AuthenticatorCallbacks> Authenticator<C> {
                 key
             }));
 
+        let max_pin_retries = config.max_pin_retries;
+        let mut pin_state = PinState::new();
+        pin_state.uv_retries = max_pin_retries;
+
         Self {
             config,
             callbacks: Arc::new(callbacks),
-            pin_state: PinState::new(),
+            pin_state,
             pin_storage: None,
             pin_tokens: PinTokenManager::new(),
-            uv_retries: MAX_UV_RETRIES,
+            uv_retries: max_pin_retries,
             custom_commands: BTreeMap::new(),
             pin_protocol_keypairs: BTreeMap::new(),
             credential_wrapping_key,
@@ -1238,7 +1242,7 @@ impl<C: AuthenticatorCallbacks> Authenticator<C> {
     ///
     /// Persists the updated UV retry count.
     pub fn reset_uv_retries(&mut self) {
-        self.uv_retries = MAX_UV_RETRIES;
+        self.uv_retries = self.config.max_pin_retries;
         // Synchronize and persist
         self.pin_state.uv_retries = self.uv_retries;
         let _ = self.save_pin_state();
@@ -2117,6 +2121,22 @@ mod tests {
         // Should be blocked
         assert!(auth.is_pin_blocked());
         assert_eq!(auth.verify_pin("1234"), Err(StatusCode::PinBlocked));
+    }
+
+    #[test]
+    fn test_reset_uv_retries_uses_configured_max() {
+        let config = AuthenticatorConfig::new().with_max_pin_retries(8);
+        let mut auth = Authenticator::new(config, MockCallbacks);
+
+        assert_eq!(auth.uv_retries(), 8);
+
+        for _ in 0..8 {
+            auth.decrement_uv_retries();
+        }
+        assert_eq!(auth.uv_retries(), 0);
+
+        auth.reset_uv_retries();
+        assert_eq!(auth.uv_retries(), 8);
     }
 
     #[test]
