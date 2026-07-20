@@ -959,14 +959,19 @@ mod tests {
         let callbacks = TestCallbacks;
         let mut auth = Authenticator::new(callbacks).unwrap();
 
-        assert_eq!(auth.uv_retries().unwrap(), 3);
+        assert_eq!(auth.uv_retries().unwrap(), 8);
+        auth.decrement_uv_retries_for_testing().unwrap();
+        auth.decrement_uv_retries_for_testing().unwrap();
+        auth.decrement_uv_retries_for_testing().unwrap();
+        auth.decrement_uv_retries_for_testing().unwrap();
+        auth.decrement_uv_retries_for_testing().unwrap();
         auth.decrement_uv_retries_for_testing().unwrap();
         auth.decrement_uv_retries_for_testing().unwrap();
         auth.decrement_uv_retries_for_testing().unwrap();
         assert_eq!(auth.uv_retries().unwrap(), 0);
 
         auth.reset_uv_retries().unwrap();
-        assert_eq!(auth.uv_retries().unwrap(), 3);
+        assert_eq!(auth.uv_retries().unwrap(), 8);
     }
 
     #[test]
