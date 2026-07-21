@@ -13,12 +13,10 @@ use crate::{
         MAX_CREDENTIAL_ID_LENGTH, get_user_present_flag_value, get_user_verified_flag_value,
     },
     extensions::{GetAssertionExtensions, compute_hmac_secret},
+    key_provider::CredentialKeyProvider,
     status::{Result, StatusCode},
     types::{PublicKeyCredentialDescriptor, auth_data_flags},
 };
-
-use soft_fido2_crypto::ecdsa;
-use soft_fido2_crypto::eddsa;
 
 use alloc::{
     format,
@@ -29,7 +27,6 @@ use alloc::{
 use core::cmp::Reverse;
 
 use sha2::{Digest, Sha256};
-use zeroize::Zeroizing;
 
 /// Maximum RP ID length (typical domain name limit)
 const MAX_RP_ID_LENGTH: usize = 256;
@@ -82,8 +79,8 @@ struct ResponseState {
 /// Handle authenticatorGetAssertion command
 ///
 /// Implements FIDO 2.2 spec section 6.2.2 authenticatorGetAssertion algorithm
-pub fn handle<C: AuthenticatorCallbacks>(
-    auth: &mut Authenticator<C>,
+pub fn handle<C: AuthenticatorCallbacks, K: CredentialKeyProvider>(
+    auth: &mut Authenticator<C, K>,
     data: &[u8],
 ) -> Result<Vec<u8>> {
     let parser = MapParser::from_bytes(data)?;
@@ -451,26 +448,23 @@ pub fn handle<C: AuthenticatorCallbacks>(
             }
 
             // If not found, try unwrapping (for non-resident credentials)
-            if let Ok((private_key, cred_rp_id, algorithm)) = auth.unwrap_credential(&desc.id)
+            if let Ok((key, cred_rp_id, algorithm)) = auth.unwrap_credential(&desc.id)
                 && cred_rp_id == rp_id
             {
-                // Create a temporary credential from unwrapped data
-                // Note: Non-discoverable credentials don't support hmac-secret
-                // because cred_random isn't stored in the wrapped credential
                 let cred = crate::types::Credential {
                     id: desc.id.clone(),
                     rp_id: cred_rp_id,
                     rp_name: None,
-                    user_id: Vec::new(),     // Not stored in wrapped cred
-                    user_name: None,         // Not stored in wrapped cred
-                    user_display_name: None, // Not stored in wrapped cred
-                    private_key,
+                    user_id: Vec::new(),
+                    user_name: None,
+                    user_display_name: None,
+                    key,
                     algorithm,
-                    sign_count: 0,       // Wrapped creds don't track sign count
-                    created: 0,          // Not tracked
-                    discoverable: false, // Non-resident
-                    cred_protect: 0,     // Not tracked
-                    cred_random: None,   // Not supported for non-resident creds
+                    sign_count: 0,
+                    created: 0,
+                    discoverable: false,
+                    cred_protect: 0,
+                    cred_random: None,
                 };
                 creds.push(cred);
             }
@@ -645,25 +639,13 @@ pub fn handle<C: AuthenticatorCallbacks>(
         extension_outputs.as_ref(),
     )?;
 
-    // Generate signature based on credential algorithm
+    // Generate signature via provider
     let sig_data = [&auth_data[..], &client_data_hash[..]].concat();
 
-    let key_bytes = selected_cred.private_key.as_slice();
-    if key_bytes.len() != 32 {
-        return Err(StatusCode::InvalidCredential);
-    }
-
-    // Copy private key to Zeroizing wrapper (zeroed on drop)
-    let priv_key_array = Zeroizing::new({
-        let mut arr = [0u8; 32];
-        arr.copy_from_slice(key_bytes);
-        arr
-    });
-
-    let signature = match selected_cred.algorithm {
-        -8 | -19 => eddsa::sign(&priv_key_array, &sig_data)?,
-        _ => ecdsa::sign(&priv_key_array, &sig_data)?,
-    };
+    let signature = auth
+        .key_provider()
+        .sign(&selected_cred.key, selected_cred.algorithm, &sig_data)
+        .map_err(StatusCode::from)?;
 
     // Build credential descriptor
     let credential_desc = PublicKeyCredentialDescriptor {

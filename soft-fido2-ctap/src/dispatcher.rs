@@ -7,6 +7,7 @@ use crate::{
     authenticator::Authenticator,
     callbacks::AuthenticatorCallbacks,
     commands::CommandCode,
+    key_provider::{CredentialKeyProvider, SoftwareCredentialKeyProvider},
     status::{Result, StatusCode},
 };
 
@@ -16,14 +17,17 @@ use alloc::{vec, vec::Vec};
 ///
 /// Receives raw CTAP command bytes and dispatches to the appropriate
 /// command handler. Manages the authenticator instance and its state.
-pub struct CommandDispatcher<C: AuthenticatorCallbacks> {
+pub struct CommandDispatcher<
+    C: AuthenticatorCallbacks,
+    K: CredentialKeyProvider = SoftwareCredentialKeyProvider,
+> {
     /// The authenticator instance
-    authenticator: Authenticator<C>,
+    authenticator: Authenticator<C, K>,
 }
 
-impl<C: AuthenticatorCallbacks> CommandDispatcher<C> {
+impl<C: AuthenticatorCallbacks, K: CredentialKeyProvider> CommandDispatcher<C, K> {
     /// Create a new command dispatcher
-    pub fn new(authenticator: Authenticator<C>) -> Self {
+    pub fn new(authenticator: Authenticator<C, K>) -> Self {
         Self { authenticator }
     }
 
@@ -98,17 +102,17 @@ impl<C: AuthenticatorCallbacks> CommandDispatcher<C> {
     }
 
     /// Get a reference to the authenticator
-    pub fn authenticator(&self) -> &Authenticator<C> {
+    pub fn authenticator(&self) -> &Authenticator<C, K> {
         &self.authenticator
     }
 
     /// Get a mutable reference to the authenticator
-    pub fn authenticator_mut(&mut self) -> &mut Authenticator<C> {
+    pub fn authenticator_mut(&mut self) -> &mut Authenticator<C, K> {
         &mut self.authenticator
     }
 
     /// Consume the dispatcher and return the authenticator
-    pub fn into_authenticator(self) -> Authenticator<C> {
+    pub fn into_authenticator(self) -> Authenticator<C, K> {
         self.authenticator
     }
 }

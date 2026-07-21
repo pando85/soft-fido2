@@ -84,8 +84,8 @@ mod subparam_keys {
 ///
 /// Requires PIN/UV auth token with CredentialManagement permission (0x04).
 /// Each subcommand has its own auth validation per FIDO 2.2 spec.
-pub fn handle<C: AuthenticatorCallbacks>(
-    auth: &mut Authenticator<C>,
+pub fn handle<C: AuthenticatorCallbacks, K: crate::key_provider::CredentialKeyProvider>(
+    auth: &mut Authenticator<C, K>,
     data: &[u8],
 ) -> Result<Vec<u8>> {
     let parser = MapParser::from_bytes(data)?;
@@ -124,8 +124,11 @@ pub fn handle<C: AuthenticatorCallbacks>(
 /// * `subcommand_params` - Optional params to include in auth data (for verify())
 /// * `request_rp_id` - Optional RP ID for permission scope checking
 /// * `require_no_rp_id` - If true, token MUST NOT have permissions RP ID
-fn verify_credential_management_auth<C: AuthenticatorCallbacks>(
-    auth: &mut Authenticator<C>,
+fn verify_credential_management_auth<
+    C: AuthenticatorCallbacks,
+    K: crate::key_provider::CredentialKeyProvider,
+>(
+    auth: &mut Authenticator<C, K>,
     parser: &MapParser,
     subcommand_byte: u8,
     subcommand_params: Option<&[u8]>,
@@ -187,8 +190,11 @@ fn verify_credential_management_auth<C: AuthenticatorCallbacks>(
 }
 
 /// Handle getCredsMetadata subcommand
-fn handle_get_creds_metadata<C: AuthenticatorCallbacks>(
-    auth: &mut Authenticator<C>,
+fn handle_get_creds_metadata<
+    C: AuthenticatorCallbacks,
+    K: crate::key_provider::CredentialKeyProvider,
+>(
+    auth: &mut Authenticator<C, K>,
     parser: &MapParser,
 ) -> Result<Vec<u8>> {
     // Auth validation per FIDO 2.2 spec section 6.8.2
@@ -218,8 +224,11 @@ fn handle_get_creds_metadata<C: AuthenticatorCallbacks>(
 }
 
 /// Handle enumerateRPsBegin subcommand
-fn handle_enumerate_rps_begin<C: AuthenticatorCallbacks>(
-    auth: &mut Authenticator<C>,
+fn handle_enumerate_rps_begin<
+    C: AuthenticatorCallbacks,
+    K: crate::key_provider::CredentialKeyProvider,
+>(
+    auth: &mut Authenticator<C, K>,
     parser: &MapParser,
 ) -> Result<Vec<u8>> {
     // Auth validation per FIDO 2.2 spec section 6.8.3
@@ -263,8 +272,11 @@ fn handle_enumerate_rps_begin<C: AuthenticatorCallbacks>(
 }
 
 /// Handle enumerateRPsGetNextRP subcommand
-fn handle_enumerate_rps_get_next<C: AuthenticatorCallbacks>(
-    auth: &mut Authenticator<C>,
+fn handle_enumerate_rps_get_next<
+    C: AuthenticatorCallbacks,
+    K: crate::key_provider::CredentialKeyProvider,
+>(
+    auth: &mut Authenticator<C, K>,
 ) -> Result<Vec<u8>> {
     // Get next RP from enumeration state
     let (rp_id, rp_name, _cred_count) = auth.get_next_rp()?;
@@ -292,8 +304,11 @@ fn handle_enumerate_rps_get_next<C: AuthenticatorCallbacks>(
 }
 
 /// Handle enumerateCredentialsBegin subcommand
-fn handle_enumerate_credentials_begin<C: AuthenticatorCallbacks>(
-    auth: &mut Authenticator<C>,
+fn handle_enumerate_credentials_begin<
+    C: AuthenticatorCallbacks,
+    K: crate::key_provider::CredentialKeyProvider,
+>(
+    auth: &mut Authenticator<C, K>,
     parser: &MapParser,
 ) -> Result<Vec<u8>> {
     // Get subcommand parameters (needed for auth)
@@ -360,8 +375,11 @@ fn handle_enumerate_credentials_begin<C: AuthenticatorCallbacks>(
 }
 
 /// Handle enumerateCredentialsGetNextCredential subcommand
-fn handle_enumerate_credentials_get_next<C: AuthenticatorCallbacks>(
-    auth: &mut Authenticator<C>,
+fn handle_enumerate_credentials_get_next<
+    C: AuthenticatorCallbacks,
+    K: crate::key_provider::CredentialKeyProvider,
+>(
+    auth: &mut Authenticator<C, K>,
 ) -> Result<Vec<u8>> {
     // Get next credential from enumeration state
     let cred = auth.get_next_credential()?;
@@ -393,8 +411,11 @@ fn handle_enumerate_credentials_get_next<C: AuthenticatorCallbacks>(
 }
 
 /// Handle deleteCredential subcommand
-fn handle_delete_credential<C: AuthenticatorCallbacks>(
-    auth: &mut Authenticator<C>,
+fn handle_delete_credential<
+    C: AuthenticatorCallbacks,
+    K: crate::key_provider::CredentialKeyProvider,
+>(
+    auth: &mut Authenticator<C, K>,
     parser: &MapParser,
 ) -> Result<Vec<u8>> {
     // Get subcommand parameters (needed for auth)
@@ -447,8 +468,11 @@ fn handle_delete_credential<C: AuthenticatorCallbacks>(
 }
 
 /// Handle updateUserInformation subcommand
-fn handle_update_user_information<C: AuthenticatorCallbacks>(
-    auth: &mut Authenticator<C>,
+fn handle_update_user_information<
+    C: AuthenticatorCallbacks,
+    K: crate::key_provider::CredentialKeyProvider,
+>(
+    auth: &mut Authenticator<C, K>,
     parser: &MapParser,
 ) -> Result<Vec<u8>> {
     // Get subcommand parameters (needed for auth)

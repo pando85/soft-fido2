@@ -13,7 +13,7 @@
 //! #     user: soft_fido2::User::new(vec![1, 2, 3]),
 //! #     sign_count: 0,
 //! #     alg: -7,
-//! #     private_key: soft_fido2_ctap::SecBytes::new(vec![0u8; 32]),
+//! #     key: soft_fido2_ctap::CredentialKey::software(soft_fido2_ctap::SecBytes::new(vec![0u8; 32])),
 //! #     created: 0,
 //! #     discoverable: false,
 //! #     extensions: soft_fido2::Extensions::default(),
@@ -42,7 +42,7 @@
 //! #     user: soft_fido2::User::new(vec![1, 2, 3]),
 //! #     sign_count: 0,
 //! #     alg: -7,
-//! #     private_key: soft_fido2_ctap::SecBytes::new(vec![0u8; 32]),
+//! #     key: soft_fido2_ctap::CredentialKey::software(soft_fido2_ctap::SecBytes::new(vec![0u8; 32])),
 //! #     created: 0,
 //! #     discoverable: false,
 //! #     extensions: soft_fido2::Extensions::default(),
@@ -53,6 +53,7 @@
 
 use crate::error::{Error, Result};
 
+use soft_fido2_ctap::CredentialKey;
 use soft_fido2_ctap::SecBytes;
 
 use alloc::borrow::ToOwned;
@@ -89,20 +90,8 @@ pub struct Credential {
     pub sign_count: u32,
     /// Algorithm (-7 for ES256)
     pub alg: i32,
-    /// Private key bytes (32 bytes for ES256)
-    ///
-    /// # Security
-    ///
-    /// - **With `std` feature** (default): Protected using `SecVec` which:
-    ///   - Zeros memory on drop using `mlock`
-    ///   - Prevents swapping to disk
-    ///   - Uses constant-time equality
-    /// - **Without `std` (no_std)**: Stored as plain `Vec<u8>` for compatibility.
-    ///   No memory protection is provided in no_std environments.
-    ///
-    /// The storage boundary (this field) is the primary protection point for
-    /// long-term credential storage.
-    pub private_key: SecBytes,
+    /// Opaque credential key owned by the key provider
+    pub key: CredentialKey,
     /// Creation timestamp
     pub created: i64,
     /// Is resident key
@@ -133,8 +122,8 @@ pub struct CredentialRef<'a> {
     pub sign_count: &'a u32,
     /// Algorithm (-7 for ES256)
     pub alg: &'a i32,
-    /// Private key bytes (32 bytes for ES256)
-    pub private_key: &'a SecBytes,
+    /// Opaque credential key owned by the key provider
+    pub key: &'a CredentialKey,
     /// Creation timestamp
     pub created: &'a i64,
     /// Is resident key
@@ -161,7 +150,7 @@ impl<'a> CredentialRef<'a> {
             },
             sign_count: self.sign_count.to_owned(),
             alg: self.alg.to_owned(),
-            private_key: self.private_key.to_owned(),
+            key: self.key.clone(),
             created: self.created.to_owned(),
             discoverable: self.discoverable.to_owned(),
             extensions: Extensions {
@@ -210,7 +199,7 @@ impl From<soft_fido2_ctap::types::Credential> for Credential {
             },
             sign_count: cred.sign_count,
             alg: cred.algorithm,
-            private_key: cred.private_key,
+            key: cred.key,
             created: cred.created,
             discoverable: cred.discoverable,
             extensions: Extensions {
@@ -233,7 +222,7 @@ impl From<Credential> for soft_fido2_ctap::types::Credential {
             user_display_name: cred.user.display_name,
             sign_count: cred.sign_count,
             algorithm: cred.alg,
-            private_key: cred.private_key,
+            key: cred.key,
             created: cred.created,
             discoverable: cred.discoverable,
             cred_protect: cred.extensions.cred_protect.unwrap_or(1),
