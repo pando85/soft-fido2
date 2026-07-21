@@ -5,6 +5,12 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/), and this project
 adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [v0.14.0](https://github.com/pando85/soft-fido2/tree/v0.14.0) - 2026-07-21
+
+### Added
+
+- Support opaque credential keys and external signing providers (#124) ([b0adc6e](https://github.com/pando85/soft-fido2/commit/b0adc6e415e55a053a1c98b768425a8c802eb922))
+
 ## [v0.13.1](https://github.com/pando85/soft-fido2/tree/v0.13.1) - 2026-07-06
 
 ### Added
