@@ -59,6 +59,12 @@ impl<'de> Deserialize<'de> for CredentialKeyProviderId {
         D: serde::Deserializer<'de>,
     {
         let bytes: Vec<u8> = serde_bytes::deserialize(deserializer)?;
+        if bytes.len() > MAX_PROVIDER_ID_LENGTH {
+            return Err(serde::de::Error::custom(alloc::format!(
+                "provider ID exceeds MAX_PROVIDER_ID_LENGTH ({} bytes)",
+                MAX_PROVIDER_ID_LENGTH
+            )));
+        }
         Ok(Self(bytes))
     }
 }
@@ -142,6 +148,11 @@ impl<'de> Deserialize<'de> for CredentialKey {
                 }
                 "format_version" => {
                     if let crate::cbor::Value::Integer(i) = v {
+                        if i < 0 || i > u16::MAX as i128 {
+                            return Err(serde::de::Error::custom(
+                                "format_version out of range for u16",
+                            ));
+                        }
                         format_version = Some(i as u16);
                     }
                 }
@@ -254,6 +265,10 @@ impl CredentialKeyProvider for SoftwareCredentialKeyProvider {
         &self,
         algorithm: i32,
     ) -> core::result::Result<GeneratedCredentialKey, CredentialKeyError> {
+        if !self.supports_algorithm(algorithm) {
+            return Err(CredentialKeyError::UnsupportedAlgorithm);
+        }
+
         match algorithm {
             -8 | -19 => {
                 let (sk, pk) = soft_fido2_crypto::eddsa::generate_keypair();
@@ -429,6 +444,48 @@ mod tests {
         assert_eq!(restored.provider, key.provider);
         assert_eq!(restored.format_version, key.format_version);
         assert_eq!(restored.material.as_slice(), key.material.as_slice());
+    }
+
+    #[test]
+    fn test_software_generate_rejects_unsupported_algorithm() {
+        let provider = SoftwareCredentialKeyProvider;
+        let result = provider.generate(-257);
+        assert_eq!(result, Err(CredentialKeyError::UnsupportedAlgorithm));
+    }
+
+    #[test]
+    fn test_provider_id_deserialization_rejects_oversized() {
+        use crate::cbor::Value;
+
+        let oversized = Value::Bytes(vec![0u8; MAX_PROVIDER_ID_LENGTH + 1]);
+        let mut buf = Vec::new();
+        crate::cbor::into_writer(&oversized, &mut buf).unwrap();
+        let result: core::result::Result<CredentialKeyProviderId, _> = crate::cbor::decode(&buf);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_credential_key_deserialization_rejects_out_of_range_format_version() {
+        use crate::cbor::Value;
+
+        let map = Value::Map(vec![
+            (
+                Value::Text("provider".to_string()),
+                Value::Bytes(b"software-v1".to_vec()),
+            ),
+            (
+                Value::Text("format_version".to_string()),
+                Value::Integer(u16::MAX as i128 + 1),
+            ),
+            (
+                Value::Text("material".to_string()),
+                Value::Bytes(vec![0u8; 32]),
+            ),
+        ]);
+        let mut buf = Vec::new();
+        crate::cbor::into_writer(&map, &mut buf).unwrap();
+        let result: core::result::Result<CredentialKey, _> = crate::cbor::decode(&buf);
+        assert!(result.is_err());
     }
 
     #[cfg(test)]
