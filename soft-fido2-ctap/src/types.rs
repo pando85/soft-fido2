@@ -3,6 +3,7 @@
 //! Core data structures used in CTAP protocol messages.
 //! All types support CBOR serialization as required by the FIDO2 spec.
 
+use crate::key_provider::CredentialKey;
 use crate::sec_bytes::{SecBytes, SecPinHash};
 
 use alloc::string::{String, ToString};
@@ -276,10 +277,9 @@ impl CredProtect {
 /// Credential data stored by authenticator
 ///
 /// Internal representation of a credential with all metadata.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Credential {
     /// Credential ID
-    #[serde(with = "serde_bytes")]
     pub id: Vec<u8>,
 
     /// Relying party identifier
@@ -292,7 +292,6 @@ pub struct Credential {
     pub rp_name: Option<String>,
 
     /// User handle
-    #[serde(with = "serde_bytes")]
     pub user_id: Vec<u8>,
 
     /// COSE algorithm identifier
@@ -304,13 +303,8 @@ pub struct Credential {
     /// Signature counter
     pub sign_count: u32,
 
-    /// Private key (32 bytes for P-256)
-    ///
-    /// Protected using `SecBytes` which:
-    /// - Zeros memory on drop (prevents heap retention attacks)
-    /// - Uses mlock in std builds (prevents swapping to disk)
-    /// - Provides constant-time equality
-    pub private_key: SecBytes,
+    /// Opaque credential key owned by the key provider
+    pub key: CredentialKey,
 
     /// Credential protection level
     pub cred_protect: u8,
@@ -326,12 +320,173 @@ pub struct Credential {
     /// This is used by the hmac-secret extension to derive HMAC outputs.
     /// Generated during credential creation when hmac-secret is enabled.
     /// If None, hmac-secret extension is not supported for this credential.
-    #[serde(skip_serializing_if = "Option::is_none")]
     pub cred_random: Option<SecBytes>,
 }
 
+impl Serialize for Credential {
+    fn serialize<S>(&self, serializer: S) -> core::result::Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer,
+    {
+        use serde::ser::SerializeMap;
+        let mut map = serializer.serialize_map(None)?;
+        map.serialize_entry("id", &serde_bytes::Bytes::new(&self.id))?;
+        map.serialize_entry("rp_id", &self.rp_id)?;
+        map.serialize_entry("created", &self.created)?;
+        map.serialize_entry("rp_name", &self.rp_name)?;
+        map.serialize_entry("user_id", &serde_bytes::Bytes::new(&self.user_id))?;
+        map.serialize_entry("algorithm", &self.algorithm)?;
+        map.serialize_entry("user_name", &self.user_name)?;
+        map.serialize_entry("sign_count", &self.sign_count)?;
+        map.serialize_entry("key", &self.key)?;
+        map.serialize_entry("cred_protect", &self.cred_protect)?;
+        map.serialize_entry("discoverable", &self.discoverable)?;
+        map.serialize_entry("user_display_name", &self.user_display_name)?;
+        if let Some(ref cr) = self.cred_random {
+            map.serialize_entry("cred_random", cr)?;
+        }
+        map.end()
+    }
+}
+
+impl<'de> Deserialize<'de> for Credential {
+    fn deserialize<D>(deserializer: D) -> core::result::Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        let value = crate::cbor::Value::deserialize(deserializer)?;
+        let map = match value {
+            crate::cbor::Value::Map(m) => m,
+            _ => return Err(serde::de::Error::custom("expected map")),
+        };
+
+        let mut id: Option<Vec<u8>> = None;
+        let mut rp_id: Option<String> = None;
+        let mut created: Option<i64> = None;
+        let mut rp_name: Option<Option<String>> = None;
+        let mut user_id: Option<Vec<u8>> = None;
+        let mut algorithm: Option<i32> = None;
+        let mut user_name: Option<Option<String>> = None;
+        let mut sign_count: Option<u32> = None;
+        let mut key: Option<CredentialKey> = None;
+        let mut cred_protect: Option<u8> = None;
+        let mut discoverable: Option<bool> = None;
+        let mut user_display_name: Option<Option<String>> = None;
+        let mut cred_random: Option<Option<SecBytes>> = None;
+        let mut legacy_private_key: Option<SecBytes> = None;
+
+        for (k, v) in map {
+            let key_str = match k {
+                crate::cbor::Value::Text(s) => s,
+                _ => continue,
+            };
+            match key_str.as_str() {
+                "id" => {
+                    if let crate::cbor::Value::Bytes(b) = v {
+                        id = Some(b);
+                    }
+                }
+                "rp_id" => {
+                    if let crate::cbor::Value::Text(s) = v {
+                        rp_id = Some(s);
+                    }
+                }
+                "created" => {
+                    if let crate::cbor::Value::Integer(i) = v {
+                        created = Some(i as i64);
+                    }
+                }
+                "rp_name" => match v {
+                    crate::cbor::Value::Null => rp_name = Some(None),
+                    crate::cbor::Value::Text(s) => rp_name = Some(Some(s)),
+                    _ => {}
+                },
+                "user_id" => {
+                    if let crate::cbor::Value::Bytes(b) = v {
+                        user_id = Some(b);
+                    }
+                }
+                "algorithm" => {
+                    if let crate::cbor::Value::Integer(i) = v {
+                        algorithm = Some(i as i32);
+                    }
+                }
+                "user_name" => match v {
+                    crate::cbor::Value::Null => user_name = Some(None),
+                    crate::cbor::Value::Text(s) => user_name = Some(Some(s)),
+                    _ => {}
+                },
+                "sign_count" => {
+                    if let crate::cbor::Value::Integer(i) = v {
+                        sign_count = Some(i as u32);
+                    }
+                }
+                "key" => {
+                    let k: CredentialKey =
+                        crate::cbor::from_value(&v).map_err(serde::de::Error::custom)?;
+                    key = Some(k);
+                }
+                "private_key" => {
+                    if let crate::cbor::Value::Bytes(b) = v {
+                        legacy_private_key = Some(SecBytes::from_slice(&b));
+                    }
+                }
+                "cred_protect" => {
+                    if let crate::cbor::Value::Integer(i) = v {
+                        cred_protect = Some(i as u8);
+                    }
+                }
+                "discoverable" => {
+                    if let crate::cbor::Value::Bool(b) = v {
+                        discoverable = Some(b);
+                    }
+                }
+                "user_display_name" => match v {
+                    crate::cbor::Value::Null => user_display_name = Some(None),
+                    crate::cbor::Value::Text(s) => user_display_name = Some(Some(s)),
+                    _ => {}
+                },
+                "cred_random" => match v {
+                    crate::cbor::Value::Null => cred_random = Some(None),
+                    crate::cbor::Value::Bytes(b) => {
+                        cred_random = Some(Some(SecBytes::from_slice(&b)))
+                    }
+                    _ => {}
+                },
+                _ => {}
+            }
+        }
+
+        let final_key = match key {
+            Some(k) => k,
+            None => {
+                let pk = legacy_private_key
+                    .ok_or_else(|| serde::de::Error::missing_field("key or private_key"))?;
+                CredentialKey::software(pk)
+            }
+        };
+
+        Ok(Credential {
+            id: id.ok_or_else(|| serde::de::Error::missing_field("id"))?,
+            rp_id: rp_id.ok_or_else(|| serde::de::Error::missing_field("rp_id"))?,
+            created: created.ok_or_else(|| serde::de::Error::missing_field("created"))?,
+            rp_name: rp_name.unwrap_or(None),
+            user_id: user_id.ok_or_else(|| serde::de::Error::missing_field("user_id"))?,
+            algorithm: algorithm.ok_or_else(|| serde::de::Error::missing_field("algorithm"))?,
+            user_name: user_name.unwrap_or(None),
+            sign_count: sign_count.ok_or_else(|| serde::de::Error::missing_field("sign_count"))?,
+            key: final_key,
+            cred_protect: cred_protect.unwrap_or(1),
+            discoverable: discoverable
+                .ok_or_else(|| serde::de::Error::missing_field("discoverable"))?,
+            user_display_name: user_display_name.unwrap_or(None),
+            cred_random: cred_random.unwrap_or(None),
+        })
+    }
+}
+
 impl Credential {
-    /// Create a new credential
+    /// Create a new credential with a credential key
     #[allow(clippy::too_many_arguments)]
     pub fn new(
         id: Vec<u8>,
@@ -341,7 +496,7 @@ impl Credential {
         user_name: Option<String>,
         user_display_name: Option<String>,
         algorithm: i32,
-        private_key: SecBytes,
+        key: CredentialKey,
         discoverable: bool,
     ) -> Self {
         Self::with_cred_random(
@@ -352,7 +507,7 @@ impl Credential {
             user_name,
             user_display_name,
             algorithm,
-            private_key,
+            key,
             discoverable,
             None,
         )
@@ -368,7 +523,7 @@ impl Credential {
         user_name: Option<String>,
         user_display_name: Option<String>,
         algorithm: i32,
-        private_key: SecBytes,
+        key: CredentialKey,
         discoverable: bool,
         cred_random: Option<SecBytes>,
     ) -> Self {
@@ -381,7 +536,7 @@ impl Credential {
             algorithm,
             user_name,
             sign_count: 0,
-            private_key,
+            key,
             cred_protect: CredProtect::UserVerificationOptional.to_u8(),
             discoverable,
             user_display_name,
@@ -636,7 +791,7 @@ mod tests {
             Some("user@example.com".to_string()),
             Some("User Name".to_string()),
             -7,
-            SecBytes::new(vec![0u8; 32]),
+            CredentialKey::software(SecBytes::new(vec![0u8; 32])),
             true,
         );
 
