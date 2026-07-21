@@ -160,6 +160,7 @@ impl<'de> Deserialize<'de> for CredentialKey {
 }
 
 /// Result of key generation by a provider
+#[derive(Debug, PartialEq, Eq)]
 pub struct GeneratedCredentialKey {
     /// The opaque credential key
     pub key: CredentialKey,
@@ -424,5 +425,218 @@ mod tests {
         assert_eq!(restored.provider, key.provider);
         assert_eq!(restored.format_version, key.format_version);
         assert_eq!(restored.material.as_slice(), key.material.as_slice());
+    }
+
+    #[cfg(test)]
+    mod mock_external_provider {
+        use super::*;
+        use alloc::collections::BTreeMap;
+
+        #[cfg(feature = "std")]
+        use std::sync::Mutex;
+
+        #[cfg(not(feature = "std"))]
+        use spin::Mutex;
+
+        struct MockExternalProvider {
+            #[allow(clippy::type_complexity)]
+            keys: Mutex<BTreeMap<Vec<u8>, (Vec<u8>, Vec<u8>)>>,
+            next_handle: Mutex<u64>,
+        }
+
+        impl MockExternalProvider {
+            fn new() -> Self {
+                Self {
+                    keys: Mutex::new(BTreeMap::new()),
+                    next_handle: Mutex::new(1),
+                }
+            }
+        }
+
+        impl CredentialKeyProvider for MockExternalProvider {
+            fn provider_id(&self) -> CredentialKeyProviderId {
+                CredentialKeyProviderId::new(b"mock-external-v1")
+            }
+
+            fn supports_algorithm(&self, algorithm: i32) -> bool {
+                algorithm == -7
+            }
+
+            fn generate(
+                &self,
+                algorithm: i32,
+            ) -> core::result::Result<GeneratedCredentialKey, CredentialKeyError> {
+                if algorithm != -7 {
+                    return Err(CredentialKeyError::UnsupportedAlgorithm);
+                }
+
+                let (sk, pk) = soft_fido2_crypto::ecdsa::generate_keypair();
+
+                let handle = {
+                    let mut h = self.next_handle.lock().unwrap();
+                    let val = *h;
+                    *h += 1;
+                    val
+                };
+
+                let opaque_handle = handle.to_be_bytes().to_vec();
+
+                #[cfg(feature = "std")]
+                self.keys
+                    .lock()
+                    .unwrap()
+                    .insert(opaque_handle.clone(), (sk.to_vec(), pk.clone()));
+
+                #[cfg(not(feature = "std"))]
+                self.keys
+                    .lock()
+                    .insert(opaque_handle.clone(), (sk.to_vec(), pk.clone()));
+
+                let key =
+                    CredentialKey::new(self.provider_id(), 1, SecBytes::from_slice(&opaque_handle));
+
+                Ok(GeneratedCredentialKey {
+                    key,
+                    cose_public_key: pk,
+                })
+            }
+
+            fn sign(
+                &self,
+                key: &CredentialKey,
+                algorithm: i32,
+                message: &[u8],
+            ) -> core::result::Result<Vec<u8>, CredentialKeyError> {
+                if key.provider != self.provider_id() {
+                    return Err(CredentialKeyError::UnsupportedProvider);
+                }
+
+                if key.material.as_slice().len() != 8 {
+                    return Err(CredentialKeyError::InvalidKeyMaterial);
+                }
+
+                let handle = key.material.as_slice().to_vec();
+
+                #[cfg(feature = "std")]
+                let keys = self.keys.lock().unwrap();
+                #[cfg(not(feature = "std"))]
+                let keys = self.keys.lock();
+
+                let (sk_bytes, _) = keys.get(&handle).ok_or(CredentialKeyError::KeyNotFound)?;
+
+                if sk_bytes.len() != 32 {
+                    return Err(CredentialKeyError::InvalidKeyMaterial);
+                }
+
+                let mut arr = [0u8; 32];
+                arr.copy_from_slice(sk_bytes);
+                let priv_key = zeroize::Zeroizing::new(arr);
+
+                match algorithm {
+                    -7 => soft_fido2_crypto::ecdsa::sign(&priv_key, message).map_err(|e| {
+                        CredentialKeyError::TransientFailure(alloc::format!("{:?}", e))
+                    }),
+                    _ => Err(CredentialKeyError::UnsupportedAlgorithm),
+                }
+            }
+        }
+
+        #[test]
+        fn test_mock_provider_generate_returns_opaque_handle() {
+            let provider = MockExternalProvider::new();
+            let generated = provider.generate(-7).unwrap();
+
+            assert!(!generated.key.provider.is_software());
+            assert_eq!(generated.key.provider.as_bytes(), b"mock-external-v1");
+            assert_ne!(generated.key.material.as_slice().len(), 32);
+            assert_eq!(generated.key.material.as_slice().len(), 8);
+            assert_eq!(generated.cose_public_key.len(), 65);
+        }
+
+        #[test]
+        fn test_mock_provider_sign_and_verify() {
+            let provider = MockExternalProvider::new();
+            let generated = provider.generate(-7).unwrap();
+            let message = b"test message for mock provider";
+            let signature = provider.sign(&generated.key, -7, message).unwrap();
+
+            assert!(
+                soft_fido2_crypto::ecdsa::verify(&generated.cose_public_key, message, &signature)
+                    .is_ok()
+            );
+        }
+
+        #[test]
+        fn test_mock_provider_rejects_unsupported_algorithm() {
+            let provider = MockExternalProvider::new();
+            let result = provider.generate(-8);
+            assert_eq!(result, Err(CredentialKeyError::UnsupportedAlgorithm));
+        }
+
+        #[test]
+        fn test_mock_provider_rejects_wrong_provider_id() {
+            let provider = MockExternalProvider::new();
+            let key = CredentialKey::new(
+                CredentialKeyProviderId::new(b"wrong-provider"),
+                1,
+                SecBytes::new(vec![0u8; 8]),
+            );
+            let result = provider.sign(&key, -7, b"test");
+            assert_eq!(result, Err(CredentialKeyError::UnsupportedProvider));
+        }
+
+        #[test]
+        fn test_mock_provider_rejects_invalid_handle_length() {
+            let provider = MockExternalProvider::new();
+            let key = CredentialKey::new(provider.provider_id(), 1, SecBytes::new(vec![0u8; 16]));
+            let result = provider.sign(&key, -7, b"test");
+            assert_eq!(result, Err(CredentialKeyError::InvalidKeyMaterial));
+        }
+
+        #[test]
+        fn test_mock_provider_rejects_unknown_handle() {
+            let provider = MockExternalProvider::new();
+            let key = CredentialKey::new(provider.provider_id(), 1, SecBytes::new(vec![0xFFu8; 8]));
+            let result = provider.sign(&key, -7, b"test");
+            assert_eq!(result, Err(CredentialKeyError::KeyNotFound));
+        }
+
+        #[test]
+        fn test_mock_provider_multiple_keys() {
+            let provider = MockExternalProvider::new();
+
+            let gen1 = provider.generate(-7).unwrap();
+            let gen2 = provider.generate(-7).unwrap();
+
+            assert_ne!(gen1.key.material.as_slice(), gen2.key.material.as_slice());
+
+            let msg1 = b"message 1";
+            let msg2 = b"message 2";
+
+            let sig1 = provider.sign(&gen1.key, -7, msg1).unwrap();
+            let sig2 = provider.sign(&gen2.key, -7, msg2).unwrap();
+
+            assert!(soft_fido2_crypto::ecdsa::verify(&gen1.cose_public_key, msg1, &sig1).is_ok());
+            assert!(soft_fido2_crypto::ecdsa::verify(&gen2.cose_public_key, msg2, &sig2).is_ok());
+
+            assert!(soft_fido2_crypto::ecdsa::verify(&gen1.cose_public_key, msg2, &sig1).is_err());
+        }
+
+        #[test]
+        fn test_mock_provider_with_authenticator() {
+            use crate::authenticator::{Authenticator, AuthenticatorConfig};
+            use crate::test_utils::MockCallbacks;
+
+            let provider = MockExternalProvider::new();
+            let config = AuthenticatorConfig::new();
+            let auth = Authenticator::new_with_key_provider(config, MockCallbacks, provider);
+
+            assert_eq!(
+                auth.key_provider().provider_id().as_bytes(),
+                b"mock-external-v1"
+            );
+            assert!(auth.key_provider().supports_algorithm(-7));
+            assert!(!auth.key_provider().supports_algorithm(-8));
+        }
     }
 }

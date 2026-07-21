@@ -2416,4 +2416,96 @@ mod tests {
         assert_eq!(auth.pin_retries(), 2);
         assert!(!auth.is_pin_locked());
     }
+
+    #[test]
+    fn test_wrap_unwrap_credential_v1_software() {
+        let auth = create_test_authenticator();
+        let key = crate::key_provider::CredentialKey::software(SecBytes::from_slice(&[42u8; 32]));
+        let rp_id = "example.com";
+        let algorithm = -7i32;
+
+        let wrapped = auth.wrap_credential(&key, rp_id, algorithm).unwrap();
+        assert_eq!(wrapped[0], 1);
+
+        let (unwrapped_key, unwrapped_rp_id, unwrapped_alg) =
+            auth.unwrap_credential(&wrapped).unwrap();
+        assert_eq!(unwrapped_key.material.as_slice(), key.material.as_slice());
+        assert!(unwrapped_key.provider.is_software());
+        assert_eq!(unwrapped_rp_id, rp_id);
+        assert_eq!(unwrapped_alg, algorithm);
+    }
+
+    #[test]
+    fn test_wrap_unwrap_credential_v2_external() {
+        let mut config = AuthenticatorConfig::new();
+        config.max_credential_id_length = Some(512);
+        let auth = Authenticator::new(config, MockCallbacks);
+        let key = crate::key_provider::CredentialKey::new(
+            crate::key_provider::CredentialKeyProviderId::new(b"tpm-v1"),
+            2,
+            SecBytes::from_slice(&[0xABu8; 128]),
+        );
+        let rp_id = "example.com";
+        let algorithm = -7i32;
+
+        let wrapped = auth.wrap_credential(&key, rp_id, algorithm).unwrap();
+        assert_eq!(wrapped[0], 2);
+
+        let (unwrapped_key, unwrapped_rp_id, unwrapped_alg) =
+            auth.unwrap_credential(&wrapped).unwrap();
+        assert_eq!(unwrapped_key.provider.as_bytes(), b"tpm-v1");
+        assert_eq!(unwrapped_key.format_version, 2);
+        assert_eq!(unwrapped_key.material.as_slice(), key.material.as_slice());
+        assert_eq!(unwrapped_rp_id, rp_id);
+        assert_eq!(unwrapped_alg, algorithm);
+    }
+
+    #[test]
+    fn test_wrap_unwrap_credential_v2_long_rp_id() {
+        let mut config = AuthenticatorConfig::new();
+        config.max_credential_id_length = Some(1024);
+        let auth = Authenticator::new(config, MockCallbacks);
+        let key = crate::key_provider::CredentialKey::new(
+            crate::key_provider::CredentialKeyProviderId::new(b"custom"),
+            1,
+            SecBytes::from_slice(&[0xCDu8; 64]),
+        );
+        let rp_id = "a".repeat(256);
+        let algorithm = -7i32;
+
+        let wrapped = auth.wrap_credential(&key, &rp_id, algorithm).unwrap();
+        let (unwrapped_key, unwrapped_rp_id, unwrapped_alg) =
+            auth.unwrap_credential(&wrapped).unwrap();
+        assert_eq!(unwrapped_key.material.as_slice(), key.material.as_slice());
+        assert_eq!(unwrapped_rp_id, rp_id);
+        assert_eq!(unwrapped_alg, algorithm);
+    }
+
+    #[test]
+    fn test_unwrap_credential_tampered_detected() {
+        let mut config = AuthenticatorConfig::new();
+        config.max_credential_id_length = Some(512);
+        let auth = Authenticator::new(config, MockCallbacks);
+        let key = crate::key_provider::CredentialKey::new(
+            crate::key_provider::CredentialKeyProviderId::new(b"tpm-v1"),
+            1,
+            SecBytes::from_slice(&[0xABu8; 64]),
+        );
+
+        let mut wrapped = auth.wrap_credential(&key, "example.com", -7).unwrap();
+        let last = wrapped.len() - 1;
+        wrapped[last] ^= 0xFF;
+
+        let result = auth.unwrap_credential(&wrapped);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_unwrap_credential_unknown_version() {
+        let auth = create_test_authenticator();
+        let mut data = vec![0u8; 64];
+        data[0] = 99;
+        let result = auth.unwrap_credential(&data);
+        assert!(result.is_err());
+    }
 }
