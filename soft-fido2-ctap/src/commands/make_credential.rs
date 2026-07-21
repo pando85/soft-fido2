@@ -428,6 +428,12 @@ pub fn handle<C: AuthenticatorCallbacks, K: CredentialKeyProvider>(
 }
 
 /// Step 3: Validate pubKeyCredParams and choose algorithm
+///
+/// Algorithm selection checks both the authenticator config and the key provider.
+/// EdDSA variants (-8 and -19) are treated as interchangeable aliases: if either
+/// is requested and the provider supports it, it is accepted even if the other
+/// variant is listed in the config. This accommodates clients that use -8 (EdDSA)
+/// when the authenticator advertises -19 (Ed25519), as seen with OpenSSH.
 fn validate_and_choose_algorithm<C: AuthenticatorCallbacks, K: CredentialKeyProvider>(
     auth: &Authenticator<C, K>,
     params: &[PublicKeyCredentialParameters],

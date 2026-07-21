@@ -1156,6 +1156,10 @@ impl<C: AuthenticatorCallbacks, K: CredentialKeyProvider> Authenticator<C, K> {
     ) -> Result<Vec<u8>, StatusCode> {
         let version: u8 = 1;
 
+        if rp_id.len() > u8::MAX as usize {
+            return Err(StatusCode::InvalidLength);
+        }
+
         let mut plaintext = Vec::new();
         plaintext.extend_from_slice(key.material.as_slice());
         plaintext.push(rp_id.len() as u8);

@@ -24,6 +24,10 @@ pub struct CredentialKeyProviderId(Vec<u8>);
 
 impl CredentialKeyProviderId {
     pub fn new(id: &[u8]) -> Self {
+        debug_assert!(
+            id.len() <= MAX_PROVIDER_ID_LENGTH,
+            "provider ID exceeds MAX_PROVIDER_ID_LENGTH ({MAX_PROVIDER_ID_LENGTH} bytes)"
+        );
         Self(id.to_vec())
     }
 
