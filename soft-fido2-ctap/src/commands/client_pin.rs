@@ -13,6 +13,7 @@ use crate::{
     authenticator::Authenticator,
     callbacks::AuthenticatorCallbacks,
     cbor::{MapBuilder, MapParser},
+    pin_token::Permission,
     status::{Result, StatusCode},
 };
 
@@ -85,6 +86,45 @@ mod resp_keys {
     pub const PIN_RETRIES: i32 = 0x03;
     pub const POWER_CYCLE_STATE: i32 = 0x04;
     pub const UV_RETRIES: i32 = 0x05;
+}
+
+const DEFAULT_PERMISSION_MASK: u8 =
+    Permission::MakeCredential as u8 | Permission::GetAssertion as u8;
+
+const KNOWN_PERMISSION_MASK: u8 = Permission::MakeCredential as u8
+    | Permission::GetAssertion as u8
+    | Permission::CredentialManagement as u8
+    | Permission::BioEnrollment as u8
+    | Permission::LargeBlobWrite as u8
+    | Permission::AuthenticatorConfiguration as u8;
+
+fn validate_requested_permissions<
+    C: AuthenticatorCallbacks,
+    K: crate::key_provider::CredentialKeyProvider,
+>(
+    auth: &Authenticator<C, K>,
+    permissions: u8,
+) -> Result<()> {
+    if permissions == 0 || permissions & !KNOWN_PERMISSION_MASK != 0 {
+        return Err(StatusCode::InvalidParameter);
+    }
+
+    let options = &auth.config().options;
+
+    if Permission::CredentialManagement.is_set_in(permissions) && !options.cred_mgmt {
+        return Err(StatusCode::UnauthorizedPermission);
+    }
+    if Permission::BioEnrollment.is_set_in(permissions) && options.bio_enroll != Some(true) {
+        return Err(StatusCode::UnauthorizedPermission);
+    }
+    if Permission::LargeBlobWrite.is_set_in(permissions) && options.large_blobs != Some(true) {
+        return Err(StatusCode::UnauthorizedPermission);
+    }
+    if Permission::AuthenticatorConfiguration.is_set_in(permissions) && !options.authnr_cfg {
+        return Err(StatusCode::UnauthorizedPermission);
+    }
+
+    Ok(())
 }
 
 /// Handle authenticatorClientPIN command
@@ -429,8 +469,9 @@ fn handle_get_pin_token<
     // PIN verified - reset retry counter
     auth.reset_pin_retries()?;
 
-    // Get PIN token (CTAP 2.0 uses all permissions)
-    let token = auth.get_pin_token_after_verification(0xFF, None)?;
+    // The superseded CTAP 2.0 getPinToken command grants only the
+    // default makeCredential and getAssertion permissions.
+    let token = auth.get_pin_token_after_verification(DEFAULT_PERMISSION_MASK, None)?;
 
     // Encrypt the token
     let encrypted_token = match protocol {
@@ -462,6 +503,8 @@ fn handle_get_pin_uv_auth_token_using_pin_with_permissions<
     let pin_hash_enc: Vec<u8> = parser.get_bytes(req_keys::PIN_HASH_ENC)?;
     let permissions: u8 = parser.get(req_keys::PERMISSIONS)?;
     let rp_id: Option<String> = parser.get_opt(req_keys::RP_ID)?;
+
+    validate_requested_permissions(auth, permissions)?;
 
     // Get platform's key agreement key
     let key_agreement: crate::cbor::Value = parser.get(req_keys::KEY_AGREEMENT)?;
@@ -572,41 +615,9 @@ fn handle_get_pin_uv_auth_token_using_uv_with_permissions<
         return Err(StatusCode::InvalidParameter);
     }
 
-    // Validate permissions (must not be 0)
-    if permissions == 0 {
-        return Err(StatusCode::InvalidParameter);
-    }
+    validate_requested_permissions(auth, permissions)?;
 
-    // Check permission authorization based on authenticator options
-    // Permission bits: mc=0x01, ga=0x02, cm=0x04, be=0x08, lbw=0x10, acfg=0x20
     let config = auth.config();
-
-    // cm (0x04) requires credMgmt to be true
-    if (permissions & 0x04) != 0 && !config.options.cred_mgmt {
-        return Err(StatusCode::UnauthorizedPermission);
-    }
-
-    // be (0x08) requires uvBioEnroll to be true
-    if (permissions & 0x08) != 0 {
-        if let Some(bio_enroll) = config.options.bio_enroll {
-            if !bio_enroll {
-                return Err(StatusCode::UnauthorizedPermission);
-            }
-        } else {
-            return Err(StatusCode::UnauthorizedPermission);
-        }
-    }
-
-    // lbw (0x10) requires largeBlobs to be true
-    if (permissions & 0x10) != 0 {
-        if let Some(large_blobs) = config.options.large_blobs {
-            if !large_blobs {
-                return Err(StatusCode::UnauthorizedPermission);
-            }
-        } else {
-            return Err(StatusCode::UnauthorizedPermission);
-        }
-    }
 
     // Check if built-in UV is configured
     // For our implementation, UV is always available via callbacks
@@ -1437,5 +1448,78 @@ mod tests {
         let mut pin_buffer = [0u8; 64];
         pin_buffer[..6].copy_from_slice(b"123456");
         assert_eq!(find_null_terminator_constant_time(&pin_buffer), 6);
+    }
+
+    #[test]
+    fn legacy_get_pin_token_permissions_are_mc_and_ga_only() {
+        assert_eq!(DEFAULT_PERMISSION_MASK, 0x03);
+
+        let mut auth = create_test_authenticator();
+        auth.get_pin_token_after_verification(DEFAULT_PERMISSION_MASK, None)
+            .unwrap();
+
+        assert!(
+            auth.verify_pin_uv_auth_token(Permission::MakeCredential, Some("example.com"))
+                .is_ok()
+        );
+        assert!(
+            auth.verify_pin_uv_auth_token(Permission::GetAssertion, Some("example.com"))
+                .is_ok()
+        );
+        assert_eq!(
+            auth.verify_pin_uv_auth_token(Permission::CredentialManagement, None),
+            Err(StatusCode::UnauthorizedPermission)
+        );
+        assert_eq!(
+            auth.verify_pin_uv_auth_token(Permission::BioEnrollment, None),
+            Err(StatusCode::UnauthorizedPermission)
+        );
+        assert_eq!(
+            auth.verify_pin_uv_auth_token(Permission::LargeBlobWrite, None),
+            Err(StatusCode::UnauthorizedPermission)
+        );
+        assert_eq!(
+            auth.verify_pin_uv_auth_token(Permission::AuthenticatorConfiguration, None),
+            Err(StatusCode::UnauthorizedPermission)
+        );
+    }
+
+    #[test]
+    fn permission_validation_rejects_zero_and_unknown_bits() {
+        let auth = create_test_authenticator();
+
+        assert_eq!(
+            validate_requested_permissions(&auth, 0),
+            Err(StatusCode::InvalidParameter)
+        );
+        assert_eq!(
+            validate_requested_permissions(&auth, 0x40),
+            Err(StatusCode::InvalidParameter)
+        );
+    }
+
+    #[test]
+    fn permission_validation_enforces_advertised_capabilities() {
+        let auth = create_test_authenticator();
+
+        assert!(
+            validate_requested_permissions(
+                &auth,
+                Permission::MakeCredential as u8 | Permission::GetAssertion as u8,
+            )
+            .is_ok()
+        );
+        assert_eq!(
+            validate_requested_permissions(&auth, Permission::BioEnrollment as u8),
+            Err(StatusCode::UnauthorizedPermission)
+        );
+        assert_eq!(
+            validate_requested_permissions(&auth, Permission::LargeBlobWrite as u8),
+            Err(StatusCode::UnauthorizedPermission)
+        );
+        assert_eq!(
+            validate_requested_permissions(&auth, Permission::AuthenticatorConfiguration as u8,),
+            Err(StatusCode::UnauthorizedPermission)
+        );
     }
 }
