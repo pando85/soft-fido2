@@ -1112,13 +1112,21 @@ impl<C: AuthenticatorCallbacks, K: CredentialKeyProvider> Authenticator<C, K> {
     ///
     /// This will clear all credentials, reset PIN, and clear tokens.
     pub fn reset(&mut self) -> Result<(), StatusCode> {
-        // Reset PIN state to defaults
+        let next_wrapping_generation = self
+            .pin_state
+            .credential_wrapping_generation
+            .checked_add(1)
+            .ok_or(StatusCode::Other)?;
+
+        // Reset PIN state while preserving a strictly newer wrapping generation.
         self.pin_state = PinState::new();
+        self.pin_state.credential_wrapping_generation = next_wrapping_generation;
         self.pin_tokens.clear_token();
         self.pin_protocol_keypairs.clear();
         self.assertion_state = None;
 
-        // Persist reset state if storage is configured
+        // Persist the new generation before deleting callback-managed
+        // credentials. A reported success must survive process restart.
         self.save_pin_state()?;
 
         // Delete all credentials via callbacks
@@ -1133,6 +1141,27 @@ impl<C: AuthenticatorCallbacks, K: CredentialKeyProvider> Authenticator<C, K> {
     /// or None if the authenticator doesn't track this information.
     pub fn remaining_discoverable_credentials(&self) -> Option<usize> {
         Some(self.config.max_credentials)
+    }
+
+    /// Derive the active wrapping key from the configured master key and the
+    /// persistent reset generation. Generation zero deliberately preserves the
+    /// legacy key so existing credentials remain valid until the first reset.
+    fn active_credential_wrapping_key(&self) -> [u8; 32] {
+        let master: &[u8; 32] = self
+            .credential_wrapping_key
+            .as_slice()
+            .try_into()
+            .expect("credential_wrapping_key invariant: always 32 bytes");
+
+        if self.pin_state.credential_wrapping_generation == 0 {
+            return *master;
+        }
+
+        let mut hasher = Sha256::new();
+        hasher.update(b"soft-fido2 credential wrapping key v1");
+        hasher.update(master);
+        hasher.update(self.pin_state.credential_wrapping_generation.to_be_bytes());
+        hasher.finalize().into()
     }
 
     /// Wrap credential data into a credential ID (for non-resident credentials)
@@ -1180,19 +1209,15 @@ impl<C: AuthenticatorCallbacks, K: CredentialKeyProvider> Authenticator<C, K> {
             plaintext.push(0);
         }
 
-        let wrapping_key: &[u8; 32] = self
-            .credential_wrapping_key
-            .as_slice()
-            .try_into()
-            .expect("credential_wrapping_key invariant: always 32 bytes");
+        let wrapping_key = self.active_credential_wrapping_key();
 
-        let encrypted = v2::encrypt(wrapping_key, &plaintext).map_err(|_| StatusCode::Other)?;
+        let encrypted = v2::encrypt(&wrapping_key, &plaintext).map_err(|_| StatusCode::Other)?;
 
         let mut credential_id = Vec::new();
         credential_id.push(version);
         credential_id.extend_from_slice(&encrypted);
 
-        let hmac = v2::authenticate(wrapping_key, &credential_id);
+        let hmac = v2::authenticate(&wrapping_key, &credential_id);
         credential_id.extend_from_slice(&hmac[..16]);
 
         Ok(credential_id)
@@ -1232,19 +1257,15 @@ impl<C: AuthenticatorCallbacks, K: CredentialKeyProvider> Authenticator<C, K> {
             plaintext.push(0);
         }
 
-        let wrapping_key: &[u8; 32] = self
-            .credential_wrapping_key
-            .as_slice()
-            .try_into()
-            .expect("credential_wrapping_key invariant: always 32 bytes");
+        let wrapping_key = self.active_credential_wrapping_key();
 
-        let encrypted = v2::encrypt(wrapping_key, &plaintext).map_err(|_| StatusCode::Other)?;
+        let encrypted = v2::encrypt(&wrapping_key, &plaintext).map_err(|_| StatusCode::Other)?;
 
         let mut credential_id = Vec::new();
         credential_id.push(version);
         credential_id.extend_from_slice(&encrypted);
 
-        let hmac = v2::authenticate(wrapping_key, &credential_id);
+        let hmac = v2::authenticate(&wrapping_key, &credential_id);
         credential_id.extend_from_slice(&hmac[..16]);
 
         if self
@@ -1288,13 +1309,9 @@ impl<C: AuthenticatorCallbacks, K: CredentialKeyProvider> Authenticator<C, K> {
         let data_with_version = &credential_id[..hmac_start];
         let hmac_received = &credential_id[hmac_start..];
 
-        let wrapping_key: &[u8; 32] = self
-            .credential_wrapping_key
-            .as_slice()
-            .try_into()
-            .expect("credential_wrapping_key invariant: always 32 bytes");
+        let wrapping_key = self.active_credential_wrapping_key();
 
-        let hmac_computed = v2::authenticate(wrapping_key, data_with_version);
+        let hmac_computed = v2::authenticate(&wrapping_key, data_with_version);
         let hmac_valid: bool = hmac_computed[..16].ct_eq(hmac_received).into();
         if !hmac_valid {
             return Err(StatusCode::InvalidParameter);
@@ -1302,7 +1319,7 @@ impl<C: AuthenticatorCallbacks, K: CredentialKeyProvider> Authenticator<C, K> {
 
         let encrypted = &credential_id[1..hmac_start];
         let plaintext = Zeroizing::new(
-            v2::decrypt(wrapping_key, encrypted).map_err(|_| StatusCode::InvalidParameter)?,
+            v2::decrypt(&wrapping_key, encrypted).map_err(|_| StatusCode::InvalidParameter)?,
         );
 
         if plaintext.len() < 37 {
@@ -1339,13 +1356,9 @@ impl<C: AuthenticatorCallbacks, K: CredentialKeyProvider> Authenticator<C, K> {
         let data_with_version = &credential_id[..hmac_start];
         let hmac_received = &credential_id[hmac_start..];
 
-        let wrapping_key: &[u8; 32] = self
-            .credential_wrapping_key
-            .as_slice()
-            .try_into()
-            .expect("credential_wrapping_key invariant: always 32 bytes");
+        let wrapping_key = self.active_credential_wrapping_key();
 
-        let hmac_computed = v2::authenticate(wrapping_key, data_with_version);
+        let hmac_computed = v2::authenticate(&wrapping_key, data_with_version);
         let hmac_valid: bool = hmac_computed[..16].ct_eq(hmac_received).into();
         if !hmac_valid {
             return Err(StatusCode::InvalidParameter);
@@ -1353,7 +1366,7 @@ impl<C: AuthenticatorCallbacks, K: CredentialKeyProvider> Authenticator<C, K> {
 
         let encrypted = &credential_id[1..hmac_start];
         let plaintext = Zeroizing::new(
-            v2::decrypt(wrapping_key, encrypted).map_err(|_| StatusCode::InvalidParameter)?,
+            v2::decrypt(&wrapping_key, encrypted).map_err(|_| StatusCode::InvalidParameter)?,
         );
 
         let mut offset = 0;
@@ -1608,9 +1621,22 @@ mod tests {
     fn test_reset() {
         let mut auth = create_test_authenticator();
         auth.set_pin("1234").unwrap();
+
+        let key = CredentialKey::software(SecBytes::from_slice(&[0x42; 32]));
+        let wrapped = auth
+            .wrap_credential(&key, "example.com", -7)
+            .expect("credential should wrap before reset");
+        assert!(auth.unwrap_credential(&wrapped).is_ok());
+
         auth.reset().unwrap();
+
         assert!(!auth.is_pin_set());
         assert_eq!(auth.pin_retries(), MAX_PIN_RETRIES);
+        assert_eq!(auth.pin_state.credential_wrapping_generation, 1);
+        assert!(matches!(
+            auth.unwrap_credential(&wrapped),
+            Err(StatusCode::InvalidParameter)
+        ));
     }
 
     #[test]
