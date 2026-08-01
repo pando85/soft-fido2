@@ -29,6 +29,7 @@ fn test_credential_from_bytes_roundtrip() {
         extensions: Extensions {
             cred_protect: Some(1),
             hmac_secret: Some(true),
+            backup_state: soft_fido2::CredentialBackupState::NotEligible,
             cred_random: None,
         },
     };

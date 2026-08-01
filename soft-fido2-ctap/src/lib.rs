@@ -42,6 +42,6 @@ pub use pin_token::{Permission, PinToken, PinTokenManager};
 pub use sec_bytes::{SecBytes, SecPinHash};
 pub use status::{Result, StatusCode};
 pub use types::{
-    CoseAlgorithm, CredProtect, Credential, PinState, PublicKeyCredentialDescriptor,
-    PublicKeyCredentialParameters, RelyingParty, User,
+    CoseAlgorithm, CredProtect, Credential, CredentialBackupState, PinState,
+    PublicKeyCredentialDescriptor, PublicKeyCredentialParameters, RelyingParty, User,
 };

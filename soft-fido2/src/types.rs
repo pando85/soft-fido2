@@ -62,7 +62,7 @@ use alloc::vec::Vec;
 
 use serde::{Deserialize, Serialize};
 
-pub use soft_fido2_ctap::types::{RelyingParty, User};
+pub use soft_fido2_ctap::types::{CredentialBackupState, RelyingParty, User};
 
 /// Credential extension data
 #[derive(Clone, Debug, Default, Serialize, Deserialize, PartialEq)]
@@ -71,6 +71,9 @@ pub struct Extensions {
     pub cred_protect: Option<u8>,
     /// HMAC secret extension
     pub hmac_secret: Option<bool>,
+    /// Backup eligibility and current backup state.
+    #[serde(default)]
+    pub backup_state: CredentialBackupState,
     /// HMAC secret credential random (32 bytes)
     /// Used to compute HMAC outputs for the hmac-secret extension
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -130,6 +133,8 @@ pub struct CredentialRef<'a> {
     pub discoverable: &'a bool,
     /// Credential protection level
     pub cred_protect: Option<&'a u8>,
+    /// Backup eligibility and current backup state.
+    pub backup_state: &'a CredentialBackupState,
     /// Credential random for hmac-secret extension (32 bytes)
     pub cred_random: Option<&'a SecBytes>,
 }
@@ -156,6 +161,7 @@ impl<'a> CredentialRef<'a> {
             extensions: Extensions {
                 cred_protect: self.cred_protect.copied(),
                 hmac_secret: None,
+                backup_state: *self.backup_state,
                 cred_random: self.cred_random.cloned(),
             },
         }
@@ -205,6 +211,7 @@ impl From<soft_fido2_ctap::types::Credential> for Credential {
             extensions: Extensions {
                 cred_protect: Some(cred.cred_protect),
                 hmac_secret: cred.cred_random.is_some().then_some(true),
+                backup_state: cred.backup_state,
                 cred_random: cred.cred_random,
             },
         }
@@ -226,6 +233,7 @@ impl From<Credential> for soft_fido2_ctap::types::Credential {
             created: cred.created,
             discoverable: cred.discoverable,
             cred_protect: cred.extensions.cred_protect.unwrap_or(1),
+            backup_state: cred.extensions.backup_state,
             cred_random: cred.extensions.cred_random,
         }
     }

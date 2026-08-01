@@ -9,7 +9,7 @@ use crate::{
     cbor::MAX_CTAP_MESSAGE_SIZE,
     key_provider::{CredentialKey, CredentialKeyProvider, SoftwareCredentialKeyProvider},
     pin_token::{Permission, PinToken, PinTokenManager},
-    types::PinState,
+    types::{CredentialBackupState, PinState},
 };
 
 use soft_fido2_crypto::pin_protocol::{self, v2};
@@ -122,6 +122,9 @@ pub struct AuthenticatorConfig {
     /// Default: true (optimized for testing/virtual authenticator use cases)
     pub force_resident_keys: bool,
 
+    /// Backup state assigned to newly created stored credentials.
+    pub default_credential_backup_state: CredentialBackupState,
+
     /// Use constant signature counter (for privacy)
     ///
     /// When true, the signature counter will not increment and remain at 0.
@@ -152,6 +155,7 @@ impl AuthenticatorConfig {
             auto_lock_timeout: 0,          // 0 = permanent lock (no auto-unlock)
             credential_wrapping_key: None, // Will be generated if needed
             force_resident_keys: true,
+            default_credential_backup_state: CredentialBackupState::NotEligible,
             constant_sign_count: false,
         }
     }
@@ -201,6 +205,12 @@ impl AuthenticatorConfig {
     /// Force all credentials to be resident keys (for testing)
     pub fn with_force_resident_keys(mut self, force: bool) -> Self {
         self.force_resident_keys = force;
+        self
+    }
+
+    /// Set the backup state assigned to newly created stored credentials.
+    pub fn with_default_credential_backup_state(mut self, state: CredentialBackupState) -> Self {
+        self.default_credential_backup_state = state;
         self
     }
 
@@ -1792,6 +1802,7 @@ mod tests {
             created: 0,
             discoverable: true,
             cred_protect: 0,
+            backup_state: crate::types::CredentialBackupState::NotEligible,
             cred_random: None,
         };
 
@@ -1810,6 +1821,7 @@ mod tests {
             created: 0,
             discoverable: true,
             cred_protect: 0,
+            backup_state: crate::types::CredentialBackupState::NotEligible,
             cred_random: None,
         };
 
@@ -2017,6 +2029,7 @@ mod tests {
             created: 0,
             discoverable: true,
             cred_protect: 0,
+            backup_state: crate::types::CredentialBackupState::NotEligible,
             cred_random: None,
         };
 

@@ -11,7 +11,7 @@ use crate::{
     cbor::MapBuilder,
     key_provider::CredentialKeyProvider,
     status::{Result, StatusCode},
-    types::{PublicKeyCredentialDescriptor, auth_data_flags},
+    types::{CredentialBackupState, PublicKeyCredentialDescriptor, auth_data_flags},
 };
 
 use alloc::{string::ToString, vec::Vec};
@@ -55,8 +55,13 @@ fn build_assertion_response<C: AuthenticatorCallbacks, K: CredentialKeyProvider>
         auth.callbacks().update_credential(&updated_cred)?;
     }
 
-    let auth_data =
-        build_authenticator_data(&context.rp_id, context.up, context.uv, new_sign_count);
+    let auth_data = build_authenticator_data(
+        &context.rp_id,
+        context.up,
+        context.uv,
+        credential.backup_state,
+        new_sign_count,
+    );
     let sig_data = [&auth_data[..], &context.client_data_hash[..]].concat();
 
     let signature = auth
@@ -99,7 +104,13 @@ fn build_assertion_response<C: AuthenticatorCallbacks, K: CredentialKeyProvider>
     builder.build()
 }
 
-fn build_authenticator_data(rp_id: &str, up: bool, uv: bool, sign_count: u32) -> Vec<u8> {
+fn build_authenticator_data(
+    rp_id: &str,
+    up: bool,
+    uv: bool,
+    backup_state: CredentialBackupState,
+    sign_count: u32,
+) -> Vec<u8> {
     let mut auth_data = Vec::new();
 
     let mut hasher = Sha256::new();
@@ -113,6 +124,7 @@ fn build_authenticator_data(rp_id: &str, up: bool, uv: bool, sign_count: u32) ->
     if uv {
         flags |= auth_data_flags::UV;
     }
+    flags |= backup_state.flags();
     auth_data.push(flags);
 
     auth_data.extend_from_slice(&sign_count.to_be_bytes());

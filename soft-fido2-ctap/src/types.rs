@@ -23,6 +23,10 @@ pub mod auth_data_flags {
     pub const UP: u8 = 0x01;
     /// User Verified (UV) - bit 2
     pub const UV: u8 = 0x04;
+    /// Backup Eligible (BE) - bit 3
+    pub const BE: u8 = 0x08;
+    /// Backup State (BS) - bit 4
+    pub const BS: u8 = 0x10;
     /// Attested credential data (AT) - bit 6
     pub const AT: u8 = 0x40;
     /// Extension data (ED) - bit 7
@@ -242,6 +246,41 @@ impl AuthenticatorOptions {
     }
 }
 
+/// Backup eligibility and state for a credential.
+///
+/// Models the three valid WebAuthn combinations, making `BE=0, BS=1`
+/// unrepresentable.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub enum CredentialBackupState {
+    /// Single-device credential (`BE=0, BS=0`).
+    #[default]
+    NotEligible,
+    /// Multi-device credential that is not currently backed up (`BE=1, BS=0`).
+    Eligible,
+    /// Multi-device credential that is currently backed up (`BE=1, BS=1`).
+    BackedUp,
+}
+
+impl CredentialBackupState {
+    /// Authenticator-data flag bits for this state.
+    pub const fn flags(self) -> u8 {
+        match self {
+            Self::NotEligible => 0,
+            Self::Eligible => auth_data_flags::BE,
+            Self::BackedUp => auth_data_flags::BE | auth_data_flags::BS,
+        }
+    }
+
+    pub const fn is_eligible(self) -> bool {
+        !matches!(self, Self::NotEligible)
+    }
+
+    pub const fn is_backed_up(self) -> bool {
+        matches!(self, Self::BackedUp)
+    }
+}
+
 /// Credential protection policy
 ///
 /// Defines the level of protection for a credential.
@@ -312,6 +351,9 @@ pub struct Credential {
     /// Whether this is a discoverable credential
     pub discoverable: bool,
 
+    /// Backup eligibility and current backup state.
+    pub backup_state: CredentialBackupState,
+
     /// User display name
     pub user_display_name: Option<String>,
 
@@ -341,6 +383,7 @@ impl Serialize for Credential {
         map.serialize_entry("key", &self.key)?;
         map.serialize_entry("cred_protect", &self.cred_protect)?;
         map.serialize_entry("discoverable", &self.discoverable)?;
+        map.serialize_entry("backup_state", &self.backup_state)?;
         map.serialize_entry("user_display_name", &self.user_display_name)?;
         if let Some(ref cr) = self.cred_random {
             map.serialize_entry("cred_random", cr)?;
@@ -371,6 +414,7 @@ impl<'de> Deserialize<'de> for Credential {
         let mut key: Option<CredentialKey> = None;
         let mut cred_protect: Option<u8> = None;
         let mut discoverable: Option<bool> = None;
+        let mut backup_state: Option<CredentialBackupState> = None;
         let mut user_display_name: Option<Option<String>> = None;
         let mut cred_random: Option<Option<SecBytes>> = None;
         let mut legacy_private_key: Option<SecBytes> = None;
@@ -441,6 +485,10 @@ impl<'de> Deserialize<'de> for Credential {
                         discoverable = Some(b);
                     }
                 }
+                "backup_state" => {
+                    backup_state =
+                        Some(crate::cbor::from_value(&v).map_err(serde::de::Error::custom)?);
+                }
                 "user_display_name" => match v {
                     crate::cbor::Value::Null => user_display_name = Some(None),
                     crate::cbor::Value::Text(s) => user_display_name = Some(Some(s)),
@@ -479,6 +527,7 @@ impl<'de> Deserialize<'de> for Credential {
             cred_protect: cred_protect.unwrap_or(1),
             discoverable: discoverable
                 .ok_or_else(|| serde::de::Error::missing_field("discoverable"))?,
+            backup_state: backup_state.unwrap_or_default(),
             user_display_name: user_display_name.unwrap_or(None),
             cred_random: cred_random.unwrap_or(None),
         })
@@ -539,6 +588,7 @@ impl Credential {
             key,
             cred_protect: CredProtect::UserVerificationOptional.to_u8(),
             discoverable,
+            backup_state: CredentialBackupState::NotEligible,
             user_display_name,
             cred_random,
         }
@@ -754,6 +804,16 @@ mod tests {
         let desc =
             PublicKeyCredentialDescriptor::with_transports(vec![1, 2, 3], vec!["usb".to_string()]);
         assert_eq!(desc.transports, Some(vec!["usb".to_string()]));
+    }
+
+    #[test]
+    fn test_credential_backup_state_flags() {
+        assert_eq!(CredentialBackupState::NotEligible.flags(), 0);
+        assert_eq!(CredentialBackupState::Eligible.flags(), auth_data_flags::BE);
+        assert_eq!(
+            CredentialBackupState::BackedUp.flags(),
+            auth_data_flags::BE | auth_data_flags::BS
+        );
     }
 
     #[test]
