@@ -81,7 +81,7 @@ PIN_SHA="$(git rev-parse HEAD)"
 cd "$ROOT"
 git merge --no-edit origin/master
 git merge --no-edit "$PIN_SHA"
-git merge --no-edit 6cd25853977f2446836ef8a7c66374bc8495a52e
+git merge --no-edit origin/agent/fix-cm-rp-scope
 git merge --no-edit 079e695c1841945756f2583ce768efc8a594c11b
 git merge --no-edit 6e10a3534441d003e28f055a0c97d5d3f4962ced
 git merge --no-edit ee8f066eb64d532b11d47137539b592b942bf8bd
