@@ -70,4 +70,4 @@ jobs:
               cargo.write(f'soft-fido2-transport = {{ path = "{root / "soft-fido2-transport"}" }}\n')
           PY
           cargo check --manifest-path /tmp/passless/Cargo.toml --locked \
-            -p passless-core -p passless-uhid -p passless
+            -p passless-core -p passless-uhid -p passless-rs
