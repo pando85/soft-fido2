@@ -14,6 +14,7 @@ pub mod authenticator;
 pub mod bridge;
 pub mod callbacks;
 pub mod cbor;
+mod cbor_validate;
 pub mod commands;
 pub mod dispatcher;
 pub mod extensions;
