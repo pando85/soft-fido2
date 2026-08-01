@@ -1,0 +1,45 @@
+name: Apply issue 152 fix
+
+on:
+  pull_request:
+    types: [opened, reopened, synchronize]
+    branches: [master]
+
+permissions:
+  contents: write
+
+jobs:
+  apply:
+    if: github.event.pull_request.head.ref == 'agent/restrict-legacy-pin-token-permissions'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.ref }}
+          fetch-depth: 0
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: 1.91
+          components: rustfmt
+
+      - name: Apply source changes
+        run: python3 scripts/apply_issue_152.py
+
+      - name: Format
+        run: cargo fmt --all
+
+      - name: Test CTAP crate
+        run: cargo test -p soft-fido2-ctap
+
+      - name: Commit final patch
+        env:
+          BRANCH: ${{ github.event.pull_request.head.ref }}
+        run: |
+          rm -f scripts/apply_issue_152.py .github/workflows/apply-issue-152.yml
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A
+          git commit -m "fix: restrict legacy PIN token permissions"
+          git push origin "HEAD:${BRANCH}"
