@@ -390,6 +390,10 @@ pub struct Authenticator<
     /// PIN token manager
     pin_tokens: PinTokenManager,
 
+    /// Consecutive failed PIN attempts in the current software-device session.
+    /// A process/device restart clears this temporary block but not persistent retries.
+    pin_consecutive_failures: u8,
+
     /// User verification retry counter
     uv_retries: u8,
 
@@ -467,6 +471,7 @@ impl<C: AuthenticatorCallbacks, K: CredentialKeyProvider> Authenticator<C, K> {
             pin_state,
             pin_storage: None,
             pin_tokens: PinTokenManager::new(),
+            pin_consecutive_failures: 0,
             uv_retries: max_pin_retries,
             custom_commands: BTreeMap::new(),
             pin_protocol_keypairs: BTreeMap::new(),
@@ -537,6 +542,11 @@ impl<C: AuthenticatorCallbacks, K: CredentialKeyProvider> Authenticator<C, K> {
         self.pin_state.is_blocked()
     }
 
+    /// Check whether three consecutive failures require a software-device restart.
+    pub fn is_pin_auth_blocked(&self) -> bool {
+        self.pin_consecutive_failures >= 3
+    }
+
     /// Check if PIN is temporarily locked (auto-lock feature)
     ///
     /// Returns `true` if the PIN is currently in a temporary lock state
@@ -594,6 +604,9 @@ impl<C: AuthenticatorCallbacks, K: CredentialKeyProvider> Authenticator<C, K> {
         self.pin_state.retries = self.config.max_pin_retries;
         self.pin_state.force_pin_change = false;
         self.pin_state.locked_until = None;
+        self.pin_consecutive_failures = 0;
+        self.pin_tokens.clear_token();
+        self.pin_protocol_keypairs.clear();
 
         // Persist if storage is configured
         self.save_pin_state()?;
@@ -652,6 +665,9 @@ impl<C: AuthenticatorCallbacks, K: CredentialKeyProvider> Authenticator<C, K> {
         if self.is_pin_blocked() {
             return Err(StatusCode::PinBlocked);
         }
+        if self.is_pin_auth_blocked() {
+            return Err(StatusCode::PinAuthBlocked);
+        }
 
         // Hash the provided PIN (raw PIN, not padded, per CTAP spec)
         let pin_bytes = pin.as_bytes();
@@ -662,11 +678,13 @@ impl<C: AuthenticatorCallbacks, K: CredentialKeyProvider> Authenticator<C, K> {
             // PIN correct - reset retry counter and clear any lock
             self.pin_state.retries = self.config.max_pin_retries;
             self.pin_state.locked_until = None;
+            self.pin_consecutive_failures = 0;
             self.save_pin_state()?;
             Ok(())
         } else {
-            // PIN incorrect - decrement retry counter
+            // PIN incorrect - decrement persistent and session counters
             self.pin_state.retries = self.pin_state.retries.saturating_sub(1);
+            self.pin_consecutive_failures = self.pin_consecutive_failures.saturating_add(1);
 
             // If retries exhausted, apply lock
             if self.pin_state.retries == 0 {
@@ -678,6 +696,9 @@ impl<C: AuthenticatorCallbacks, K: CredentialKeyProvider> Authenticator<C, K> {
                 // If auto_lock_timeout is 0, permanent block (locked_until stays None)
                 self.save_pin_state()?;
                 Err(StatusCode::PinBlocked)
+            } else if self.is_pin_auth_blocked() {
+                self.save_pin_state()?;
+                Err(StatusCode::PinAuthBlocked)
             } else {
                 self.save_pin_state()?;
                 Err(StatusCode::PinInvalid)
@@ -706,6 +727,7 @@ impl<C: AuthenticatorCallbacks, K: CredentialKeyProvider> Authenticator<C, K> {
     /// Persistence errors are propagated to allow callers to handle storage failures.
     pub(crate) fn decrement_pin_retries(&mut self) -> Result<(), StatusCode> {
         self.pin_state.retries = self.pin_state.retries.saturating_sub(1);
+        self.pin_consecutive_failures = self.pin_consecutive_failures.saturating_add(1);
         self.save_pin_state()
     }
 
@@ -716,6 +738,7 @@ impl<C: AuthenticatorCallbacks, K: CredentialKeyProvider> Authenticator<C, K> {
     pub(crate) fn reset_pin_retries(&mut self) -> Result<(), StatusCode> {
         self.pin_state.retries = self.config.max_pin_retries;
         self.pin_state.locked_until = None;
+        self.pin_consecutive_failures = 0;
         self.save_pin_state()
     }
 
@@ -764,8 +787,12 @@ impl<C: AuthenticatorCallbacks, K: CredentialKeyProvider> Authenticator<C, K> {
         let mut token_bytes = [0u8; 32];
         rand::rng().fill_bytes(&mut token_bytes);
 
-        // Create and store token
+        // Create and store token. Without a trustworthy clock, expiring
+        // tokens cannot be issued safely.
         let now = self.callbacks.get_timestamp_ms();
+        if now == 0 {
+            return Err(StatusCode::PinTokenExpired);
+        }
         let token = PinToken::new(token_bytes, permissions, rp_id, now);
         let value = *token.value();
         self.pin_tokens.set_token(token);
@@ -1129,6 +1156,7 @@ impl<C: AuthenticatorCallbacks, K: CredentialKeyProvider> Authenticator<C, K> {
         self.pin_tokens.clear_token();
         self.pin_protocol_keypairs.clear();
         self.assertion_state = None;
+        self.pin_consecutive_failures = 0;
 
         // Persist the new generation before deleting callback-managed
         // credentials. A reported success must survive process restart.
@@ -1547,18 +1575,39 @@ mod tests {
     }
 
     #[test]
-    fn test_pin_retry_exhaustion() {
+    fn test_pin_auth_blocked_after_three_consecutive_failures() {
         let mut auth = create_test_authenticator();
         auth.set_pin("1234").unwrap();
 
-        // Exhaust retries
-        for _ in 0..MAX_PIN_RETRIES {
-            let _ = auth.verify_pin("wrong");
+        assert_eq!(auth.verify_pin("wrong"), Err(StatusCode::PinInvalid));
+        assert_eq!(auth.verify_pin("wrong"), Err(StatusCode::PinInvalid));
+        assert_eq!(auth.verify_pin("wrong"), Err(StatusCode::PinAuthBlocked));
+        assert!(auth.is_pin_auth_blocked());
+        assert_eq!(auth.pin_retries(), MAX_PIN_RETRIES - 3);
+
+        assert_eq!(auth.verify_pin("1234"), Err(StatusCode::PinAuthBlocked));
+        assert_eq!(auth.pin_retries(), MAX_PIN_RETRIES - 3);
+    }
+
+    #[test]
+    fn test_pin_retry_exhaustion_across_power_cycles() {
+        let mut auth = create_test_authenticator();
+        auth.set_pin("1234").unwrap();
+
+        while auth.pin_retries() > 0 {
+            let attempts_this_session = core::cmp::min(3, auth.pin_retries());
+            for _ in 0..attempts_this_session {
+                let _ = auth.verify_pin("wrong");
+            }
+
+            if auth.pin_retries() > 0 {
+                assert!(auth.is_pin_auth_blocked());
+                auth.pin_consecutive_failures = 0;
+            }
         }
 
         assert!(auth.is_pin_blocked());
-        let result = auth.verify_pin("1234");
-        assert_eq!(result, Err(StatusCode::PinBlocked));
+        assert_eq!(auth.verify_pin("1234"), Err(StatusCode::PinBlocked));
     }
 
     #[test]
@@ -2353,8 +2402,17 @@ mod tests {
         // Verify retries is set to custom value
         assert_eq!(auth.pin_retries(), 5);
 
-        // Exhaust retries
-        for _ in 0..5 {
+        // Exhaust retries across sessions (3 consecutive failures block per session)
+        for _ in 0..3 {
+            let _ = auth.verify_pin("wrong");
+        }
+        assert!(auth.is_pin_auth_blocked());
+        assert_eq!(auth.pin_retries(), 2);
+
+        // Simulate restart: clear consecutive failures
+        auth.pin_consecutive_failures = 0;
+
+        for _ in 0..2 {
             let _ = auth.verify_pin("wrong");
         }
 
