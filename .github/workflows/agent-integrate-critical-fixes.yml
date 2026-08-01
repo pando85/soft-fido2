@@ -1,0 +1,41 @@
+name: Integrate critical fixes
+
+on:
+  push:
+    branches:
+      - agent/all-critical-fixes
+
+permissions:
+  contents: write
+
+jobs:
+  integrate:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: agent/all-critical-fixes
+          fetch-depth: 0
+      - name: Merge focused fix branches
+        run: |
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git fetch origin \
+            agent/fix-ctaphid-cbor-framing \
+            agent/fix-assertion-continuation \
+            agent/fix-get-info-capabilities \
+            agent/harden-ctap-cbor \
+            agent/invalidate-credentials-on-reset
+          git merge --no-edit origin/agent/fix-ctaphid-cbor-framing
+          git merge --no-edit origin/agent/fix-assertion-continuation
+          git merge --no-edit origin/agent/fix-get-info-capabilities
+          git merge --no-edit origin/agent/harden-ctap-cbor
+          git merge --no-edit origin/agent/invalidate-credentials-on-reset
+      - name: Validate combined soft-fido2 workspace
+        run: |
+          cargo fmt --all -- --check
+          cargo test --workspace --all-features
+          cargo clippy --workspace --all-targets --all-features -- -D warnings
+      - name: Publish integration revision
+        run: git push origin HEAD:agent/all-critical-fixes
