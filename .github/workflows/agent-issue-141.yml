@@ -1,4 +1,4 @@
-name: Apply issue 141 patch
+name: Apply issue 141 changes
 
 on:
   pull_request:
@@ -16,19 +16,127 @@ jobs:
       - uses: actions/checkout@v7
         with:
           ref: agent/fix-pin-token-lifecycle
-      - name: Apply patch
+      - name: Apply deterministic source edits
         run: |
-          if git apply --check .agent/issue-141.patch; then
-            git apply .agent/issue-141.patch
-          else
-            echo "Patch is already applied"
-            exit 0
-          fi
+          python3 - <<'PY'
+          from pathlib import Path
+
+          def replace_once(path: str, old: str, new: str) -> None:
+              p = Path(path)
+              text = p.read_text()
+              if old not in text:
+                  raise SystemExit(f"expected source block not found in {path}: {old[:100]!r}")
+              p.write_text(text.replace(old, new, 1))
+
+          auth = "soft-fido2-ctap/src/authenticator.rs"
+          replace_once(
+              auth,
+              "    /// PIN token manager\n    pin_tokens: PinTokenManager,\n\n    /// User verification retry counter",
+              "    /// PIN token manager\n    pin_tokens: PinTokenManager,\n\n    /// Consecutive failed PIN attempts in the current software-device session.\n    /// A process/device restart clears this temporary block but not persistent retries.\n    pin_consecutive_failures: u8,\n\n    /// User verification retry counter",
+          )
+          replace_once(
+              auth,
+              "            pin_storage: None,\n            pin_tokens: PinTokenManager::new(),\n            uv_retries: max_pin_retries,",
+              "            pin_storage: None,\n            pin_tokens: PinTokenManager::new(),\n            pin_consecutive_failures: 0,\n            uv_retries: max_pin_retries,",
+          )
+          replace_once(
+              auth,
+              "    pub fn is_pin_blocked(&self) -> bool {\n        self.pin_state.is_blocked()\n    }\n\n    /// Check if PIN is temporarily locked",
+              "    pub fn is_pin_blocked(&self) -> bool {\n        self.pin_state.is_blocked()\n    }\n\n    /// Check whether three consecutive failures require a software-device restart.\n    pub fn is_pin_auth_blocked(&self) -> bool {\n        self.pin_consecutive_failures >= 3\n    }\n\n    /// Check if PIN is temporarily locked",
+          )
+          replace_once(
+              auth,
+              "        self.pin_state.retries = self.config.max_pin_retries;\n        self.pin_state.force_pin_change = false;\n        self.pin_state.locked_until = None;\n\n        // Persist if storage is configured",
+              "        self.pin_state.retries = self.config.max_pin_retries;\n        self.pin_state.force_pin_change = false;\n        self.pin_state.locked_until = None;\n        self.pin_consecutive_failures = 0;\n        self.pin_tokens.clear_token();\n        self.pin_protocol_keypairs.clear();\n\n        // Persist if storage is configured",
+          )
+          replace_once(
+              auth,
+              "        if self.is_pin_blocked() {\n            return Err(StatusCode::PinBlocked);\n        }\n\n        // Hash the provided PIN",
+              "        if self.is_pin_blocked() {\n            return Err(StatusCode::PinBlocked);\n        }\n        if self.is_pin_auth_blocked() {\n            return Err(StatusCode::PinAuthBlocked);\n        }\n\n        // Hash the provided PIN",
+          )
+          replace_once(
+              auth,
+              "            self.pin_state.retries = self.config.max_pin_retries;\n            self.pin_state.locked_until = None;\n            self.save_pin_state()?;",
+              "            self.pin_state.retries = self.config.max_pin_retries;\n            self.pin_state.locked_until = None;\n            self.pin_consecutive_failures = 0;\n            self.save_pin_state()?;",
+          )
+          replace_once(
+              auth,
+              "            // PIN incorrect - decrement retry counter\n            self.pin_state.retries = self.pin_state.retries.saturating_sub(1);",
+              "            // PIN incorrect - decrement persistent and session counters\n            self.pin_state.retries = self.pin_state.retries.saturating_sub(1);\n            self.pin_consecutive_failures = self.pin_consecutive_failures.saturating_add(1);",
+          )
+          replace_once(
+              auth,
+              "                self.save_pin_state()?;\n                Err(StatusCode::PinBlocked)\n            } else {\n                self.save_pin_state()?;\n                Err(StatusCode::PinInvalid)\n            }",
+              "                self.save_pin_state()?;\n                Err(StatusCode::PinBlocked)\n            } else if self.is_pin_auth_blocked() {\n                self.save_pin_state()?;\n                Err(StatusCode::PinAuthBlocked)\n            } else {\n                self.save_pin_state()?;\n                Err(StatusCode::PinInvalid)\n            }",
+          )
+          replace_once(
+              auth,
+              "    pub(crate) fn decrement_pin_retries(&mut self) -> Result<(), StatusCode> {\n        self.pin_state.retries = self.pin_state.retries.saturating_sub(1);\n        self.save_pin_state()\n    }",
+              "    pub(crate) fn decrement_pin_retries(&mut self) -> Result<(), StatusCode> {\n        self.pin_state.retries = self.pin_state.retries.saturating_sub(1);\n        self.pin_consecutive_failures = self.pin_consecutive_failures.saturating_add(1);\n        self.save_pin_state()\n    }",
+          )
+          replace_once(
+              auth,
+              "        self.pin_state.retries = self.config.max_pin_retries;\n        self.pin_state.locked_until = None;\n        self.save_pin_state()\n    }\n\n    /// Get PIN token with permissions",
+              "        self.pin_state.retries = self.config.max_pin_retries;\n        self.pin_state.locked_until = None;\n        self.pin_consecutive_failures = 0;\n        self.save_pin_state()\n    }\n\n    /// Get PIN token with permissions",
+          )
+          replace_once(
+              auth,
+              "        // Create and store token\n        let now = self.callbacks.get_timestamp_ms();\n        let token = PinToken::new(token_bytes, permissions, rp_id, now);",
+              "        // Create and store token. Without a trustworthy clock, expiring\n        // tokens cannot be issued safely.\n        let now = self.callbacks.get_timestamp_ms();\n        if now == 0 {\n            return Err(StatusCode::PinTokenExpired);\n        }\n        let token = PinToken::new(token_bytes, permissions, rp_id, now);",
+          )
+          replace_once(
+              auth,
+              "        self.pin_tokens.clear_token();\n        self.pin_protocol_keypairs.clear();\n        self.assertion_state = None;\n\n        // Persist reset state",
+              "        self.pin_tokens.clear_token();\n        self.pin_protocol_keypairs.clear();\n        self.assertion_state = None;\n        self.pin_consecutive_failures = 0;\n\n        // Persist reset state",
+          )
+
+          client_pin = "soft-fido2-ctap/src/commands/client_pin.rs"
+          replace_once(
+              client_pin,
+              "    MapBuilder::new()\n        .insert(resp_keys::PIN_RETRIES, auth.pin_retries() as i32)?\n        .build()",
+              "    MapBuilder::new()\n        .insert(resp_keys::PIN_RETRIES, auth.pin_retries() as i32)?\n        .insert(resp_keys::POWER_CYCLE_STATE, auth.is_pin_auth_blocked())?\n        .build()",
+          )
+          p = Path(client_pin)
+          text = p.read_text()
+          old = "        if auth.is_pin_blocked() {\n            return Err(StatusCode::PinBlocked);\n        }"
+          new = old + "\n        if auth.is_pin_auth_blocked() {\n            return Err(StatusCode::PinAuthBlocked);\n        }"
+          count = text.count(old)
+          if count < 3:
+              raise SystemExit(f"expected at least three PIN-block checks, found {count}")
+          p.write_text(text.replace(old, new))
+
+          token = "soft-fido2-ctap/src/pin_token.rs"
+          replace_once(
+              token,
+              "    pub fn is_valid(&self, now: u64) -> bool {\n        let age = now.saturating_sub(self.created_at);",
+              "    pub fn is_valid(&self, now: u64) -> bool {\n        if now == 0 || self.created_at == 0 || now < self.created_at {\n            return false;\n        }\n        let age = now.saturating_sub(self.created_at);",
+          )
+          replace_once(
+              token,
+              "    pub fn is_within_usage_window(&self, now: u64) -> bool {\n        let age = now.saturating_sub(self.created_at);",
+              "    pub fn is_within_usage_window(&self, now: u64) -> bool {\n        if now == 0 || self.created_at == 0 || now < self.created_at {\n            return false;\n        }\n        let age = now.saturating_sub(self.created_at);",
+          )
+          replace_once(
+              token,
+              "    #[test]\n    fn test_token_manager_basic() {",
+              "    #[test]\n    fn test_token_fails_closed_without_clock_or_after_clock_rollback() {\n        let token_data = [0x42u8; 32];\n        let permissions = Permission::MakeCredential.to_u8();\n\n        let zero_clock = PinToken::new(token_data, permissions, None, 0);\n        assert!(!zero_clock.is_valid(0));\n\n        let token = PinToken::new(token_data, permissions, None, 1000);\n        assert!(!token.is_valid(0));\n        assert!(!token.is_valid(999));\n    }\n\n    #[test]\n    fn test_token_manager_basic() {",
+          )
+
+          replace_once(
+              "soft-fido2-ctap/src/test_utils.rs",
+              "    fn get_timestamp_ms(&self) -> u64 {\n        0\n    }",
+              "    fn get_timestamp_ms(&self) -> u64 {\n        1_000\n    }",
+          )
+          PY
       - name: Format and commit source changes
         run: |
           cargo fmt --all
           git config user.name github-actions[bot]
           git config user.email 41898282+github-actions[bot]@users.noreply.github.com
           git add soft-fido2-ctap/src/authenticator.rs soft-fido2-ctap/src/commands/client_pin.rs soft-fido2-ctap/src/pin_token.rs soft-fido2-ctap/src/test_utils.rs
+          if git diff --cached --quiet; then
+            echo "No changes to commit"
+            exit 0
+          fi
           git commit -m "fix PIN retry and token lifecycle [agent-applied]"
           git push origin HEAD:agent/fix-pin-token-lifecycle
