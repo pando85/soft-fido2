@@ -1,4 +1,4 @@
-name: Apply issue 135 patch
+name: Apply issue 135 changes
 
 on:
   pull_request:
@@ -16,19 +16,84 @@ jobs:
       - uses: actions/checkout@v7
         with:
           ref: agent/invalidate-credentials-on-reset
-      - name: Apply patch
+      - name: Apply deterministic source edits
         run: |
-          if git apply --check .agent/issue-135.patch; then
-            git apply .agent/issue-135.patch
-          else
-            echo "Patch is already applied"
-            exit 0
-          fi
+          python3 - <<'PY'
+          from pathlib import Path
+
+          def replace_once(path: str, old: str, new: str) -> None:
+              p = Path(path)
+              text = p.read_text()
+              if old not in text:
+                  raise SystemExit(f"expected source block not found in {path}: {old[:100]!r}")
+              p.write_text(text.replace(old, new, 1))
+
+          types = "soft-fido2-ctap/src/types.rs"
+          replace_once(
+              types,
+              "    #[serde(default)]\n    pub locked_until: Option<u64>,\n}",
+              "    #[serde(default)]\n    pub locked_until: Option<u64>,\n\n    /// Generation used to derive the active credential-wrapping key.\n    /// Generation zero preserves credentials created before this field existed.\n    #[serde(default)]\n    pub credential_wrapping_generation: u64,\n}",
+          )
+          replace_once(
+              types,
+              "            force_pin_change: false,\n            locked_until: None,\n        }",
+              "            force_pin_change: false,\n            locked_until: None,\n            credential_wrapping_generation: 0,\n        }",
+          )
+          replace_once(
+              types,
+              "        state.retries = 5;\n        state.version = 42;",
+              "        state.retries = 5;\n        state.version = 42;\n        state.credential_wrapping_generation = 7;",
+          )
+          replace_once(
+              types,
+              "        assert_eq!(restored.retries, 5);\n        assert_eq!(restored.version, 42);",
+              "        assert_eq!(restored.retries, 5);\n        assert_eq!(restored.version, 42);\n        assert_eq!(restored.credential_wrapping_generation, 7);",
+          )
+
+          auth = "soft-fido2-ctap/src/authenticator.rs"
+          replace_once(
+              auth,
+              "    pub fn reset(&mut self) -> Result<(), StatusCode> {\n        // Reset PIN state to defaults\n        self.pin_state = PinState::new();",
+              "    pub fn reset(&mut self) -> Result<(), StatusCode> {\n        let next_wrapping_generation = self\n            .pin_state\n            .credential_wrapping_generation\n            .checked_add(1)\n            .ok_or(StatusCode::Other)?;\n\n        // Reset PIN state while preserving a strictly newer wrapping generation.\n        self.pin_state = PinState::new();\n        self.pin_state.credential_wrapping_generation = next_wrapping_generation;",
+          )
+          replace_once(
+              auth,
+              "        // Persist reset state if storage is configured\n        self.save_pin_state()?;",
+              "        // Persist the new generation before deleting callback-managed\n        // credentials. A reported success must survive process restart.\n        self.save_pin_state()?;",
+          )
+          replace_once(
+              auth,
+              "    pub fn remaining_discoverable_credentials(&self) -> Option<usize> {\n        Some(self.config.max_credentials)\n    }\n\n    /// Wrap credential data into a credential ID",
+              "    pub fn remaining_discoverable_credentials(&self) -> Option<usize> {\n        Some(self.config.max_credentials)\n    }\n\n    /// Derive the active wrapping key from the configured master key and the\n    /// persistent reset generation. Generation zero deliberately preserves the\n    /// legacy key so existing credentials remain valid until the first reset.\n    fn active_credential_wrapping_key(&self) -> [u8; 32] {\n        let master: &[u8; 32] = self\n            .credential_wrapping_key\n            .as_slice()\n            .try_into()\n            .expect(\"credential_wrapping_key invariant: always 32 bytes\");\n\n        if self.pin_state.credential_wrapping_generation == 0 {\n            return *master;\n        }\n\n        let mut hasher = Sha256::new();\n        hasher.update(b\"soft-fido2 credential wrapping key v1\");\n        hasher.update(master);\n        hasher.update(self.pin_state.credential_wrapping_generation.to_be_bytes());\n        hasher.finalize().into()\n    }\n\n    /// Wrap credential data into a credential ID",
+          )
+
+          p = Path(auth)
+          text = p.read_text()
+          old_key = "        let wrapping_key: &[u8; 32] = self\n            .credential_wrapping_key\n            .as_slice()\n            .try_into()\n            .expect(\"credential_wrapping_key invariant: always 32 bytes\");"
+          count = text.count(old_key)
+          if count != 4:
+              raise SystemExit(f"expected four wrapping-key blocks, found {count}")
+          text = text.replace(old_key, "        let wrapping_key = self.active_credential_wrapping_key();")
+          text = text.replace("v2::encrypt(wrapping_key,", "v2::encrypt(&wrapping_key,")
+          text = text.replace("v2::authenticate(wrapping_key,", "v2::authenticate(&wrapping_key,")
+          text = text.replace("v2::decrypt(wrapping_key,", "v2::decrypt(&wrapping_key,")
+          p.write_text(text)
+
+          replace_once(
+              auth,
+              "    fn test_reset() {\n        let mut auth = create_test_authenticator();\n        auth.set_pin(\"1234\").unwrap();\n        auth.reset().unwrap();\n        assert!(!auth.is_pin_set());\n        assert_eq!(auth.pin_retries(), MAX_PIN_RETRIES);\n    }",
+              "    fn test_reset() {\n        let mut auth = create_test_authenticator();\n        auth.set_pin(\"1234\").unwrap();\n\n        let key = CredentialKey::software(SecBytes::from_slice(&[0x42; 32]));\n        let wrapped = auth\n            .wrap_credential(&key, \"example.com\", -7)\n            .expect(\"credential should wrap before reset\");\n        assert!(auth.unwrap_credential(&wrapped).is_ok());\n\n        auth.reset().unwrap();\n\n        assert!(!auth.is_pin_set());\n        assert_eq!(auth.pin_retries(), MAX_PIN_RETRIES);\n        assert_eq!(auth.pin_state.credential_wrapping_generation, 1);\n        assert!(matches!(\n            auth.unwrap_credential(&wrapped),\n            Err(StatusCode::InvalidParameter)\n        ));\n    }",
+          )
+          PY
       - name: Format and commit source changes
         run: |
           cargo fmt --all
           git config user.name github-actions[bot]
           git config user.email 41898282+github-actions[bot]@users.noreply.github.com
           git add soft-fido2-ctap/src/authenticator.rs soft-fido2-ctap/src/types.rs
+          if git diff --cached --quiet; then
+            echo "No changes to commit"
+            exit 0
+          fi
           git commit -m "invalidate wrapped credentials on reset [agent-applied]"
           git push origin HEAD:agent/invalidate-credentials-on-reset
