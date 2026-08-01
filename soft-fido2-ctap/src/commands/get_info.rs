@@ -52,6 +52,17 @@ mod keys {
     pub const VENDOR_PROTOTYPE_CONFIG_COMMANDS: i32 = 0x15;
 }
 
+const FIDO_2_0: &str = "FIDO_2_0";
+
+/// Return only version identifiers whose mandatory feature set is complete.
+///
+/// FIDO_2_1 and FIDO_2_3 both require a complete hmac-secret implementation.
+/// Until dual credential secrets are persisted for discoverable and wrapped
+/// credentials, advertising either version would be a false conformance claim.
+fn advertised_versions() -> Vec<String> {
+    vec![FIDO_2_0.to_string()]
+}
+
 /// Handle authenticatorGetInfo command
 ///
 /// This command requires no input and returns the authenticator's capabilities.
@@ -62,8 +73,9 @@ pub fn handle<C: AuthenticatorCallbacks, K: crate::key_provider::CredentialKeyPr
 
     let mut builder = MapBuilder::new();
 
-    // Versions (0x01) - required. There is no FIDO_2_2 version identifier.
-    let versions = vec!["FIDO_2_0".to_string(), "FIDO_2_1".to_string()];
+    // Versions (0x01) - required. Version advertisement is a
+    // conformance claim, so it is gated on mandatory feature completeness.
+    let versions = advertised_versions();
     builder = builder.insert(keys::VERSIONS, versions)?;
 
     // Advertise only extensions that are implemented end-to-end. Partial
@@ -213,9 +225,10 @@ mod tests {
         let parser = MapParser::from_bytes(&response).unwrap();
 
         let versions: Vec<String> = parser.get(keys::VERSIONS).unwrap();
-        assert!(versions.contains(&"FIDO_2_0".to_string()));
-        assert!(versions.contains(&"FIDO_2_1".to_string()));
+        assert_eq!(versions, vec!["FIDO_2_0".to_string()]);
+        assert!(!versions.contains(&"FIDO_2_1".to_string()));
         assert!(!versions.contains(&"FIDO_2_2".to_string()));
+        assert!(!versions.contains(&"FIDO_2_3".to_string()));
 
         let aaguid = parser.get_bytes(keys::AAGUID).unwrap();
         assert_eq!(aaguid.len(), 16);
@@ -285,5 +298,10 @@ mod tests {
         let response = handle(&auth).unwrap();
         let parser = MapParser::from_bytes(&response).unwrap();
         assert!(parser.contains_key(keys::ALGORITHMS));
+    }
+
+    #[test]
+    fn version_gate_is_fail_closed_until_mandatory_features_are_complete() {
+        assert_eq!(advertised_versions(), vec!["FIDO_2_0".to_string()]);
     }
 }
