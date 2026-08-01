@@ -36,7 +36,7 @@ jobs:
         run: python3 .agent/apply_be_bs.py
 
       - name: Remove bootstrap files
-        run: git rm .agent/apply_be_bs.py .github/workflows/apply-be-bs-agent.yml
+        run: git rm -f .agent/apply_be_bs.py .github/workflows/apply-be-bs-agent.yml
 
       - name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@stable
