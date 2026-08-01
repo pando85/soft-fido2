@@ -350,6 +350,7 @@ pub struct AssertionContext {
     pub rp_id: String,
     pub up: bool,
     pub uv: bool,
+    pub extensions: crate::extensions::GetAssertionExtensions,
 }
 
 struct AssertionState {
@@ -964,6 +965,7 @@ impl<C: AuthenticatorCallbacks, K: CredentialKeyProvider> Authenticator<C, K> {
         rp_id: String,
         up: bool,
         uv: bool,
+        extensions: crate::extensions::GetAssertionExtensions,
     ) {
         if remaining_credentials.is_empty() {
             self.assertion_state = None;
@@ -977,6 +979,7 @@ impl<C: AuthenticatorCallbacks, K: CredentialKeyProvider> Authenticator<C, K> {
                 rp_id,
                 up,
                 uv,
+                extensions,
             },
             created_at: self.callbacks.get_timestamp_ms(),
         });
@@ -990,16 +993,16 @@ impl<C: AuthenticatorCallbacks, K: CredentialKeyProvider> Authenticator<C, K> {
         let state = self
             .assertion_state
             .as_mut()
-            .ok_or(StatusCode::NoCredentials)?;
+            .ok_or(StatusCode::NotAllowed)?;
 
         if now.saturating_sub(state.created_at) > ASSERTION_STATE_TIMEOUT_MS {
             self.assertion_state = None;
-            return Err(StatusCode::UserActionTimeout);
+            return Err(StatusCode::NotAllowed);
         }
 
         if state.remaining_credentials.is_empty() {
             self.assertion_state = None;
-            return Err(StatusCode::NoCredentials);
+            return Err(StatusCode::NotAllowed);
         }
 
         let credential = state.remaining_credentials.remove(0);
@@ -1008,6 +1011,8 @@ impl<C: AuthenticatorCallbacks, K: CredentialKeyProvider> Authenticator<C, K> {
 
         if remaining == 0 {
             self.assertion_state = None;
+        } else {
+            state.created_at = now;
         }
 
         Ok((credential, context, remaining))
