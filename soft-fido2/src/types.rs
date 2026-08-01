@@ -16,6 +16,7 @@
 //! #     key: soft_fido2_ctap::CredentialKey::software(soft_fido2_ctap::SecBytes::new(vec![0u8; 32])),
 //! #     created: 0,
 //! #     discoverable: false,
+//! #     backup_state: soft_fido2::CredentialBackupState::NotEligible,
 //! #     extensions: soft_fido2::Extensions::default(),
 //! # };
 //! // Grouped fields for ergonomics
@@ -45,6 +46,7 @@
 //! #     key: soft_fido2_ctap::CredentialKey::software(soft_fido2_ctap::SecBytes::new(vec![0u8; 32])),
 //! #     created: 0,
 //! #     discoverable: false,
+//! #     backup_state: soft_fido2::CredentialBackupState::NotEligible,
 //! #     extensions: soft_fido2::Extensions::default(),
 //! # };
 //! // Convert to CTAP protocol format (flat structure)
@@ -62,7 +64,7 @@ use alloc::vec::Vec;
 
 use serde::{Deserialize, Serialize};
 
-pub use soft_fido2_ctap::types::{RelyingParty, User};
+pub use soft_fido2_ctap::types::{CredentialBackupState, RelyingParty, User};
 
 /// Credential extension data
 #[derive(Clone, Debug, Default, Serialize, Deserialize, PartialEq)]
@@ -96,6 +98,9 @@ pub struct Credential {
     pub created: i64,
     /// Is resident key
     pub discoverable: bool,
+    /// Backup eligibility and current backup state.
+    #[serde(default)]
+    pub backup_state: CredentialBackupState,
     /// Extension data
     pub extensions: Extensions,
 }
@@ -130,6 +135,8 @@ pub struct CredentialRef<'a> {
     pub discoverable: &'a bool,
     /// Credential protection level
     pub cred_protect: Option<&'a u8>,
+    /// Backup eligibility and current backup state.
+    pub backup_state: &'a CredentialBackupState,
     /// Credential random for hmac-secret extension (32 bytes)
     pub cred_random: Option<&'a SecBytes>,
 }
@@ -153,6 +160,7 @@ impl<'a> CredentialRef<'a> {
             key: self.key.clone(),
             created: self.created.to_owned(),
             discoverable: self.discoverable.to_owned(),
+            backup_state: *self.backup_state,
             extensions: Extensions {
                 cred_protect: self.cred_protect.copied(),
                 hmac_secret: None,
@@ -202,6 +210,7 @@ impl From<soft_fido2_ctap::types::Credential> for Credential {
             key: cred.key,
             created: cred.created,
             discoverable: cred.discoverable,
+            backup_state: cred.backup_state,
             extensions: Extensions {
                 cred_protect: Some(cred.cred_protect),
                 hmac_secret: cred.cred_random.is_some().then_some(true),
@@ -226,6 +235,7 @@ impl From<Credential> for soft_fido2_ctap::types::Credential {
             created: cred.created,
             discoverable: cred.discoverable,
             cred_protect: cred.extensions.cred_protect.unwrap_or(1),
+            backup_state: cred.backup_state,
             cred_random: cred.extensions.cred_random,
         }
     }

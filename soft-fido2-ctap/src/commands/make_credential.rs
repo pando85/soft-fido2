@@ -13,8 +13,8 @@ use crate::{
     key_provider::{CredentialKey, CredentialKeyProvider},
     status::{Result, StatusCode},
     types::{
-        PublicKeyCredentialDescriptor, PublicKeyCredentialParameters, RelyingParty, User,
-        auth_data_flags,
+        CredentialBackupState, PublicKeyCredentialDescriptor, PublicKeyCredentialParameters,
+        RelyingParty, User, auth_data_flags,
     },
 };
 
@@ -378,7 +378,13 @@ pub fn handle<C: AuthenticatorCallbacks, K: CredentialKeyProvider>(
         .generate(alg)
         .map_err(StatusCode::from)?;
 
-    // Step 17: Create credential (resident or non-resident)
+    // Step 17: Resolve backup properties and create the credential. Wrapped
+    // non-resident credentials use the legacy format and remain single-device.
+    let backup_state = if options.rk || auth.config().force_resident_keys {
+        auth.config().default_credential_backup_state
+    } else {
+        CredentialBackupState::NotEligible
+    };
     let credential_id = create_credential(
         auth,
         &options,
@@ -388,6 +394,7 @@ pub fn handle<C: AuthenticatorCallbacks, K: CredentialKeyProvider>(
         &rp,
         &user,
         alg,
+        backup_state,
     )?;
 
     // Step 18: Generate attestation
@@ -401,6 +408,7 @@ pub fn handle<C: AuthenticatorCallbacks, K: CredentialKeyProvider>(
         &rp.id,
         response_state.up,
         response_state.uv,
+        backup_state,
         auth.config().aaguid,
         &cred_data,
         extension_outputs.as_ref(),
@@ -697,6 +705,7 @@ fn create_credential<C: AuthenticatorCallbacks, K: CredentialKeyProvider>(
     rp: &RelyingParty,
     user: &User,
     algorithm: i32,
+    backup_state: CredentialBackupState,
 ) -> Result<Vec<u8>> {
     // Generate cred_random if hmac-secret extension is enabled
     let cred_random = if extensions.hmac_secret == Some(true) {
@@ -735,6 +744,7 @@ fn create_credential<C: AuthenticatorCallbacks, K: CredentialKeyProvider>(
             sign_count: 0,
             created: current_timestamp(),
             discoverable: true,
+            backup_state,
             cred_protect: cred_protect_value,
             cred_random,
         };
@@ -870,6 +880,7 @@ fn build_authenticator_data(
     rp_id: &str,
     up: bool,
     uv: bool,
+    backup_state: CredentialBackupState,
     aaguid: [u8; 16],
     cred: &AttestationCredential,
     extensions: Option<&crate::cbor::Value>,
@@ -889,6 +900,7 @@ fn build_authenticator_data(
     if uv {
         flags |= auth_data_flags::UV;
     }
+    flags |= backup_state.flags();
     flags |= auth_data_flags::AT;
     if extensions.is_some() {
         flags |= auth_data_flags::ED;

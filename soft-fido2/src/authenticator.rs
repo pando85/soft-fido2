@@ -5,7 +5,7 @@
 #[cfg(feature = "std")]
 use crate::error::Error;
 use crate::error::Result;
-use crate::types::{Credential, CredentialRef};
+use crate::types::{Credential, CredentialBackupState, CredentialRef};
 use soft_fido2_ctap::authenticator::{
     Authenticator as CtapAuthenticator, AuthenticatorConfig as CtapConfig,
 };
@@ -292,6 +292,7 @@ impl<C: AuthenticatorCallbacks> CredentialStorageCallbacks for CallbackAdapter<C
             created: &credential.created,
             discoverable: &credential.discoverable,
             cred_protect: Some(&credential.cred_protect),
+            backup_state: &credential.backup_state,
             cred_random: credential.cred_random.as_ref(),
         };
 
@@ -372,6 +373,8 @@ pub struct AuthenticatorConfig {
     pub force_resident_keys: bool,
     pub firmware_version: Option<u32>,
     pub constant_sign_count: bool,
+    /// Backup state assigned to newly created stored credentials.
+    pub default_credential_backup_state: CredentialBackupState,
     pub max_msg_size: usize,
     /// Supported COSE algorithms (e.g., -7 for ES256, -8 for EdDSA)
     pub algorithms: Vec<i32>,
@@ -400,6 +403,7 @@ impl Default for AuthenticatorConfig {
             force_resident_keys: true,
             firmware_version: None,
             constant_sign_count: false,
+            default_credential_backup_state: CredentialBackupState::NotEligible,
             max_msg_size: MAX_CTAP_MESSAGE_SIZE,
             algorithms: vec![-7, -19], // ES256, Ed25519
             device_name: None,
@@ -428,6 +432,7 @@ pub struct AuthenticatorConfigBuilder {
     force_resident_keys: bool,
     firmware_version: Option<u32>,
     constant_sign_count: bool,
+    default_credential_backup_state: CredentialBackupState,
     max_msg_size: usize,
     algorithms: Vec<i32>,
     device_name: Option<String>,
@@ -448,8 +453,8 @@ impl Default for AuthenticatorConfigBuilder {
             extensions: vec![],
             force_resident_keys: true,
             firmware_version: None,
+            default_credential_backup_state: CredentialBackupState::NotEligible,
             constant_sign_count: false,
-            max_msg_size: MAX_CTAP_MESSAGE_SIZE,
             algorithms: vec![-7, -19], // ES256, Ed25519
             device_name: None,
             vendor_id: None,
@@ -457,6 +462,7 @@ impl Default for AuthenticatorConfigBuilder {
             device_version: None,
             max_pin_retries: 0, // 0 means use default (8)
             auto_lock_timeout: 0,
+            max_msg_size: MAX_CTAP_MESSAGE_SIZE,
         }
     }
 }
@@ -503,6 +509,12 @@ impl AuthenticatorConfigBuilder {
 
     pub fn constant_sign_count(mut self, constant: bool) -> Self {
         self.constant_sign_count = constant;
+        self
+    }
+
+    /// Set the backup state assigned to newly created stored credentials.
+    pub fn default_credential_backup_state(mut self, state: CredentialBackupState) -> Self {
+        self.default_credential_backup_state = state;
         self
     }
 
@@ -574,6 +586,7 @@ impl AuthenticatorConfigBuilder {
             force_resident_keys: self.force_resident_keys,
             firmware_version: self.firmware_version,
             constant_sign_count: self.constant_sign_count,
+            default_credential_backup_state: self.default_credential_backup_state,
             max_msg_size: self.max_msg_size,
             algorithms: if self.algorithms.is_empty() {
                 vec![-7, -8] // Default: ES256, EdDSA
@@ -733,6 +746,7 @@ impl<C: AuthenticatorCallbacks, K: CredentialKeyProvider + Send + 'static> Authe
             .with_extensions(config.extensions)
             .with_force_resident_keys(config.force_resident_keys)
             .with_constant_sign_count(config.constant_sign_count)
+            .with_default_credential_backup_state(config.default_credential_backup_state)
             .with_max_msg_size(config.max_msg_size)
             .with_algorithms(config.algorithms)
             .with_max_pin_retries(config.max_pin_retries)

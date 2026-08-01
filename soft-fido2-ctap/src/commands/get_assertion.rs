@@ -15,7 +15,7 @@ use crate::{
     extensions::{GetAssertionExtensions, compute_hmac_secret},
     key_provider::CredentialKeyProvider,
     status::{Result, StatusCode},
-    types::{PublicKeyCredentialDescriptor, auth_data_flags},
+    types::{CredentialBackupState, PublicKeyCredentialDescriptor, auth_data_flags},
 };
 
 use alloc::{
@@ -463,6 +463,7 @@ pub fn handle<C: AuthenticatorCallbacks, K: CredentialKeyProvider>(
                     sign_count: 0,
                     created: 0,
                     discoverable: false,
+                    backup_state: CredentialBackupState::NotEligible,
                     cred_protect: 0,
                     cred_random: None,
                 };
@@ -635,6 +636,7 @@ pub fn handle<C: AuthenticatorCallbacks, K: CredentialKeyProvider>(
         &rp_id,
         response_state.up,
         response_state.uv,
+        selected_cred.backup_state,
         new_sign_count,
         extension_outputs.as_ref(),
     )?;
@@ -744,6 +746,7 @@ fn build_authenticator_data(
     rp_id: &str,
     up: bool,
     uv: bool,
+    backup_state: CredentialBackupState,
     sign_count: u32,
     extensions: Option<&crate::cbor::Value>,
 ) -> Result<Vec<u8>> {
@@ -762,6 +765,7 @@ fn build_authenticator_data(
     if uv {
         flags |= auth_data_flags::UV;
     }
+    flags |= backup_state.flags();
     if extensions.is_some() {
         flags |= auth_data_flags::ED;
     }
@@ -786,7 +790,15 @@ mod tests {
 
     #[test]
     fn test_build_authenticator_data() {
-        let auth_data = build_authenticator_data("example.com", true, false, 42, None).unwrap();
+        let auth_data = build_authenticator_data(
+            "example.com",
+            true,
+            false,
+            CredentialBackupState::NotEligible,
+            42,
+            None,
+        )
+        .unwrap();
 
         // Should be: 32 (hash) + 1 (flags) + 4 (counter) = 37 bytes
         assert_eq!(auth_data.len(), 37);
@@ -802,7 +814,15 @@ mod tests {
 
     #[test]
     fn test_build_authenticator_data_with_uv() {
-        let auth_data = build_authenticator_data("example.com", true, true, 1, None).unwrap();
+        let auth_data = build_authenticator_data(
+            "example.com",
+            true,
+            true,
+            CredentialBackupState::NotEligible,
+            1,
+            None,
+        )
+        .unwrap();
 
         // Check flags (UP=1, UV=1)
         assert_eq!(auth_data[32], 0x05); // 0x01 | 0x04
