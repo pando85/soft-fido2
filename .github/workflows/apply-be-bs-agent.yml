@@ -19,6 +19,11 @@ jobs:
           ref: agent/add-backup-eligibility-state
           fetch-depth: 0
 
+      - name: Install native dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libudev-dev libusb-1.0-0-dev
+
       - name: Correct bootstrap match
         run: |
           python3 - <<'PY'
