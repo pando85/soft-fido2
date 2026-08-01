@@ -616,11 +616,12 @@ pub fn handle<C: AuthenticatorCallbacks, K: CredentialKeyProvider>(
     // TODO: Implement full attestation statement generation
 
     // Step 14: Sign clientDataHash with authData
-    // Increment sign count (unless constant_sign_count is enabled)
-    let new_sign_count = if auth.config().constant_sign_count {
-        selected_cred.sign_count // Keep counter constant for privacy
+    // Wrapped credentials do not have durable mutable state, so they must
+    // consistently report zero rather than repeat a misleading positive value.
+    let new_sign_count = if auth.config().constant_sign_count || !selected_cred.discoverable {
+        0
     } else {
-        selected_cred.sign_count + 1 // Normal incrementing behavior
+        selected_cred.sign_count.saturating_add(1)
     };
 
     // Only update stored credentials (not wrapped ones)
@@ -693,6 +694,7 @@ pub fn handle<C: AuthenticatorCallbacks, K: CredentialKeyProvider>(
             rp_id.clone(),
             response_state.up,
             response_state.uv,
+            extensions.clone(),
         );
     }
 
