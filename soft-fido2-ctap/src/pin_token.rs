@@ -105,7 +105,7 @@ pub struct PinToken {
     /// Permission bitmask
     permissions: u8,
 
-    /// RP ID for permissions that require it (e.g., MakeCredential, GetAssertion)
+    /// Optional RP scope for permissions that support it.
     rp_id: Option<String>,
 
     /// Creation timestamp (milliseconds since UNIX epoch)
@@ -227,7 +227,9 @@ impl PinToken {
         // For RP-scoped permissions, verify RP ID matches
         if matches!(
             permission,
-            Permission::MakeCredential | Permission::GetAssertion
+            Permission::MakeCredential
+                | Permission::GetAssertion
+                | Permission::CredentialManagement
         ) {
             match (&self.rp_id, rp_id) {
                 (Some(token_rp), Some(req_rp)) if token_rp == req_rp => {
@@ -443,6 +445,46 @@ mod tests {
         let mut token = create_test_token(now);
         let result = token.verify_permission(Permission::CredentialManagement, None, now);
         assert_eq!(result, Err(StatusCode::UnauthorizedPermission));
+    }
+
+    #[test]
+    fn test_credential_management_token_enforces_rp_scope() {
+        let now = 1000;
+        let token_data = [0x42u8; 32];
+        let permissions = Permission::CredentialManagement.to_u8();
+        let mut token = PinToken::new(
+            token_data,
+            permissions,
+            Some("example.com".to_string()),
+            now,
+        );
+
+        assert!(
+            token
+                .verify_permission(Permission::CredentialManagement, Some("example.com"), now,)
+                .is_ok()
+        );
+
+        let result =
+            token.verify_permission(Permission::CredentialManagement, Some("other.com"), now);
+        assert_eq!(result, Err(StatusCode::UnauthorizedPermission));
+
+        let result = token.verify_permission(Permission::CredentialManagement, None, now);
+        assert_eq!(result, Err(StatusCode::UnauthorizedPermission));
+    }
+
+    #[test]
+    fn test_unscoped_credential_management_token_allows_rp_operations() {
+        let now = 1000;
+        let token_data = [0x42u8; 32];
+        let permissions = Permission::CredentialManagement.to_u8();
+        let mut token = PinToken::new(token_data, permissions, None, now);
+
+        assert!(
+            token
+                .verify_permission(Permission::CredentialManagement, Some("example.com"), now)
+                .is_ok()
+        );
     }
 
     #[test]
