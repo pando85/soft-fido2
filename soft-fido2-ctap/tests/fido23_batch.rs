@@ -36,11 +36,7 @@ impl UserInteractionCallbacks for BatchCallbacks {
         Ok(UvResult::Accepted)
     }
 
-    fn select_credential(
-        &self,
-        _rp_id: &str,
-        _user_names: &[String],
-    ) -> Result<usize, StatusCode> {
+    fn select_credential(&self, _rp_id: &str, _user_names: &[String]) -> Result<usize, StatusCode> {
         Ok(0)
     }
 }
