@@ -96,6 +96,9 @@ rm -f \
 git add -A
 git commit -m "test integrated critical CTAP fixes"
 
+sudo apt-get update
+sudo apt-get install -y libudev-dev
+
 cargo fmt --all -- --check
 cargo test --workspace --all-features
 cargo clippy --workspace --all-targets --all-features -- -D warnings
