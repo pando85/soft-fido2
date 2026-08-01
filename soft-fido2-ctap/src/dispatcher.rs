@@ -173,17 +173,11 @@ mod tests {
 
         // makeCredential plus a map containing duplicate key 1.
         let command = vec![0x01, 0xa2, 0x01, 0x01, 0x01, 0x02];
-        assert_eq!(
-            dispatcher.dispatch(&command),
-            Err(StatusCode::InvalidCbor)
-        );
+        assert_eq!(dispatcher.dispatch(&command), Err(StatusCode::InvalidCbor));
 
         // One valid map followed by an ignored second CBOR item.
         let command = vec![0x01, 0xa0, 0xa0];
-        assert_eq!(
-            dispatcher.dispatch(&command),
-            Err(StatusCode::InvalidCbor)
-        );
+        assert_eq!(dispatcher.dispatch(&command), Err(StatusCode::InvalidCbor));
     }
 
     #[test]
