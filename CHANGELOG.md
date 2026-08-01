@@ -5,6 +5,12 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/), and this project
 adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [v0.16.0](https://github.com/pando85/soft-fido2/tree/v0.16.0) - 2026-08-01
+
+### Added
+
+- Add credential backup eligibility and state support (#132) ([56a88ed](https://github.com/pando85/soft-fido2/commit/56a88ed8843eb8ecf6ed183f142744de51dd30e5))
+
 ## [v0.15.0](https://github.com/pando85/soft-fido2/tree/v0.15.0) - 2026-07-22
 
 ### Added
