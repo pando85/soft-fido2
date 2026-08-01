@@ -21,7 +21,7 @@ pub struct MockCallbacks;
 
 impl PlatformCallbacks for MockCallbacks {
     fn get_timestamp_ms(&self) -> u64 {
-        0
+        1_000
     }
 }
 

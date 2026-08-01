@@ -121,6 +121,7 @@ fn handle_get_pin_retries<
 ) -> Result<Vec<u8>> {
     MapBuilder::new()
         .insert(resp_keys::PIN_RETRIES, auth.pin_retries() as i32)?
+        .insert(resp_keys::POWER_CYCLE_STATE, auth.is_pin_auth_blocked())?
         .build()
 }
 
@@ -334,6 +335,9 @@ fn handle_change_pin<C: AuthenticatorCallbacks, K: crate::key_provider::Credenti
         if auth.is_pin_blocked() {
             return Err(StatusCode::PinBlocked);
         }
+        if auth.is_pin_auth_blocked() {
+            return Err(StatusCode::PinAuthBlocked);
+        }
         return Err(StatusCode::PinInvalid);
     }
 
@@ -415,6 +419,9 @@ fn handle_get_pin_token<
         auth.decrement_pin_retries()?;
         if auth.is_pin_blocked() {
             return Err(StatusCode::PinBlocked);
+        }
+        if auth.is_pin_auth_blocked() {
+            return Err(StatusCode::PinAuthBlocked);
         }
         return Err(StatusCode::PinInvalid);
     }
@@ -501,6 +508,9 @@ fn handle_get_pin_uv_auth_token_using_pin_with_permissions<
         auth.decrement_pin_retries()?;
         if auth.is_pin_blocked() {
             return Err(StatusCode::PinBlocked);
+        }
+        if auth.is_pin_auth_blocked() {
+            return Err(StatusCode::PinAuthBlocked);
         }
         return Err(StatusCode::PinInvalid);
     }

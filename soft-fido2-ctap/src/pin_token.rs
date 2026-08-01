@@ -171,6 +171,9 @@ impl PinToken {
 
     /// Check if token is still valid (within lifetime)
     pub fn is_valid(&self, now: u64) -> bool {
+        if now == 0 || self.created_at == 0 || now < self.created_at {
+            return false;
+        }
         let age = now.saturating_sub(self.created_at);
         age < LIFETIME_MS
     }
@@ -181,6 +184,9 @@ impl PinToken {
     /// within 19 seconds of creation, but operations started within that
     /// window can continue until the token's full lifetime expires.
     pub fn is_within_usage_window(&self, now: u64) -> bool {
+        if now == 0 || self.created_at == 0 || now < self.created_at {
+            return false;
+        }
         let age = now.saturating_sub(self.created_at);
         age < USAGE_WINDOW_MS
     }
@@ -538,6 +544,19 @@ mod tests {
 
         let result = token.verify_permission(Permission::MakeCredential, None, later);
         assert_eq!(result, Err(StatusCode::PinTokenExpired));
+    }
+
+    #[test]
+    fn test_token_fails_closed_without_clock_or_after_clock_rollback() {
+        let token_data = [0x42u8; 32];
+        let permissions = Permission::MakeCredential.to_u8();
+
+        let zero_clock = PinToken::new(token_data, permissions, None, 0);
+        assert!(!zero_clock.is_valid(0));
+
+        let token = PinToken::new(token_data, permissions, None, 1000);
+        assert!(!token.is_valid(0));
+        assert!(!token.is_valid(999));
     }
 
     #[test]
