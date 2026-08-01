@@ -121,14 +121,11 @@ pub enum StatusCode {
     /// PIN not set
     PinNotSet = 0x35,
 
-    /// PIN required for this operation
-    PinRequired = 0x36,
+    /// PIN/UV auth token required
+    PuatRequired = 0x36,
 
     /// PIN policy violation
     PinPolicyViolation = 0x37,
-
-    /// PIN token expired
-    PinTokenExpired = 0x38,
 
     /// Request too large
     RequestTooLarge = 0x39,
@@ -153,9 +150,6 @@ pub enum StatusCode {
 
     /// Unauthorized permission
     UnauthorizedPermission = 0x40,
-
-    /// PIN/UV auth token required
-    PuatRequired = 0x41,
 
     /// Other unspecified error
     Other = 0x7F,
@@ -200,9 +194,8 @@ impl fmt::Display for StatusCode {
             Self::PinAuthInvalid => "PIN auth invalid",
             Self::PinAuthBlocked => "PIN auth blocked",
             Self::PinNotSet => "PIN not set",
-            Self::PinRequired => "PIN required",
+            Self::PuatRequired => "PIN/UV auth token required",
             Self::PinPolicyViolation => "PIN policy violation",
-            Self::PinTokenExpired => "PIN token expired",
             Self::RequestTooLarge => "Request too large",
             Self::ActionTimeout => "Action timeout",
             Self::UpRequired => "UP required",
@@ -211,7 +204,6 @@ impl fmt::Display for StatusCode {
             Self::InvalidSubcommand => "Invalid subcommand",
             Self::UvInvalid => "UV invalid",
             Self::UnauthorizedPermission => "Unauthorized permission",
-            Self::PuatRequired => "PIN/UV auth token required",
             Self::Other => "Other error",
         };
         write!(f, "{}", msg)
@@ -223,6 +215,18 @@ impl fmt::Display for StatusCode {
 impl std::error::Error for StatusCode {}
 
 impl StatusCode {
+    /// Deprecated CTAP 2.0 source-level alias. Serializes as
+    /// CTAP2_ERR_PUAT_REQUIRED (0x36) under the modern registry.
+    #[allow(non_upper_case_globals)]
+    #[deprecated(note = "use StatusCode::PuatRequired")]
+    pub const PinRequired: Self = Self::PuatRequired;
+
+    /// Deprecated CTAP 2.0 source-level alias. The 0x38 wire value is
+    /// reserved in modern CTAP, so expired tokens map to PIN_AUTH_INVALID.
+    #[allow(non_upper_case_globals)]
+    #[deprecated(note = "use StatusCode::PinAuthInvalid")]
+    pub const PinTokenExpired: Self = Self::PinAuthInvalid;
+
     /// Convert status code to byte value
     pub fn to_u8(self) -> u8 {
         self as u8
@@ -267,9 +271,8 @@ impl StatusCode {
             0x33 => Self::PinAuthInvalid,
             0x34 => Self::PinAuthBlocked,
             0x35 => Self::PinNotSet,
-            0x36 => Self::PinRequired,
+            0x36 => Self::PuatRequired,
             0x37 => Self::PinPolicyViolation,
-            0x38 => Self::PinTokenExpired,
             0x39 => Self::RequestTooLarge,
             0x3A => Self::ActionTimeout,
             0x3B => Self::UpRequired,
@@ -278,7 +281,6 @@ impl StatusCode {
             0x3E => Self::InvalidSubcommand,
             0x3F => Self::UvInvalid,
             0x40 => Self::UnauthorizedPermission,
-            0x41 => Self::PuatRequired,
             _ => Self::Other,
         }
     }
@@ -368,9 +370,9 @@ impl FromStr for StatusCode {
             "PinAuthInvalid" => Ok(Self::PinAuthInvalid),
             "PinAuthBlocked" => Ok(Self::PinAuthBlocked),
             "PinNotSet" => Ok(Self::PinNotSet),
-            "PinRequired" => Ok(Self::PinRequired),
+            "PinRequired" => Ok(Self::PuatRequired),
             "PinPolicyViolation" => Ok(Self::PinPolicyViolation),
-            "PinTokenExpired" => Ok(Self::PinTokenExpired),
+            "PinTokenExpired" => Ok(Self::PinAuthInvalid),
             "RequestTooLarge" => Ok(Self::RequestTooLarge),
             "ActionTimeout" => Ok(Self::ActionTimeout),
             "UpRequired" => Ok(Self::UpRequired),
@@ -442,5 +444,25 @@ mod tests {
             Ok(StatusCode::PinInvalid)
         );
         assert!("InvalidString".parse::<StatusCode>().is_err());
+    }
+
+    #[test]
+    fn ctap_2_3_pin_uv_status_values_are_wire_correct() {
+        assert_eq!(StatusCode::PuatRequired.to_u8(), 0x36);
+        assert_eq!(StatusCode::UnauthorizedPermission.to_u8(), 0x40);
+        assert_eq!(StatusCode::from_u8(0x36), StatusCode::PuatRequired);
+    }
+
+    #[test]
+    fn reserved_and_non_standard_pin_uv_values_are_not_accepted() {
+        assert_eq!(StatusCode::from_u8(0x38), StatusCode::Other);
+        assert_eq!(StatusCode::from_u8(0x41), StatusCode::Other);
+    }
+
+    #[test]
+    #[allow(deprecated)]
+    fn legacy_source_aliases_use_modern_wire_values() {
+        assert_eq!(StatusCode::PinRequired.to_u8(), 0x36);
+        assert_eq!(StatusCode::PinTokenExpired.to_u8(), 0x33);
     }
 }

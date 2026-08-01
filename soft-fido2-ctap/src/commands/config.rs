@@ -75,7 +75,7 @@ pub fn handle<C: AuthenticatorCallbacks, K: crate::key_provider::CredentialKeyPr
         )?;
     } else {
         // PIN/UV auth is required for all config operations
-        return Err(StatusCode::PinRequired);
+        return Err(StatusCode::PuatRequired);
     }
 
     // Minimal implementation: all subcommands are unsupported
@@ -118,7 +118,7 @@ mod tests {
             .unwrap();
 
         let result = handle(&mut auth, &request);
-        assert_eq!(result, Err(StatusCode::PinRequired));
+        assert_eq!(result, Err(StatusCode::PuatRequired));
     }
 
     #[test]
@@ -135,7 +135,7 @@ mod tests {
 
         // Without proper PIN auth, should fail at auth check first
         let result = handle(&mut auth, &request);
-        assert_eq!(result, Err(StatusCode::PinRequired));
+        assert_eq!(result, Err(StatusCode::PuatRequired));
     }
 
     #[test]

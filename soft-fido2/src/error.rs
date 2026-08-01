@@ -153,9 +153,9 @@ impl From<soft_fido2_ctap::StatusCode> for Error {
             StatusCode::PinAuthInvalid => Error::CtapError(0x33),
             StatusCode::PinAuthBlocked => Error::CtapError(0x34),
             StatusCode::PinNotSet => Error::CtapError(0x35),
-            StatusCode::PinRequired => Error::CtapError(0x36),
+            StatusCode::PuatRequired => Error::CtapError(0x36),
             StatusCode::PinPolicyViolation => Error::CtapError(0x37),
-            StatusCode::PinTokenExpired => Error::CtapError(0x38),
+            StatusCode::PinAuthInvalid => Error::CtapError(0x38),
             StatusCode::RequestTooLarge => Error::CtapError(0x39),
             StatusCode::ActionTimeout => Error::Timeout,
             StatusCode::UpRequired => Error::CtapError(0x3A),
@@ -198,7 +198,7 @@ impl From<Error> for soft_fido2_ctap::StatusCode {
                     0x31 => StatusCode::PinInvalid,
                     0x33 => StatusCode::PinAuthInvalid,
                     0x35 => StatusCode::PinNotSet,
-                    0x36 => StatusCode::PinRequired,
+                    0x36 => StatusCode::PuatRequired,
                     _ => StatusCode::Other,
                 }
             }
