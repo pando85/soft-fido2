@@ -48,8 +48,7 @@ fn parse_item(data: &[u8], offset: &mut usize, container_depth: usize) -> Result
                 .ok_or(StatusCode::InvalidCbor)?;
 
             if major == 3 {
-                core::str::from_utf8(&data[*offset..end])
-                    .map_err(|_| StatusCode::InvalidCbor)?;
+                core::str::from_utf8(&data[*offset..end]).map_err(|_| StatusCode::InvalidCbor)?;
             }
             *offset = end;
         }
