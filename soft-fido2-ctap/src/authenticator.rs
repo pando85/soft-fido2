@@ -665,16 +665,6 @@ impl<C: AuthenticatorCallbacks, K: CredentialKeyProvider> Authenticator<C, K> {
             return Err(StatusCode::PinBlocked);
         }
         if self.is_pin_auth_blocked() {
-            self.pin_state.retries = self.pin_state.retries.saturating_sub(1);
-            if self.pin_state.retries == 0 {
-                if self.config.auto_lock_timeout > 0 {
-                    let lock_until = now + (self.config.auto_lock_timeout as u64 * 1000);
-                    self.pin_state.lock(lock_until);
-                }
-                self.save_pin_state()?;
-                return Err(StatusCode::PinBlocked);
-            }
-            self.save_pin_state()?;
             return Err(StatusCode::PinAuthBlocked);
         }
 
@@ -1571,9 +1561,16 @@ mod tests {
         let mut auth = create_test_authenticator();
         auth.set_pin("1234").unwrap();
 
-        // Exhaust retries
-        for _ in 0..MAX_PIN_RETRIES {
-            let _ = auth.verify_pin("wrong");
+        while auth.pin_retries() > 0 {
+            let attempts_this_session = core::cmp::min(3, auth.pin_retries());
+            for _ in 0..attempts_this_session {
+                let _ = auth.verify_pin("wrong");
+            }
+
+            if auth.pin_retries() > 0 {
+                assert!(auth.is_pin_auth_blocked());
+                auth.pin_consecutive_failures = 0;
+            }
         }
 
         assert!(auth.is_pin_blocked());
@@ -2350,22 +2347,25 @@ mod tests {
 
     #[test]
     fn test_configurable_max_pin_retries() {
-        // Create authenticator with custom max PIN retries
         let config = AuthenticatorConfig::new().with_max_pin_retries(5);
         let mut auth = Authenticator::new(config, MockCallbacks);
 
-        // Set PIN
         auth.set_pin("1234").unwrap();
 
-        // Verify retries is set to custom value
         assert_eq!(auth.pin_retries(), 5);
 
-        // Exhaust retries
         for _ in 0..5 {
-            let _ = auth.verify_pin("wrong");
+            let attempts_this_session = core::cmp::min(3, auth.pin_retries());
+            for _ in 0..attempts_this_session {
+                let _ = auth.verify_pin("wrong");
+            }
+
+            if auth.pin_retries() > 0 {
+                assert!(auth.is_pin_auth_blocked());
+                auth.pin_consecutive_failures = 0;
+            }
         }
 
-        // Should be blocked
         assert!(auth.is_pin_blocked());
         assert_eq!(auth.verify_pin("1234"), Err(StatusCode::PinBlocked));
     }
