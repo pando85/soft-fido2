@@ -5,6 +5,7 @@ on:
     branches: [master]
     paths:
       - "soft-fido2-ctap/**"
+      - "docs/fido23-passless-validation.md"
       - ".github/workflows/fido23-batch.yml"
   workflow_dispatch:
 
