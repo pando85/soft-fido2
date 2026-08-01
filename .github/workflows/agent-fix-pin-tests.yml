@@ -4,6 +4,9 @@ on:
   push:
     branches:
       - agent/fix-pin-token-lifecycle
+  pull_request:
+    branches:
+      - agent/fix-cm-rp-scope
 
 permissions:
   contents: write
@@ -48,8 +51,6 @@ jobs:
         assert!(auth.is_pin_auth_blocked());
         assert_eq!(auth.pin_retries(), MAX_PIN_RETRIES - 3);
 
-        // Further attempts in the same software-device session do not consume
-        // persistent retries, even when the correct PIN is supplied.
         assert_eq!(auth.verify_pin("1234"), Err(StatusCode::PinAuthBlocked));
         assert_eq!(auth.pin_retries(), MAX_PIN_RETRIES - 3);
     }
