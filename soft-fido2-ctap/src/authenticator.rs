@@ -1557,18 +1557,39 @@ mod tests {
     }
 
     #[test]
-    fn test_pin_retry_exhaustion() {
+    fn test_pin_auth_blocked_after_three_consecutive_failures() {
         let mut auth = create_test_authenticator();
         auth.set_pin("1234").unwrap();
 
-        // Exhaust retries
-        for _ in 0..MAX_PIN_RETRIES {
-            let _ = auth.verify_pin("wrong");
+        assert_eq!(auth.verify_pin("wrong"), Err(StatusCode::PinInvalid));
+        assert_eq!(auth.verify_pin("wrong"), Err(StatusCode::PinInvalid));
+        assert_eq!(auth.verify_pin("wrong"), Err(StatusCode::PinAuthBlocked));
+        assert!(auth.is_pin_auth_blocked());
+        assert_eq!(auth.pin_retries(), MAX_PIN_RETRIES - 3);
+
+        assert_eq!(auth.verify_pin("1234"), Err(StatusCode::PinAuthBlocked));
+        assert_eq!(auth.pin_retries(), MAX_PIN_RETRIES - 3);
+    }
+
+    #[test]
+    fn test_pin_retry_exhaustion_across_power_cycles() {
+        let mut auth = create_test_authenticator();
+        auth.set_pin("1234").unwrap();
+
+        while auth.pin_retries() > 0 {
+            let attempts_this_session = core::cmp::min(3, auth.pin_retries());
+            for _ in 0..attempts_this_session {
+                let _ = auth.verify_pin("wrong");
+            }
+
+            if auth.pin_retries() > 0 {
+                assert!(auth.is_pin_auth_blocked());
+                auth.pin_consecutive_failures = 0;
+            }
         }
 
         assert!(auth.is_pin_blocked());
-        let result = auth.verify_pin("1234");
-        assert_eq!(result, Err(StatusCode::PinBlocked));
+        assert_eq!(auth.verify_pin("1234"), Err(StatusCode::PinBlocked));
     }
 
     #[test]
