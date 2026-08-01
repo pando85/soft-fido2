@@ -118,55 +118,13 @@ impl From<soft_fido2_ctap::StatusCode> for Error {
 
         match status {
             StatusCode::Success => Error::Success,
-            StatusCode::InvalidCommand => Error::CtapError(0x01),
-            StatusCode::InvalidParameter => Error::CtapError(0x02),
-            StatusCode::InvalidLength => Error::CtapError(0x03),
-            StatusCode::InvalidSeq => Error::CtapError(0x04),
-            StatusCode::Timeout => Error::Timeout,
-            StatusCode::ChannelBusy => Error::CtapError(0x06),
-            StatusCode::LockRequired => Error::CtapError(0x0A),
-            StatusCode::InvalidChannel => Error::CtapError(0x0B),
-            StatusCode::CborUnexpectedType => Error::CtapError(0x11),
-            StatusCode::InvalidCbor => Error::CtapError(0x12),
-            StatusCode::MissingParameter => Error::CtapError(0x14),
-            StatusCode::LimitExceeded => Error::CtapError(0x15),
-            StatusCode::UnsupportedExtension => Error::CtapError(0x16),
-            StatusCode::CredentialExcluded => Error::CtapError(0x19),
-            StatusCode::Processing => Error::CtapError(0x21),
-            StatusCode::InvalidCredential => Error::CtapError(0x22),
-            StatusCode::UserActionPending => Error::CtapError(0x23),
-            StatusCode::OperationPending => Error::CtapError(0x24),
-            StatusCode::NoOperations => Error::CtapError(0x25),
-            StatusCode::UnsupportedAlgorithm => Error::CtapError(0x26),
-            StatusCode::OperationDenied => Error::CtapError(0x27),
+            StatusCode::Timeout | StatusCode::UserActionTimeout | StatusCode::ActionTimeout => {
+                Error::Timeout
+            }
             StatusCode::KeyStoreFull => Error::KeyStoreFull,
-            StatusCode::NotBusy => Error::CtapError(0x29),
-            StatusCode::NoOperationPending => Error::CtapError(0x2A),
-            StatusCode::UnsupportedOption => Error::CtapError(0x2B),
-            StatusCode::InvalidOption => Error::CtapError(0x2C),
-            StatusCode::KeepaliveCancel => Error::CtapError(0x2D),
             StatusCode::NoCredentials => Error::NoCredentials,
-            StatusCode::UserActionTimeout => Error::Timeout,
-            StatusCode::NotAllowed => Error::CtapError(0x30),
-            StatusCode::PinInvalid => Error::CtapError(0x31),
-            StatusCode::PinBlocked => Error::CtapError(0x32),
-            StatusCode::PinAuthInvalid => Error::CtapError(0x33),
-            StatusCode::PinAuthBlocked => Error::CtapError(0x34),
-            StatusCode::PinNotSet => Error::CtapError(0x35),
-            StatusCode::PuatRequired => Error::CtapError(0x36),
-            StatusCode::PinPolicyViolation => Error::CtapError(0x37),
-            StatusCode::PinAuthInvalid => Error::CtapError(0x38),
-            StatusCode::RequestTooLarge => Error::CtapError(0x39),
-            StatusCode::ActionTimeout => Error::Timeout,
-            StatusCode::UpRequired => Error::CtapError(0x3A),
-            StatusCode::UvBlocked => Error::CtapError(0x3C),
-            StatusCode::IntegrityFailure => Error::CtapError(0x3D),
-            StatusCode::InvalidSubcommand => Error::CtapError(0x3E),
-            StatusCode::UvInvalid => Error::CtapError(0x3F),
-            StatusCode::UnauthorizedPermission => Error::CtapError(0x40),
-            StatusCode::PuatRequired => Error::CtapError(0x41),
             StatusCode::Other => Error::Other,
-            _ => Error::Other,
+            _ => Error::CtapError(status.to_u8()),
         }
     }
 }
@@ -177,32 +135,17 @@ impl From<Error> for soft_fido2_ctap::StatusCode {
 
         match error {
             Error::Success => StatusCode::Success,
-            Error::DoesNotExist => StatusCode::NoCredentials,
+            Error::DoesNotExist | Error::NoCredentials => StatusCode::NoCredentials,
             Error::KeyStoreFull => StatusCode::KeyStoreFull,
             Error::Timeout => StatusCode::Timeout,
             Error::Other => StatusCode::Other,
-            Error::CtapError(code) => {
-                // Map back to StatusCode
-                match code {
-                    0x01 => StatusCode::InvalidCommand,
-                    0x02 => StatusCode::InvalidParameter,
-                    0x03 => StatusCode::InvalidLength,
-                    0x04 => StatusCode::InvalidSeq,
-                    0x06 => StatusCode::ChannelBusy,
-                    0x0A => StatusCode::LockRequired,
-                    0x0B => StatusCode::InvalidChannel,
-                    0x11 => StatusCode::CborUnexpectedType,
-                    0x12 => StatusCode::InvalidCbor,
-                    0x14 => StatusCode::MissingParameter,
-                    0x15 => StatusCode::LimitExceeded,
-                    0x31 => StatusCode::PinInvalid,
-                    0x33 => StatusCode::PinAuthInvalid,
-                    0x35 => StatusCode::PinNotSet,
-                    0x36 => StatusCode::PuatRequired,
-                    _ => StatusCode::Other,
-                }
-            }
+            Error::CtapError(code) => StatusCode::from_u8(code),
             Error::InvalidPinLength => StatusCode::PinPolicyViolation,
+            Error::PinAuthRequired => StatusCode::PuatRequired,
+            Error::UnauthorizedPermission => StatusCode::UnauthorizedPermission,
+            Error::InvalidRpIdHash => StatusCode::InvalidParameter,
+            Error::PinTokenExpired => StatusCode::PinAuthInvalid,
+            Error::InvalidSubcommand => StatusCode::InvalidSubcommand,
             _ => StatusCode::Other,
         }
     }
@@ -246,3 +189,27 @@ pub type Result<T> = std::result::Result<T, Error>;
 
 #[cfg(not(feature = "std"))]
 pub type Result<T> = core::result::Result<T, Error>;
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use soft_fido2_ctap::StatusCode;
+
+    #[test]
+    fn status_to_error_uses_the_status_registry() {
+        assert_eq!(Error::from(StatusCode::PuatRequired), Error::CtapError(0x36));
+        assert_eq!(Error::from(StatusCode::UpRequired), Error::CtapError(0x3b));
+        assert_eq!(
+            Error::from(StatusCode::UnauthorizedPermission),
+            Error::CtapError(0x40)
+        );
+    }
+
+    #[test]
+    fn ctap_error_round_trips_through_the_status_registry() {
+        assert_eq!(StatusCode::from(Error::CtapError(0x36)), StatusCode::PuatRequired);
+        assert_eq!(StatusCode::from(Error::CtapError(0x3b)), StatusCode::UpRequired);
+        assert_eq!(StatusCode::from(Error::CtapError(0x38)), StatusCode::Other);
+        assert_eq!(StatusCode::from(Error::CtapError(0x41)), StatusCode::Other);
+    }
+}
