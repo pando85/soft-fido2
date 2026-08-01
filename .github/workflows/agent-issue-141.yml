@@ -1,0 +1,34 @@
+name: Apply issue 141 patch
+
+on:
+  pull_request:
+    branches:
+      - agent/fix-cm-rp-scope
+
+permissions:
+  contents: write
+
+jobs:
+  apply:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: agent/fix-pin-token-lifecycle
+      - name: Apply patch
+        run: |
+          if git apply --check .agent/issue-141.patch; then
+            git apply .agent/issue-141.patch
+          else
+            echo "Patch is already applied"
+            exit 0
+          fi
+      - name: Format and commit source changes
+        run: |
+          cargo fmt --all
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git add soft-fido2-ctap/src/authenticator.rs soft-fido2-ctap/src/commands/client_pin.rs soft-fido2-ctap/src/pin_token.rs soft-fido2-ctap/src/test_utils.rs
+          git commit -m "fix PIN retry and token lifecycle [agent-applied]"
+          git push origin HEAD:agent/fix-pin-token-lifecycle
