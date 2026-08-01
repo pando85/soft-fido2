@@ -2402,8 +2402,17 @@ mod tests {
         // Verify retries is set to custom value
         assert_eq!(auth.pin_retries(), 5);
 
-        // Exhaust retries
-        for _ in 0..5 {
+        // Exhaust retries across sessions (3 consecutive failures block per session)
+        for _ in 0..3 {
+            let _ = auth.verify_pin("wrong");
+        }
+        assert!(auth.is_pin_auth_blocked());
+        assert_eq!(auth.pin_retries(), 2);
+
+        // Simulate restart: clear consecutive failures
+        auth.pin_consecutive_failures = 0;
+
+        for _ in 0..2 {
             let _ = auth.verify_pin("wrong");
         }
 
