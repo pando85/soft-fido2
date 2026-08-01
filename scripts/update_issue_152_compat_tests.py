@@ -84,44 +84,22 @@ text = text.replace(old_loop_token, new_loop_token, 1)
 # The PIN-persistence test is verifying retry behavior, so provide the RP ID
 # required by an explicit makeCredential permission and allow the request to
 # reach the PIN hash comparison.
-old_wrong = '''        permissions,
-        None,
-    );
-    let mut ctap_request = vec![0x06];
-    ctap_request.extend_from_slice(&get_pin_token_cbor);
+wrong_start = text.index("    // Send WRONG PIN hash")
+wrong_end = text.index("    // Should fail with PIN invalid", wrong_start)
+wrong_segment = text[wrong_start:wrong_end]
+assert wrong_segment.count("        None,\n") == 1
+wrong_segment = wrong_segment.replace(
+    "        None,\n", '        Some("example.com"),\n', 1
+)
+text = text[:wrong_start] + wrong_segment + text[wrong_end:]
 
-    let mut response = Vec::new();
-    auth.handle(&ctap_request, &mut response)
-        .expect("getPinUvAuthToken call failed");
-
-    // Should fail with PIN invalid
-'''
-new_wrong = '''        permissions,
-        Some("example.com"),
-    );
-    let mut ctap_request = vec![0x06];
-    ctap_request.extend_from_slice(&get_pin_token_cbor);
-
-    let mut response = Vec::new();
-    auth.handle(&ctap_request, &mut response)
-        .expect("getPinUvAuthToken call failed");
-
-    // Should fail with PIN invalid
-'''
-assert text.count(old_wrong) == 1
-text = text.replace(old_wrong, new_wrong, 1)
-
-old_correct = '''        &correct_pin_hash_enc,
-        permissions,
-        None,
-    );
-'''
-new_correct = '''        &correct_pin_hash_enc,
-        permissions,
-        Some("example.com"),
-    );
-'''
-assert text.count(old_correct) == 1
-text = text.replace(old_correct, new_correct, 1)
+correct_start = text.index("    // Send correct PIN hash")
+correct_end = text.index("    let mut ctap_request", correct_start)
+correct_segment = text[correct_start:correct_end]
+assert correct_segment.count("        None,\n") == 1
+correct_segment = correct_segment.replace(
+    "        None,\n", '        Some("example.com"),\n', 1
+)
+text = text[:correct_start] + correct_segment + text[correct_end:]
 
 path.write_text(text)
