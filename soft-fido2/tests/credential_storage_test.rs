@@ -1,4 +1,6 @@
-use soft_fido2::{Credential, Extensions, RelyingParty, Result, User};
+use soft_fido2::{
+    Credential, CredentialBackupState, CredentialKey, Extensions, RelyingParty, Result, User,
+};
 
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
@@ -60,11 +62,12 @@ mod tests {
                 id: "example.com".to_string(),
                 name: Some("Example Corp".to_string()),
             },
-            private_key: soft_fido2_ctap::SecBytes::new(vec![0x01; 32]), // Private key for ES256
-            alg: -7,                                                     // ES256
+            key: CredentialKey::software(soft_fido2_ctap::SecBytes::new(vec![0x01; 32])),
+            alg: -7,
             sign_count: 0,
             created: 1234567890,
             discoverable: true,
+            backup_state: CredentialBackupState::NotEligible,
             extensions: Extensions::default(),
         };
 
@@ -175,11 +178,12 @@ mod tests {
                     id: "example.com".to_string(),
                     name: Some("Example".to_string()),
                 },
-                private_key: soft_fido2_ctap::SecBytes::new(vec![0x01; 32]),
+                key: CredentialKey::software(soft_fido2_ctap::SecBytes::new(vec![0x01; 32])),
                 alg: -7,
                 sign_count: 0,
                 created: 1000,
                 discoverable: true,
+                backup_state: CredentialBackupState::NotEligible,
                 extensions: Extensions::default(),
             },
             Credential {
@@ -193,11 +197,12 @@ mod tests {
                     id: "another.com".to_string(),
                     name: Some("Another".to_string()),
                 },
-                private_key: soft_fido2_ctap::SecBytes::new(vec![0x02; 32]),
+                key: CredentialKey::software(soft_fido2_ctap::SecBytes::new(vec![0x02; 32])),
                 alg: -7,
                 sign_count: 0,
                 created: 2000,
                 discoverable: true,
+                backup_state: CredentialBackupState::NotEligible,
                 extensions: Extensions::default(),
             },
             Credential {
@@ -211,11 +216,12 @@ mod tests {
                     id: "example.com".to_string(),
                     name: Some("Example".to_string()),
                 },
-                private_key: soft_fido2_ctap::SecBytes::new(vec![0x03; 32]),
+                key: CredentialKey::software(soft_fido2_ctap::SecBytes::new(vec![0x03; 32])),
                 alg: -7,
                 sign_count: 0,
                 created: 3000,
                 discoverable: true,
+                backup_state: CredentialBackupState::NotEligible,
                 extensions: Extensions::default(),
             },
         ];

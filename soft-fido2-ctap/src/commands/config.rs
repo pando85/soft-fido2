@@ -40,8 +40,8 @@ mod subcommands {
 /// This allows the authenticator to be FIDO 2.2 compliant without implementing
 /// optional configuration features. Platforms will not attempt to use this command
 /// because the `authnrCfg` option in getInfo will be false.
-pub fn handle<C: AuthenticatorCallbacks>(
-    auth: &mut Authenticator<C>,
+pub fn handle<C: AuthenticatorCallbacks, K: crate::key_provider::CredentialKeyProvider>(
+    auth: &mut Authenticator<C, K>,
     data: &[u8],
 ) -> Result<Vec<u8>> {
     let parser = MapParser::from_bytes(data)?;

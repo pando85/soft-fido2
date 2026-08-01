@@ -17,6 +17,7 @@ pub mod cbor;
 pub mod commands;
 pub mod dispatcher;
 pub mod extensions;
+pub mod key_provider;
 pub mod pin_token;
 pub mod sec_bytes;
 pub mod status;
@@ -33,10 +34,14 @@ pub use callbacks::{
     UserInteractionCallbacks, UvResult,
 };
 pub use dispatcher::CommandDispatcher;
+pub use key_provider::{
+    CredentialKey, CredentialKeyError, CredentialKeyProvider, CredentialKeyProviderId,
+    GeneratedCredentialKey, SoftwareCredentialKeyProvider,
+};
 pub use pin_token::{Permission, PinToken, PinTokenManager};
 pub use sec_bytes::{SecBytes, SecPinHash};
 pub use status::{Result, StatusCode};
 pub use types::{
-    CoseAlgorithm, CredProtect, Credential, PinState, PublicKeyCredentialDescriptor,
-    PublicKeyCredentialParameters, RelyingParty, User,
+    CoseAlgorithm, CredProtect, Credential, CredentialBackupState, PinState,
+    PublicKeyCredentialDescriptor, PublicKeyCredentialParameters, RelyingParty, User,
 };

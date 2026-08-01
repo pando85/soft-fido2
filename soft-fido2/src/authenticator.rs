@@ -5,7 +5,7 @@
 #[cfg(feature = "std")]
 use crate::error::Error;
 use crate::error::Result;
-use crate::types::{Credential, CredentialRef};
+use crate::types::{Credential, CredentialBackupState, CredentialRef};
 use soft_fido2_ctap::authenticator::{
     Authenticator as CtapAuthenticator, AuthenticatorConfig as CtapConfig,
 };
@@ -14,6 +14,7 @@ use soft_fido2_ctap::callbacks::{
     UserInteractionCallbacks, UvResult as CtapUvResult,
 };
 use soft_fido2_ctap::cbor::MAX_CTAP_MESSAGE_SIZE;
+use soft_fido2_ctap::key_provider::{CredentialKeyProvider, SoftwareCredentialKeyProvider};
 use soft_fido2_ctap::types::{Credential as CtapCredential, PinState};
 use soft_fido2_ctap::{CommandDispatcher, StatusCode};
 
@@ -287,10 +288,11 @@ impl<C: AuthenticatorCallbacks> CredentialStorageCallbacks for CallbackAdapter<C
             user_display_name: credential.user_display_name.as_deref(),
             sign_count: &credential.sign_count,
             alg: &credential.algorithm,
-            private_key: &credential.private_key,
+            key: &credential.key,
             created: &credential.created,
             discoverable: &credential.discoverable,
             cred_protect: Some(&credential.cred_protect),
+            backup_state: &credential.backup_state,
             cred_random: credential.cred_random.as_ref(),
         };
 
@@ -371,6 +373,8 @@ pub struct AuthenticatorConfig {
     pub force_resident_keys: bool,
     pub firmware_version: Option<u32>,
     pub constant_sign_count: bool,
+    /// Backup state assigned to newly created stored credentials.
+    pub default_credential_backup_state: CredentialBackupState,
     pub max_msg_size: usize,
     /// Supported COSE algorithms (e.g., -7 for ES256, -8 for EdDSA)
     pub algorithms: Vec<i32>,
@@ -399,6 +403,7 @@ impl Default for AuthenticatorConfig {
             force_resident_keys: true,
             firmware_version: None,
             constant_sign_count: false,
+            default_credential_backup_state: CredentialBackupState::NotEligible,
             max_msg_size: MAX_CTAP_MESSAGE_SIZE,
             algorithms: vec![-7, -19], // ES256, Ed25519
             device_name: None,
@@ -427,6 +432,7 @@ pub struct AuthenticatorConfigBuilder {
     force_resident_keys: bool,
     firmware_version: Option<u32>,
     constant_sign_count: bool,
+    default_credential_backup_state: CredentialBackupState,
     max_msg_size: usize,
     algorithms: Vec<i32>,
     device_name: Option<String>,
@@ -447,8 +453,8 @@ impl Default for AuthenticatorConfigBuilder {
             extensions: vec![],
             force_resident_keys: true,
             firmware_version: None,
+            default_credential_backup_state: CredentialBackupState::NotEligible,
             constant_sign_count: false,
-            max_msg_size: MAX_CTAP_MESSAGE_SIZE,
             algorithms: vec![-7, -19], // ES256, Ed25519
             device_name: None,
             vendor_id: None,
@@ -456,6 +462,7 @@ impl Default for AuthenticatorConfigBuilder {
             device_version: None,
             max_pin_retries: 0, // 0 means use default (8)
             auto_lock_timeout: 0,
+            max_msg_size: MAX_CTAP_MESSAGE_SIZE,
         }
     }
 }
@@ -502,6 +509,12 @@ impl AuthenticatorConfigBuilder {
 
     pub fn constant_sign_count(mut self, constant: bool) -> Self {
         self.constant_sign_count = constant;
+        self
+    }
+
+    /// Set the backup state assigned to newly created stored credentials.
+    pub fn default_credential_backup_state(mut self, state: CredentialBackupState) -> Self {
+        self.default_credential_backup_state = state;
         self
     }
 
@@ -573,6 +586,7 @@ impl AuthenticatorConfigBuilder {
             force_resident_keys: self.force_resident_keys,
             firmware_version: self.firmware_version,
             constant_sign_count: self.constant_sign_count,
+            default_credential_backup_state: self.default_credential_backup_state,
             max_msg_size: self.max_msg_size,
             algorithms: if self.algorithms.is_empty() {
                 vec![-7, -8] // Default: ES256, EdDSA
@@ -596,11 +610,60 @@ impl AuthenticatorConfigBuilder {
 /// High-level FIDO2 authenticator
 ///
 /// Provides a thread-safe authenticator that processes CTAP commands via callbacks.
-pub struct Authenticator<C: AuthenticatorCallbacks> {
-    dispatcher: Arc<Mutex<CommandDispatcher<CallbackAdapter<C>>>>,
+///
+/// The second generic parameter `K` is the credential key provider.
+/// It defaults to [`SoftwareCredentialKeyProvider`] for standard ES256/EdDSA
+/// software key operations. External providers (TPM, PKCS#11, etc.) can
+/// be supplied to delegate key generation and signing.
+pub struct Authenticator<
+    C: AuthenticatorCallbacks,
+    K: CredentialKeyProvider = SoftwareCredentialKeyProvider,
+> {
+    dispatcher: Arc<Mutex<CommandDispatcher<CallbackAdapter<C>, K>>>,
 }
 
-impl<C: AuthenticatorCallbacks> Authenticator<C> {
+impl<C: AuthenticatorCallbacks> Authenticator<C, SoftwareCredentialKeyProvider> {
+    /// Create a new authenticator with default configuration
+    pub fn new(callbacks: C) -> Result<Self>
+    where
+        C: 'static,
+    {
+        Self::with_config(callbacks, AuthenticatorConfig::default())
+    }
+
+    /// Create a new authenticator with custom configuration
+    pub fn with_config(callbacks: C, config: AuthenticatorConfig) -> Result<Self>
+    where
+        C: 'static,
+    {
+        Self::with_config_internal(
+            callbacks,
+            config,
+            None::<NoOpPinStorage>,
+            SoftwareCredentialKeyProvider,
+        )
+    }
+
+    /// Create a new authenticator with custom configuration and persistent PIN storage
+    pub fn with_config_and_pin_storage<P>(
+        callbacks: C,
+        config: AuthenticatorConfig,
+        pin_storage: P,
+    ) -> Result<Self>
+    where
+        C: 'static,
+        P: PinStorageCallbacks + Send + Sync + 'static,
+    {
+        Self::with_config_internal(
+            callbacks,
+            config,
+            Some(pin_storage),
+            SoftwareCredentialKeyProvider,
+        )
+    }
+}
+
+impl<C: AuthenticatorCallbacks, K: CredentialKeyProvider + Send + 'static> Authenticator<C, K> {
     /// Set the PIN hash for the authenticator (must be called before creating instance)
     ///
     /// The PIN hash will be applied to the next authenticator instance created.
@@ -629,39 +692,45 @@ impl<C: AuthenticatorCallbacks> Authenticator<C> {
         }
     }
 
-    /// Create a new authenticator with default configuration
-    pub fn new(callbacks: C) -> Result<Self>
+    /// Create a new authenticator with default configuration and a custom key provider
+    pub fn with_key_provider(callbacks: C, key_provider: K) -> Result<Self>
     where
         C: 'static,
     {
-        Self::with_config(callbacks, AuthenticatorConfig::default())
+        Self::with_config_and_key_provider(callbacks, AuthenticatorConfig::default(), key_provider)
     }
 
-    /// Create a new authenticator with custom configuration
-    pub fn with_config(callbacks: C, config: AuthenticatorConfig) -> Result<Self>
+    /// Create a new authenticator with custom configuration and a custom key provider
+    pub fn with_config_and_key_provider(
+        callbacks: C,
+        config: AuthenticatorConfig,
+        key_provider: K,
+    ) -> Result<Self>
     where
         C: 'static,
     {
-        Self::with_config_internal(callbacks, config, None::<NoOpPinStorage>)
+        Self::with_config_internal(callbacks, config, None::<NoOpPinStorage>, key_provider)
     }
 
-    /// Create a new authenticator with custom configuration and persistent PIN storage
-    pub fn with_config_and_pin_storage<P>(
+    /// Create a new authenticator with custom configuration, persistent PIN storage, and a custom key provider
+    pub fn with_config_and_pin_storage_and_key_provider<P>(
         callbacks: C,
         config: AuthenticatorConfig,
         pin_storage: P,
+        key_provider: K,
     ) -> Result<Self>
     where
         C: 'static,
         P: PinStorageCallbacks + Send + Sync + 'static,
     {
-        Self::with_config_internal(callbacks, config, Some(pin_storage))
+        Self::with_config_internal(callbacks, config, Some(pin_storage), key_provider)
     }
 
     fn with_config_internal<P>(
         callbacks: C,
         config: AuthenticatorConfig,
         pin_storage: Option<P>,
+        key_provider: K,
     ) -> Result<Self>
     where
         C: 'static,
@@ -671,13 +740,13 @@ impl<C: AuthenticatorCallbacks> Authenticator<C> {
             callbacks: Arc::new(callbacks),
         };
 
-        // Create CTAP authenticator config
         let mut ctap_config = CtapConfig::new()
             .with_aaguid(config.aaguid)
             .with_max_credentials(config.max_credentials)
             .with_extensions(config.extensions)
             .with_force_resident_keys(config.force_resident_keys)
             .with_constant_sign_count(config.constant_sign_count)
+            .with_default_credential_backup_state(config.default_credential_backup_state)
             .with_max_msg_size(config.max_msg_size)
             .with_algorithms(config.algorithms)
             .with_max_pin_retries(config.max_pin_retries)
@@ -687,7 +756,6 @@ impl<C: AuthenticatorCallbacks> Authenticator<C> {
             ctap_config = ctap_config.with_firmware_version(fw_version);
         }
 
-        // Convert and apply high-level options to CTAP options
         if let Some(ref hl_options) = config.options {
             let ctap_options = soft_fido2_ctap::authenticator::AuthenticatorOptions {
                 plat: hl_options.plat,
@@ -708,16 +776,15 @@ impl<C: AuthenticatorCallbacks> Authenticator<C> {
             ctap_config = ctap_config.with_options(ctap_options);
         }
 
-        let authenticator = CtapAuthenticator::new(ctap_config, adapter);
+        let authenticator =
+            CtapAuthenticator::new_with_key_provider(ctap_config, adapter, key_provider);
 
-        // Apply PIN storage if provided
         let authenticator = if let Some(storage) = pin_storage {
             authenticator.with_pin_storage(storage)
         } else {
             authenticator
         };
 
-        // Apply preset PIN hash if available (std version)
         #[cfg(feature = "std")]
         let mut authenticator = authenticator;
         #[cfg(feature = "std")]
@@ -728,7 +795,6 @@ impl<C: AuthenticatorCallbacks> Authenticator<C> {
             authenticator.set_pin_hash_for_testing(pin_hash);
         }
 
-        // Apply preset PIN hash if available (no_std version)
         #[cfg(not(feature = "std"))]
         let mut authenticator = authenticator;
         #[cfg(not(feature = "std"))]
@@ -762,17 +828,14 @@ impl<C: AuthenticatorCallbacks> Authenticator<C> {
         #[cfg(not(feature = "std"))]
         let mut dispatcher = self.dispatcher.lock();
 
-        // Dispatch command
         match dispatcher.dispatch(request) {
             Ok(response_data) => {
-                // CTAP success response: [0x00 status] [CBOR data...]
                 response.clear();
-                response.push(0x00); // Success status byte
+                response.push(0x00);
                 response.extend_from_slice(&response_data);
                 Ok(response.len())
             }
             Err(status_code) => {
-                // CTAP error response: [error status byte] (no CBOR data)
                 *response = vec![status_code as u8];
                 Ok(1)
             }
@@ -890,11 +953,26 @@ impl<C: AuthenticatorCallbacks> Authenticator<C> {
     }
 }
 
+#[cfg(test)]
 mod tests {
     use super::*;
 
-    // Simple test implementation of AuthenticatorCallbacks
-    #[allow(dead_code)]
+    use soft_fido2_ctap::SecBytes;
+    use soft_fido2_ctap::key_provider::{
+        CredentialKey, CredentialKeyError, CredentialKeyProviderId, GeneratedCredentialKey,
+    };
+
+    #[cfg(feature = "std")]
+    use std::sync::Mutex as StdMutex;
+
+    #[cfg(not(feature = "std"))]
+    use spin::Mutex as SpinMutex;
+
+    #[cfg(feature = "std")]
+    type TestMutex<T> = StdMutex<T>;
+    #[cfg(not(feature = "std"))]
+    type TestMutex<T> = SpinMutex<T>;
+
     struct TestCallbacks;
 
     impl AuthenticatorCallbacks for TestCallbacks {
@@ -935,6 +1013,90 @@ mod tests {
         }
     }
 
+    struct MockKeyProvider {
+        generate_called: TestMutex<bool>,
+        sign_called: TestMutex<bool>,
+    }
+
+    impl MockKeyProvider {
+        fn new() -> Self {
+            Self {
+                generate_called: TestMutex::new(false),
+                sign_called: TestMutex::new(false),
+            }
+        }
+    }
+
+    impl CredentialKeyProvider for MockKeyProvider {
+        fn provider_id(&self) -> CredentialKeyProviderId {
+            CredentialKeyProviderId::new(b"mock-high-level-v1")
+        }
+
+        fn supports_algorithm(&self, algorithm: i32) -> bool {
+            algorithm == -7
+        }
+
+        fn generate(
+            &self,
+            algorithm: i32,
+        ) -> core::result::Result<GeneratedCredentialKey, CredentialKeyError> {
+            if algorithm != -7 {
+                return Err(CredentialKeyError::UnsupportedAlgorithm);
+            }
+
+            #[cfg(feature = "std")]
+            {
+                *self.generate_called.lock().unwrap() = true;
+            }
+            #[cfg(not(feature = "std"))]
+            {
+                *self.generate_called.lock() = true;
+            }
+
+            let (sk, pk) = soft_fido2_crypto::ecdsa::generate_keypair();
+            let key = CredentialKey::new(self.provider_id(), 1, SecBytes::from_slice(&sk[..]));
+            Ok(GeneratedCredentialKey {
+                key,
+                cose_public_key: pk,
+            })
+        }
+
+        fn sign(
+            &self,
+            key: &CredentialKey,
+            algorithm: i32,
+            message: &[u8],
+        ) -> core::result::Result<Vec<u8>, CredentialKeyError> {
+            if key.provider != self.provider_id() {
+                return Err(CredentialKeyError::UnsupportedProvider);
+            }
+
+            #[cfg(feature = "std")]
+            {
+                *self.sign_called.lock().unwrap() = true;
+            }
+            #[cfg(not(feature = "std"))]
+            {
+                *self.sign_called.lock() = true;
+            }
+
+            let key_bytes = key.material.as_slice();
+            if key_bytes.len() != 32 {
+                return Err(CredentialKeyError::InvalidKeyMaterial);
+            }
+
+            let mut arr = [0u8; 32];
+            arr.copy_from_slice(key_bytes);
+            let priv_key = zeroize::Zeroizing::new(arr);
+
+            match algorithm {
+                -7 => soft_fido2_crypto::ecdsa::sign(&priv_key, message)
+                    .map_err(|e| CredentialKeyError::TransientFailure(alloc::format!("{:?}", e))),
+                _ => Err(CredentialKeyError::UnsupportedAlgorithm),
+            }
+        }
+    }
+
     #[test]
     fn test_authenticator_creation() {
         let callbacks = TestCallbacks;
@@ -959,14 +1121,19 @@ mod tests {
         let callbacks = TestCallbacks;
         let mut auth = Authenticator::new(callbacks).unwrap();
 
-        assert_eq!(auth.uv_retries().unwrap(), 3);
+        assert_eq!(auth.uv_retries().unwrap(), 8);
+        auth.decrement_uv_retries_for_testing().unwrap();
+        auth.decrement_uv_retries_for_testing().unwrap();
+        auth.decrement_uv_retries_for_testing().unwrap();
+        auth.decrement_uv_retries_for_testing().unwrap();
+        auth.decrement_uv_retries_for_testing().unwrap();
         auth.decrement_uv_retries_for_testing().unwrap();
         auth.decrement_uv_retries_for_testing().unwrap();
         auth.decrement_uv_retries_for_testing().unwrap();
         assert_eq!(auth.uv_retries().unwrap(), 0);
 
         auth.reset_uv_retries().unwrap();
-        assert_eq!(auth.uv_retries().unwrap(), 3);
+        assert_eq!(auth.uv_retries().unwrap(), 8);
     }
 
     #[test]
@@ -976,5 +1143,77 @@ mod tests {
 
         let result = auth.verify_credential_management_pin_uv_auth(1, &[0u8; 16], &[0u8; 32]);
         assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_high_level_authenticator_with_key_provider() {
+        use soft_fido2_ctap::cbor;
+
+        let provider = MockKeyProvider::new();
+        let config = AuthenticatorConfig::builder().aaguid([1u8; 16]).build();
+        let mut auth =
+            Authenticator::with_config_and_key_provider(TestCallbacks, config, provider).unwrap();
+
+        let client_data_hash = [0xAAu8; 32];
+        let rp = cbor::Value::Map(vec![
+            (
+                cbor::Value::Text("id".to_string()),
+                cbor::Value::Text("example.com".to_string()),
+            ),
+            (
+                cbor::Value::Text("name".to_string()),
+                cbor::Value::Text("Example".to_string()),
+            ),
+        ]);
+        let user = cbor::Value::Map(vec![
+            (
+                cbor::Value::Text("id".to_string()),
+                cbor::Value::Bytes(vec![0x01, 0x02, 0x03]),
+            ),
+            (
+                cbor::Value::Text("name".to_string()),
+                cbor::Value::Text("testuser".to_string()),
+            ),
+            (
+                cbor::Value::Text("displayName".to_string()),
+                cbor::Value::Text("Test User".to_string()),
+            ),
+        ]);
+        let pub_key_cred_params = cbor::Value::Array(vec![cbor::Value::Map(vec![
+            (
+                cbor::Value::Text("type".to_string()),
+                cbor::Value::Text("public-key".to_string()),
+            ),
+            (
+                cbor::Value::Text("alg".to_string()),
+                cbor::Value::Integer(-7),
+            ),
+        ])]);
+
+        let request_map = cbor::Value::Map(vec![
+            (
+                cbor::Value::Integer(1),
+                cbor::Value::Bytes(client_data_hash.to_vec()),
+            ),
+            (cbor::Value::Integer(2), rp),
+            (cbor::Value::Integer(3), user),
+            (cbor::Value::Integer(4), pub_key_cred_params),
+        ]);
+
+        let mut request_bytes = vec![0x01];
+        cbor::into_writer(&request_map, &mut request_bytes).unwrap();
+
+        let mut response = Vec::new();
+        let result = auth.handle(&request_bytes, &mut response);
+        assert!(result.is_ok());
+        assert_eq!(response[0], 0x00);
+    }
+
+    #[test]
+    fn test_default_authenticator_still_works() {
+        let callbacks = TestCallbacks;
+        let config = AuthenticatorConfig::default();
+        let auth = Authenticator::with_config(callbacks, config);
+        assert!(auth.is_ok());
     }
 }

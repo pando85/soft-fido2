@@ -1,4 +1,6 @@
-use soft_fido2::{Credential, Extensions, RelyingParty, User};
+use soft_fido2::{
+    Credential, CredentialBackupState, CredentialKey, Extensions, RelyingParty, User,
+};
 use soft_fido2_ctap::SecBytes;
 
 #[test]
@@ -23,9 +25,10 @@ fn test_credential_from_bytes_roundtrip() {
         user,
         sign_count: 7,
         alg: -7,
-        private_key: private_key.clone(),
+        key: CredentialKey::software(private_key.clone()),
         created: 1_700_000_000,
         discoverable: true,
+        backup_state: CredentialBackupState::BackedUp,
         extensions: Extensions {
             cred_protect: Some(1),
             hmac_secret: Some(true),
@@ -78,9 +81,13 @@ fn test_credential_from_bytes_roundtrip() {
         }
     };
 
-    // Credentials should be equal
+    // Credentials should be equal, including backup metadata.
     assert_eq!(cred, decoded);
+    assert_eq!(decoded.backup_state, CredentialBackupState::BackedUp);
 
     // Private key content should match exactly
-    assert_eq!(cred.private_key.as_slice(), decoded.private_key.as_slice());
+    assert_eq!(
+        cred.key.material.as_slice(),
+        decoded.key.material.as_slice()
+    );
 }

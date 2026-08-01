@@ -51,7 +51,9 @@ mod keys {
 /// Handle authenticatorGetInfo command
 ///
 /// This command requires no input and returns the authenticator's capabilities.
-pub fn handle<C: AuthenticatorCallbacks>(auth: &Authenticator<C>) -> Result<Vec<u8>> {
+pub fn handle<C: AuthenticatorCallbacks, K: crate::key_provider::CredentialKeyProvider>(
+    auth: &Authenticator<C, K>,
+) -> Result<Vec<u8>> {
     let config = auth.config();
 
     // Build response map

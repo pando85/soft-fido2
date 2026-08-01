@@ -5,6 +5,39 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/), and this project
 adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [v0.15.0](https://github.com/pando85/soft-fido2/tree/v0.15.0) - 2026-07-22
+
+### Added
+
+- Expose credential key provider in high-level authenticator (#126) ([1d8e244](https://github.com/pando85/soft-fido2/commit/1d8e2445cda291fd21732b680486a7b77301b0db))
+
+## [v0.14.0](https://github.com/pando85/soft-fido2/tree/v0.14.0) - 2026-07-21
+
+### Added
+
+- Support opaque credential keys and external signing providers (#124) ([b0adc6e](https://github.com/pando85/soft-fido2/commit/b0adc6e415e55a053a1c98b768425a8c802eb922))
+
+### Fixed
+
+- Validate `CredentialKeyProviderId` length during deserialization to prevent exceeding `MAX_PROVIDER_ID_LENGTH`
+- Reject unsupported algorithms in `SoftwareCredentialKeyProvider::generate` instead of silently falling through to ECDSA
+- Validate `CredentialKey` `format_version` is within `u16` range during deserialization
+
+## [v0.13.1](https://github.com/pando85/soft-fido2/tree/v0.13.1) - 2026-07-06
+
+### Added
+
+- Expose uv retry reset api (#114) ([b3e6ca5](https://github.com/pando85/soft-fido2/commit/b3e6ca5))
+
+### Build
+
+- deps: Update Rust crate spin to 0.12 (#106) ([473af76](https://github.com/pando85/soft-fido2/commit/473af76))
+- deps: Update actions/checkout action to v7 (#109) ([bf9e086](https://github.com/pando85/soft-fido2/commit/bf9e086))
+- deps: Update actions/cache action to v6 (#110) ([b6ac1fc](https://github.com/pando85/soft-fido2/commit/b6ac1fc))
+- deps: Update clechasseur/rs-clippy-check action to v6.0.5 (#111) ([25b4d60](https://github.com/pando85/soft-fido2/commit/25b4d60))
+- deps: Update pre-commit hook alessandrojcm/commitlint-pre-commit-hook to v9.26.0 (#112) ([761cd85](https://github.com/pando85/soft-fido2/commit/761cd85))
+- deps: Update Rust crate p256 to 0.14 (#113) ([5777d36](https://github.com/pando85/soft-fido2/commit/5777d36))
+
 ## [v0.13.0](https://github.com/pando85/soft-fido2/tree/v0.13.0) - 2026-05-24
 
 ### Fixed

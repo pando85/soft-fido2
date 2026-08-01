@@ -80,11 +80,17 @@ pub use request::{
 };
 pub use soft_fido2_ctap::StatusCode;
 
+// Re-export key provider types
+pub use soft_fido2_ctap::key_provider::{
+    CredentialKey, CredentialKeyError, CredentialKeyProvider, CredentialKeyProviderId,
+    GeneratedCredentialKey, SoftwareCredentialKeyProvider,
+};
+
 // Re-export PIN storage types for persistent PIN state support
 pub use soft_fido2_ctap::callbacks::PinStorageCallbacks;
 pub use soft_fido2_ctap::types::PinState;
 
-pub use types::{Credential, CredentialRef, Extensions, RelyingParty, User};
+pub use types::{Credential, CredentialBackupState, CredentialRef, Extensions, RelyingParty, User};
 
 // Re-export response types
 pub use response::{
