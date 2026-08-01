@@ -1,0 +1,34 @@
+name: Apply assertion semantics patch
+
+on:
+  pull_request:
+    branches:
+      - master
+
+permissions:
+  contents: write
+
+jobs:
+  apply:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: agent/fix-assertion-continuation
+      - name: Apply patch
+        run: |
+          if git apply --check .agent/issues-137-138.patch; then
+            git apply .agent/issues-137-138.patch
+            sed -i 's/    remaining: usize,/    _remaining: usize,/' soft-fido2-ctap/src/commands/get_next_assertion.rs
+          else
+            echo "Patch is already applied"
+            exit 0
+          fi
+      - name: Commit source changes
+        run: |
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git add soft-fido2-ctap/src/authenticator.rs soft-fido2-ctap/src/commands/get_assertion.rs soft-fido2-ctap/src/commands/get_next_assertion.rs
+          git commit -m "fix assertion continuation and counter semantics [agent-applied]"
+          git push origin HEAD:agent/fix-assertion-continuation
