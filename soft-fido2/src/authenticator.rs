@@ -453,9 +453,8 @@ impl Default for AuthenticatorConfigBuilder {
             extensions: vec![],
             force_resident_keys: true,
             firmware_version: None,
-            constant_sign_count: false,
             default_credential_backup_state: CredentialBackupState::NotEligible,
-            max_msg_size: MAX_CTAP_MESSAGE_SIZE,
+            constant_sign_count: false,
             algorithms: vec![-7, -19], // ES256, Ed25519
             device_name: None,
             vendor_id: None,
@@ -463,6 +462,7 @@ impl Default for AuthenticatorConfigBuilder {
             device_version: None,
             max_pin_retries: 0, // 0 means use default (8)
             auto_lock_timeout: 0,
+            max_msg_size: MAX_CTAP_MESSAGE_SIZE,
         }
     }
 }
