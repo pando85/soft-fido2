@@ -223,9 +223,7 @@ mod tests {
         let protocols: Vec<u8> = parser.get(keys::PIN_UV_AUTH_PROTOCOLS).unwrap();
         assert!(protocols.contains(&1) || protocols.contains(&2));
 
-        let list_limit: usize = parser
-            .get(keys::MAX_CREDENTIAL_COUNT_IN_LIST)
-            .unwrap();
+        let list_limit: usize = parser.get(keys::MAX_CREDENTIAL_COUNT_IN_LIST).unwrap();
         assert_eq!(list_limit, MAX_CREDENTIAL_COUNT_IN_LIST);
         assert!(!parser.contains_key(keys::MIN_PIN_LENGTH));
         assert!(!parser.contains_key(keys::REMAINING_DISCOVERABLE_CREDENTIALS));

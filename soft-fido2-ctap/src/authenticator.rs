@@ -141,7 +141,7 @@ impl AuthenticatorConfig {
         Self {
             aaguid: [0u8; 16],
             algorithms: vec![CoseAlgorithm::ES256.to_i32()],
-            options: AuthenticatorOptions::default(),
+            options: AuthenticatorOptions::new(),
             max_credentials: 100,
             extensions: vec![],
             firmware_version: None,
