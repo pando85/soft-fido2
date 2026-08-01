@@ -1,0 +1,59 @@
+diff --git a/soft-fido2-ctap/src/bridge.rs b/soft-fido2-ctap/src/bridge.rs
+index 9011349..0000000 100644
+--- a/soft-fido2-ctap/src/bridge.rs
++++ b/soft-fido2-ctap/src/bridge.rs
+@@ -39,19 +39,20 @@ impl<C: AuthenticatorCallbacks> soft_fido2_transport::CommandHandler for Transpo
+         match cmd {
+             soft_fido2_transport::Cmd::Cbor => {
+-                // CBOR command - dispatch to CTAP protocol handler
+-                self.dispatcher.dispatch(data).map_err(|e| {
+-                    // Convert CTAP status code to transport error
+-                    match e {
+-                        StatusCode::InvalidParameter => {
+-                            soft_fido2_transport::Error::Other("Invalid parameter".to_string())
+-                        }
+-                        StatusCode::InvalidCommand => soft_fido2_transport::Error::InvalidCommand,
+-                        _ => soft_fido2_transport::Error::Other(format!("CTAP error: {:?}", e)),
++                // CTAPHID_CBOR responses always begin with the CTAP status byte.
++                // CTAP command errors remain CTAPHID_CBOR responses; only HID-layer
++                // framing/channel failures are represented as CTAPHID_ERROR.
++                match self.dispatcher.dispatch(data) {
++                    Ok(payload) => {
++                        let mut response = Vec::with_capacity(payload.len() + 1);
++                        response.push(StatusCode::Success as u8);
++                        response.extend_from_slice(&payload);
++                        Ok(response)
+                     }
+-                })
++                    Err(status) => Ok(vec![status as u8]),
++                }
+             }
+             soft_fido2_transport::Cmd::Msg => {
+                 // CTAP1/U2F message - not yet supported
+@@ -90,7 +91,23 @@ mod tests {
+ 
+         let result = bridge.handle_command(soft_fido2_transport::Cmd::Cbor, &data);
+         assert!(result.is_ok());
+-        assert!(!result.unwrap().is_empty());
++        let response = result.unwrap();
++        assert_eq!(response.first(), Some(&(StatusCode::Success as u8)));
++        assert!(response.len() > 1);
++    }
++
++    #[test]
++    fn test_cbor_error_is_returned_as_ctap_status() {
++        let config = AuthenticatorConfig::new();
++        let authenticator = Authenticator::new(config, MockCallbacks);
++        let dispatcher = CommandDispatcher::new(authenticator);
++        let mut bridge = TransportBridge::new(dispatcher);
++
++        // Unknown CTAP command.
++        let result = bridge.handle_command(soft_fido2_transport::Cmd::Cbor, &[0xff]);
++
++        assert_eq!(
++            result.unwrap(),
++            vec![StatusCode::InvalidCommand as u8]
++        );
+     }
+ 
+     #[test]
