@@ -30,6 +30,11 @@ jobs:
       - name: Keep dev dependencies within the declared MSRV
         run: sed -i 's/serial_test = "4.0"/serial_test = "3.2"/' Cargo.toml
 
+      - name: Install native build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libudev-dev pkg-config
+
       - name: Format
         run: cargo fmt --all
 
