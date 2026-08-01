@@ -57,11 +57,8 @@ jobs:
       - name: Format composed tree
         run: cargo fmt --all
 
-      - name: Run composed CTAP regression suite
-        run: cargo test -p soft-fido2-ctap --features transport
-
-      - name: Test high-level CTAP error adapters
-        run: cargo test -p soft-fido2 --lib
+      - name: Run the complete workspace suite
+        run: cargo test --workspace --all-features
 
       - name: Run wire-level batch assertions
         run: cargo test -p soft-fido2-ctap --features transport --test fido23_batch -- --ignored
