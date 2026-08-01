@@ -1,0 +1,45 @@
+name: Refine issue 152 fix
+
+on:
+  pull_request:
+    types: [synchronize]
+    branches: [master]
+
+permissions:
+  contents: write
+
+jobs:
+  refine:
+    if: github.event.pull_request.head.ref == 'agent/restrict-legacy-pin-token-permissions'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.ref }}
+          fetch-depth: 0
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: 1.91
+          components: rustfmt
+
+      - name: Apply CTAP 2.3 permission refinements
+        run: python3 scripts/refine_issue_152.py
+
+      - name: Format
+        run: cargo fmt --all
+
+      - name: Test CTAP crate
+        run: cargo test -p soft-fido2-ctap
+
+      - name: Commit clean source patch
+        env:
+          BRANCH: ${{ github.event.pull_request.head.ref }}
+        run: |
+          rm -f scripts/refine_issue_152.py .github/workflows/refine-issue-152.yml
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A
+          git commit -m "fix: follow CTAP 2.3 permission assignment semantics"
+          git push origin "HEAD:${BRANCH}"
