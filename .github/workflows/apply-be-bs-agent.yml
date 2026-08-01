@@ -1,0 +1,48 @@
+name: Apply BE BS implementation
+
+on:
+  push:
+    branches:
+      - agent/add-backup-eligibility-state
+
+permissions:
+  contents: write
+
+jobs:
+  apply-and-validate:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: agent/add-backup-eligibility-state
+          fetch-depth: 0
+
+      - name: Apply implementation
+        run: python3 .agent/apply_be_bs.py
+
+      - name: Remove bootstrap files
+        run: git rm .agent/apply_be_bs.py .github/workflows/apply-be-bs-agent.yml
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+
+      - name: Format
+        run: cargo fmt --all
+
+      - name: Test workspace
+        run: cargo test --workspace --all-features
+
+      - name: Lint workspace
+        run: cargo clippy --workspace --all-targets --all-features -- -D warnings
+
+      - name: Commit implementation
+        run: |
+          git add -A
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git commit -m 'feat: add credential backup eligibility and state'
+          git push origin HEAD:agent/add-backup-eligibility-state
