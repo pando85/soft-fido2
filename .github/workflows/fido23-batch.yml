@@ -4,7 +4,11 @@ on:
   pull_request:
     branches: [master]
     paths:
+      - "Cargo.toml"
+      - "soft-fido2/**"
+      - "soft-fido2-crypto/**"
       - "soft-fido2-ctap/**"
+      - "soft-fido2-transport/**"
       - "docs/fido23-passless-validation.md"
       - ".github/workflows/fido23-batch.yml"
   workflow_dispatch:
@@ -25,19 +29,30 @@ jobs:
           toolchain: 1.91
           components: rustfmt
 
-      - name: Compose the first FIDO 2.3 fix batch
+      - name: Compose the initial FIDO 2.3 fix batch for this PR
+        env:
+          HEAD_REF: ${{ github.head_ref }}
         run: |
-          git config user.name "fido23-batch-ci"
-          git config user.email "fido23-batch-ci@users.noreply.github.com"
-          git fetch origin \
-            agent/restrict-legacy-pin-token-permissions \
-            agent/align-ctap-status-codes \
-            agent/detect-wrapped-exclude-list \
-            agent/gate-fido-version-advertisement
-          git merge --no-edit origin/agent/restrict-legacy-pin-token-permissions
-          git merge --no-edit origin/agent/align-ctap-status-codes
-          git merge --no-edit origin/agent/detect-wrapped-exclude-list
-          git merge --no-edit origin/agent/gate-fido-version-advertisement
+          if [[ "${HEAD_REF}" == "agent/fido23-regression-matrix" ]]; then
+            git config user.name "fido23-batch-ci"
+            git config user.email "fido23-batch-ci@users.noreply.github.com"
+            git fetch origin \
+              agent/restrict-legacy-pin-token-permissions \
+              agent/align-ctap-status-codes \
+              agent/detect-wrapped-exclude-list \
+              agent/gate-fido-version-advertisement
+            git merge --no-edit origin/agent/restrict-legacy-pin-token-permissions
+            git merge --no-edit origin/agent/align-ctap-status-codes
+            git merge --no-edit origin/agent/detect-wrapped-exclude-list
+            git merge --no-edit origin/agent/gate-fido-version-advertisement
+          else
+            echo "Testing the checked-out branch against the merged FIDO compatibility baseline."
+          fi
+
+      - name: Install native build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libudev-dev pkg-config
 
       - name: Check formatting
         run: cargo fmt --all --check
@@ -45,13 +60,11 @@ jobs:
       - name: Run composed CTAP regression suite
         run: cargo test -p soft-fido2-ctap --features transport
 
+      - name: Test high-level CTAP error adapters
+        run: cargo test -p soft-fido2 --lib
+
       - name: Run wire-level batch assertions
         run: cargo test -p soft-fido2-ctap --features transport --test fido23_batch -- --ignored
-
-      - name: Install Passless build dependencies
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y libudev-dev pkg-config
 
       - name: Check Passless against composed local sources
         env:
