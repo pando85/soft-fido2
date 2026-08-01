@@ -1,0 +1,73 @@
+name: FIDO 2.3 batch compatibility
+
+on:
+  pull_request:
+    branches: [master]
+    paths:
+      - "soft-fido2-ctap/**"
+      - ".github/workflows/fido23-batch.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  composed-batch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: 1.91
+          components: rustfmt
+
+      - name: Compose the first FIDO 2.3 fix batch
+        run: |
+          git config user.name "fido23-batch-ci"
+          git config user.email "fido23-batch-ci@users.noreply.github.com"
+          git fetch origin \
+            agent/restrict-legacy-pin-token-permissions \
+            agent/align-ctap-status-codes \
+            agent/detect-wrapped-exclude-list \
+            agent/gate-fido-version-advertisement
+          git merge --no-edit origin/agent/restrict-legacy-pin-token-permissions
+          git merge --no-edit origin/agent/align-ctap-status-codes
+          git merge --no-edit origin/agent/detect-wrapped-exclude-list
+          git merge --no-edit origin/agent/gate-fido-version-advertisement
+
+      - name: Check formatting
+        run: cargo fmt --all --check
+
+      - name: Run composed CTAP regression suite
+        run: cargo test -p soft-fido2-ctap --features transport
+
+      - name: Run wire-level batch assertions
+        run: cargo test -p soft-fido2-ctap --features transport --test fido23_batch -- --ignored
+
+      - name: Install Passless build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libudev-dev pkg-config
+
+      - name: Check Passless against composed local sources
+        env:
+          SOFT_FIDO2_ROOT: ${{ github.workspace }}
+        run: |
+          git clone --depth 1 https://github.com/pando85/passless /tmp/passless
+          python3 - <<'PY'
+          import os
+          from pathlib import Path
+
+          root = Path(os.environ["SOFT_FIDO2_ROOT"])
+          manifest = Path("/tmp/passless/Cargo.toml")
+          with manifest.open("a") as cargo:
+              cargo.write("\n[patch.crates-io]\n")
+              cargo.write(f'soft-fido2 = {{ path = "{root / "soft-fido2"}" }}\n')
+              cargo.write(f'soft-fido2-ctap = {{ path = "{root / "soft-fido2-ctap"}" }}\n')
+              cargo.write(f'soft-fido2-transport = {{ path = "{root / "soft-fido2-transport"}" }}\n')
+          PY
+          cargo check --manifest-path /tmp/passless/Cargo.toml --locked \
+            -p passless-core -p passless-uhid -p passless
