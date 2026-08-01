@@ -1,9 +1,9 @@
 name: Apply issue 141 changes
 
 on:
-  pull_request:
+  push:
     branches:
-      - agent/fix-cm-rp-scope
+      - agent/fix-pin-token-lifecycle
 
 permissions:
   contents: write
