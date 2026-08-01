@@ -104,7 +104,12 @@ text = text.replace(pin_anchor, pin_replacement, 1)
 uv_start = text.index("    // Validate permissions (must not be 0)\n", text.index("fn handle_get_pin_uv_auth_token_using_uv_with_permissions"))
 uv_end_marker = "    // Check if built-in UV is configured\n"
 uv_end = text.index(uv_end_marker, uv_start)
-text = text[:uv_start] + "    validate_requested_permissions(auth, permissions)?;\n\n" + text[uv_end:]
+text = (
+    text[:uv_start]
+    + "    validate_requested_permissions(auth, permissions)?;\n\n"
+    + "    let config = auth.config();\n\n"
+    + text[uv_end:]
+)
 
 new_tests = r'''
 
