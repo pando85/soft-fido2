@@ -5,6 +5,25 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/), and this project
 adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [v0.16.1](https://github.com/pando85/soft-fido2/tree/v0.16.1) - 2026-08-01
+
+### Fixed
+
+- Encode CTAP status in CTAPHID_CBOR responses (#143) ([095bbb1](https://github.com/pando85/soft-fido2/commit/095bbb177ef939cc7af49d062e68ede57dd1d864))
+- Enforce RP scope for credential management tokens (#142) ([2fda897](https://github.com/pando85/soft-fido2/commit/2fda8975870296cc07a6b30bc3709ef238319ddb))
+- Correct assertion continuation and counter semantics (#144) ([d5689f0](https://github.com/pando85/soft-fido2/commit/d5689f057db70bab54a1974190775f68864d7247))
+- Report only implemented authenticator capabilities (#145) ([545cd3c](https://github.com/pando85/soft-fido2/commit/545cd3c3c6eb3f201b9d2ce72c8b654c983c431a))
+
+### Build
+
+- deps: Update Rust crate rand to 0.10 (#115) ([4109ab1](https://github.com/pando85/soft-fido2/commit/4109ab1884b447fbbbb37bdf26a16ae5eb95d420))
+
+### Security
+
+- Invalidate wrapped credentials on reset (#148) ([87bc639](https://github.com/pando85/soft-fido2/commit/87bc6396ad3d49f2c433f18aedbb9b14ff9680dd))
+- Reject ambiguous CTAP CBOR encodings (#146) ([645b7ff](https://github.com/pando85/soft-fido2/commit/645b7ff11220e38c6f7254e275928d88cda35da9))
+- Enforce PIN retry and token lifecycle semantics (#147) ([f8f43a1](https://github.com/pando85/soft-fido2/commit/f8f43a1a5f50321f5e07e17e3e8bc0c036456a7e))
+
 ## [v0.16.0](https://github.com/pando85/soft-fido2/tree/v0.16.0) - 2026-08-01
 
 ### Added
