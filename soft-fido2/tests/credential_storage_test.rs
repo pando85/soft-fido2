@@ -1,4 +1,6 @@
-use soft_fido2::{Credential, CredentialKey, Extensions, RelyingParty, Result, User};
+use soft_fido2::{
+    Credential, CredentialBackupState, CredentialKey, Extensions, RelyingParty, Result, User,
+};
 
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
@@ -65,6 +67,7 @@ mod tests {
             sign_count: 0,
             created: 1234567890,
             discoverable: true,
+            backup_state: CredentialBackupState::NotEligible,
             extensions: Extensions::default(),
         };
 
@@ -180,6 +183,7 @@ mod tests {
                 sign_count: 0,
                 created: 1000,
                 discoverable: true,
+                backup_state: CredentialBackupState::NotEligible,
                 extensions: Extensions::default(),
             },
             Credential {
@@ -198,6 +202,7 @@ mod tests {
                 sign_count: 0,
                 created: 2000,
                 discoverable: true,
+                backup_state: CredentialBackupState::NotEligible,
                 extensions: Extensions::default(),
             },
             Credential {
@@ -216,6 +221,7 @@ mod tests {
                 sign_count: 0,
                 created: 3000,
                 discoverable: true,
+                backup_state: CredentialBackupState::NotEligible,
                 extensions: Extensions::default(),
             },
         ];
