@@ -227,11 +227,23 @@ mod tests {
             .get(keys::MAX_CREDENTIAL_COUNT_IN_LIST)
             .unwrap();
         assert_eq!(list_limit, MAX_CREDENTIAL_COUNT_IN_LIST);
+        assert!(!parser.contains_key(keys::MIN_PIN_LENGTH));
+        assert!(!parser.contains_key(keys::REMAINING_DISCOVERABLE_CREDENTIALS));
+    }
+
+    #[test]
+    fn test_get_info_reports_min_pin_length_when_client_pin_is_supported() {
+        let mut config = AuthenticatorConfig::new();
+        config.options.client_pin = Some(false);
+        let auth = Authenticator::new(config, MockCallbacks);
+
+        let response = handle(&auth).unwrap();
+        let parser = MapParser::from_bytes(&response).unwrap();
+
         assert_eq!(
             parser.get::<usize>(keys::MIN_PIN_LENGTH).unwrap(),
             auth.min_pin_length()
         );
-        assert!(!parser.contains_key(keys::REMAINING_DISCOVERABLE_CREDENTIALS));
     }
 
     #[test]
