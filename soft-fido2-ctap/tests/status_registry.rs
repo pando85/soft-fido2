@@ -54,7 +54,11 @@ fn ctap_2_3_status_registry_round_trips() {
 
     for (status, byte) in registry {
         assert_eq!(status.to_u8(), byte, "wrong wire value for {status:?}");
-        assert_eq!(StatusCode::from_u8(byte), status, "failed round-trip for {status:?}");
+        assert_eq!(
+            StatusCode::from_u8(byte),
+            status,
+            "failed round-trip for {status:?}"
+        );
     }
 }
 

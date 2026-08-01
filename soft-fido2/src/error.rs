@@ -197,7 +197,10 @@ mod tests {
 
     #[test]
     fn status_to_error_uses_the_status_registry() {
-        assert_eq!(Error::from(StatusCode::PuatRequired), Error::CtapError(0x36));
+        assert_eq!(
+            Error::from(StatusCode::PuatRequired),
+            Error::CtapError(0x36)
+        );
         assert_eq!(Error::from(StatusCode::UpRequired), Error::CtapError(0x3b));
         assert_eq!(
             Error::from(StatusCode::UnauthorizedPermission),
@@ -207,8 +210,14 @@ mod tests {
 
     #[test]
     fn ctap_error_round_trips_through_the_status_registry() {
-        assert_eq!(StatusCode::from(Error::CtapError(0x36)), StatusCode::PuatRequired);
-        assert_eq!(StatusCode::from(Error::CtapError(0x3b)), StatusCode::UpRequired);
+        assert_eq!(
+            StatusCode::from(Error::CtapError(0x36)),
+            StatusCode::PuatRequired
+        );
+        assert_eq!(
+            StatusCode::from(Error::CtapError(0x3b)),
+            StatusCode::UpRequired
+        );
         assert_eq!(StatusCode::from(Error::CtapError(0x38)), StatusCode::Other);
         assert_eq!(StatusCode::from(Error::CtapError(0x41)), StatusCode::Other);
     }
