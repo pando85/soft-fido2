@@ -1,9 +1,6 @@
 name: Apply BE BS implementation
 
 on:
-  push:
-    branches:
-      - agent/add-backup-eligibility-state
   pull_request:
     branches:
       - master
@@ -21,6 +18,19 @@ jobs:
         with:
           ref: agent/add-backup-eligibility-state
           fetch-depth: 0
+
+      - name: Correct bootstrap match
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          path = Path('.agent/apply_be_bs.py')
+          source = path.read_text()
+          old = "('    /// Use constant signature counter (for privacy)\\n','    /// Backup state assigned to newly created stored credentials.\\n"
+          new = "('    pub force_resident_keys: bool,\\n\\n    /// Use constant signature counter (for privacy)\\n','    pub force_resident_keys: bool,\\n\\n    /// Backup state assigned to newly created stored credentials.\\n"
+          if source.count(old) != 1:
+              raise SystemExit(f'bootstrap correction expected one match, got {source.count(old)}')
+          path.write_text(source.replace(old, new, 1))
+          PY
 
       - name: Apply implementation
         run: python3 .agent/apply_be_bs.py
