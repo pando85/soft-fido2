@@ -1,0 +1,194 @@
+diff --git a/soft-fido2-ctap/src/authenticator.rs b/soft-fido2-ctap/src/authenticator.rs
+index 29cb937..0000000 100644
+--- a/soft-fido2-ctap/src/authenticator.rs
++++ b/soft-fido2-ctap/src/authenticator.rs
+@@ -372,6 +372,7 @@ pub struct AssertionContext {
+     pub rp_id: String,
+     pub up: bool,
+     pub uv: bool,
++    pub extensions: crate::extensions::GetAssertionExtensions,
+ }
+@@ -970,6 +971,7 @@ impl<C: AuthenticatorCallbacks, K: CredentialKeyProvider> Authenticator<C, K> {
+         rp_id: String,
+         up: bool,
+         uv: bool,
++        extensions: crate::extensions::GetAssertionExtensions,
+     ) {
+         if remaining_credentials.is_empty() {
+             self.assertion_state = None;
+@@ -985,6 +987,7 @@ impl<C: AuthenticatorCallbacks, K: CredentialKeyProvider> Authenticator<C, K> {
+                 rp_id,
+                 up,
+                 uv,
++                extensions,
+             },
+             created_at: self.callbacks.get_timestamp_ms(),
+         });
+@@ -999,16 +1002,16 @@ impl<C: AuthenticatorCallbacks, K: CredentialKeyProvider> Authenticator<C, K> {
+         let state = self
+             .assertion_state
+             .as_mut()
+-            .ok_or(StatusCode::NoCredentials)?;
++            .ok_or(StatusCode::NotAllowed)?;
+ 
+         if now.saturating_sub(state.created_at) > ASSERTION_STATE_TIMEOUT_MS {
+             self.assertion_state = None;
+-            return Err(StatusCode::UserActionTimeout);
++            return Err(StatusCode::NotAllowed);
+         }
+ 
+         if state.remaining_credentials.is_empty() {
+             self.assertion_state = None;
+-            return Err(StatusCode::NoCredentials);
++            return Err(StatusCode::NotAllowed);
+         }
+@@ -1019,6 +1022,9 @@ impl<C: AuthenticatorCallbacks, K: CredentialKeyProvider> Authenticator<C, K> {
+ 
+         if remaining == 0 {
+             self.assertion_state = None;
++        } else {
++            // Each successful continuation starts a fresh timeout window.
++            state.created_at = now;
+         }
+ 
+         Ok((credential, context, remaining))
+diff --git a/soft-fido2-ctap/src/commands/get_assertion.rs b/soft-fido2-ctap/src/commands/get_assertion.rs
+index 78e21dd..0000000 100644
+--- a/soft-fido2-ctap/src/commands/get_assertion.rs
++++ b/soft-fido2-ctap/src/commands/get_assertion.rs
+@@ -600,10 +600,11 @@ pub fn handle<C: AuthenticatorCallbacks, K: CredentialKeyProvider>(
+ 
+     // Step 14: Sign clientDataHash with authData
+-    // Increment sign count (unless constant_sign_count is enabled)
+-    let new_sign_count = if auth.config().constant_sign_count {
+-        selected_cred.sign_count // Keep counter constant for privacy
++    // Wrapped credentials do not have durable mutable state, so they must
++    // consistently report zero rather than repeat a misleading positive value.
++    let new_sign_count = if auth.config().constant_sign_count || !selected_cred.discoverable {
++        0
+     } else {
+-        selected_cred.sign_count + 1 // Normal incrementing behavior
++        selected_cred.sign_count.saturating_add(1)
+     };
+@@ -675,6 +676,7 @@ pub fn handle<C: AuthenticatorCallbacks, K: CredentialKeyProvider>(
+             response_state.up,
+             response_state.uv,
++            extensions.clone(),
+         );
+     }
+ 
+diff --git a/soft-fido2-ctap/src/commands/get_next_assertion.rs b/soft-fido2-ctap/src/commands/get_next_assertion.rs
+index 2fb03b6..0000000 100644
+--- a/soft-fido2-ctap/src/commands/get_next_assertion.rs
++++ b/soft-fido2-ctap/src/commands/get_next_assertion.rs
+@@ -9,7 +9,8 @@ use crate::{
+     authenticator::{AssertionContext, Authenticator},
+     callbacks::AuthenticatorCallbacks,
+     cbor::MapBuilder,
++    extensions::compute_hmac_secret,
+     key_provider::CredentialKeyProvider,
+     status::{Result, StatusCode},
+     types::{CredentialBackupState, PublicKeyCredentialDescriptor, auth_data_flags},
+@@ -24,7 +25,6 @@ mod resp_keys {
+     pub const AUTH_DATA: i32 = 0x02;
+     pub const SIGNATURE: i32 = 0x03;
+     pub const USER: i32 = 0x04;
+-    pub const NUMBER_OF_CREDENTIALS: i32 = 0x05;
+ }
+@@ -44,10 +44,11 @@ fn build_assertion_response<C: AuthenticatorCallbacks, K: CredentialKeyProvider>(
+     context: AssertionContext,
+     remaining: usize,
+ ) -> Result<Vec<u8>> {
+-    let new_sign_count = if auth.config().constant_sign_count {
+-        credential.sign_count
++    let new_sign_count = if auth.config().constant_sign_count || !credential.discoverable {
++        0
+     } else {
+-        credential.sign_count + 1
++        credential.sign_count.saturating_add(1)
+     };
+@@ -58,13 +59,43 @@ fn build_assertion_response<C: AuthenticatorCallbacks, K: CredentialKeyProvider>(
+         auth.callbacks().update_credential(&updated_cred)?;
+     }
+ 
++    let mut extension_outputs = context.extensions.build_outputs();
++    if context.extensions.has_hmac_secret()
++        && let Some(hmac_input) = context.extensions.get_hmac_secret()
++    {
++        let keypair = auth.get_pin_protocol_keypair(hmac_input.pin_uv_auth_protocol);
++        if let Some(auth_keypair) = keypair
++            && let Some(cred_random) = &credential.cred_random
++            && let Some(encrypted_output) =
++                compute_hmac_secret(hmac_input, cred_random.as_slice(), auth_keypair)
++        {
++            let output = (
++                crate::cbor::Value::Text(
++                    crate::extensions::ext_ids::HMAC_SECRET.to_string(),
++                ),
++                crate::cbor::Value::Bytes(encrypted_output),
++            );
++
++            if let Some(crate::cbor::Value::Map(ref mut map)) = extension_outputs {
++                map.push(output);
++            } else {
++                extension_outputs = Some(crate::cbor::Value::Map(alloc::vec![output]));
++            }
++        }
++    }
++
+     let auth_data = build_authenticator_data(
+         &context.rp_id,
+         context.up,
+         context.uv,
+         credential.backup_state,
+         new_sign_count,
+-    );
++        extension_outputs.as_ref(),
++    )?;
+@@ -101,10 +132,6 @@ fn build_assertion_response<C: AuthenticatorCallbacks, K: CredentialKeyProvider>(
+         builder = builder.insert(resp_keys::USER, user)?;
+     }
+ 
+-    if remaining > 0 {
+-        builder = builder.insert(resp_keys::NUMBER_OF_CREDENTIALS, remaining)?;
+-    }
+-
+     builder.build()
+ }
+@@ -116,7 +143,8 @@ fn build_authenticator_data(
+     uv: bool,
+     backup_state: CredentialBackupState,
+     sign_count: u32,
+-) -> Vec<u8> {
++    extensions: Option<&crate::cbor::Value>,
++) -> Result<Vec<u8>> {
+     let mut auth_data = Vec::new();
+@@ -134,10 +162,18 @@ fn build_authenticator_data(
+         flags |= auth_data_flags::UV;
+     }
+     flags |= backup_state.flags();
++    if extensions.is_some() {
++        flags |= auth_data_flags::ED;
++    }
+     auth_data.push(flags);
+ 
+     auth_data.extend_from_slice(&sign_count.to_be_bytes());
+-    auth_data
++
++    if let Some(ext_value) = extensions {
++        let mut ext_bytes = Vec::new();
++        crate::cbor::into_writer(ext_value, &mut ext_bytes)
++            .map_err(|_| StatusCode::InvalidCbor)?;
++        auth_data.extend_from_slice(&ext_bytes);
++    }
++
++    Ok(auth_data)
+ }
+@@ -158,6 +194,6 @@ mod tests {
+ 
+         // Should return error when no assertion is in progress
+         let result = handle(&mut auth, &[]);
+-        assert_eq!(result, Err(StatusCode::NoCredentials));
++        assert_eq!(result, Err(StatusCode::NotAllowed));
+     }
+ }
