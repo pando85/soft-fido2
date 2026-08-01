@@ -5,14 +5,22 @@ soft-fido2 source tree rather than against the latest crates.io release.
 
 ## Hosted CI coverage
 
-The workflow patches these Passless dependencies to local paths:
+Before checking Passless, the workflow runs the complete soft-fido2 workspace suite with all
+features under the declared Rust 1.91 toolchain. This includes the compatibility fixtures for:
+
+- RP-scoped `makeCredential` permission tokens;
+- separately authorized Credential Management operations;
+- PIN retry persistence and token acquisition after authenticator reconstruction;
+- exact CTAP status bytes and truthful GetInfo version negotiation.
+
+The workflow then patches these Passless dependencies to local paths:
 
 - `soft-fido2`
 - `soft-fido2-ctap`
 - `soft-fido2-transport`
 
-It then checks `passless-core`, `passless-uhid`, and `passless-rs`. This validates Rust API,
-feature, type, and transport integration without requiring a privileged kernel device.
+It checks `passless-core`, `passless-uhid`, and `passless-rs`. This validates Rust API, feature,
+type, and transport integration without requiring a privileged kernel device.
 
 ## Privileged UHID validation
 
