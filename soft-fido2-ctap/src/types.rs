@@ -692,6 +692,11 @@ pub struct PinState {
     /// max failed attempts for a configurable timeout period.
     #[serde(default)]
     pub locked_until: Option<u64>,
+
+    /// Generation used to derive the active credential-wrapping key.
+    /// Generation zero preserves credentials created before this field existed.
+    #[serde(default)]
+    pub credential_wrapping_generation: u64,
 }
 
 /// Default value for UV retries for serde deserialization
@@ -716,6 +721,7 @@ impl PinState {
             version: 0,
             force_pin_change: false,
             locked_until: None,
+            credential_wrapping_generation: 0,
         }
     }
 
@@ -899,6 +905,7 @@ mod tests {
         state.uv_retries = 1; // Only 1 retry left
         state.retries = 5;
         state.version = 42;
+        state.credential_wrapping_generation = 7;
 
         // Serialize to CBOR
         let mut buf = Vec::new();
@@ -910,5 +917,6 @@ mod tests {
         assert_eq!(restored.uv_retries, 1, "UV retries should be preserved");
         assert_eq!(restored.retries, 5);
         assert_eq!(restored.version, 42);
+        assert_eq!(restored.credential_wrapping_generation, 7);
     }
 }
