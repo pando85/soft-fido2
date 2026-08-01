@@ -6,6 +6,7 @@
 use crate::{
     authenticator::Authenticator,
     callbacks::AuthenticatorCallbacks,
+    cbor_validate::validate_ctap_cbor,
     commands::CommandCode,
     key_provider::{CredentialKeyProvider, SoftwareCredentialKeyProvider},
     status::{Result, StatusCode},
@@ -53,6 +54,13 @@ impl<C: AuthenticatorCallbacks, K: CredentialKeyProvider> CommandDispatcher<C, K
         let command_data = &data[1..];
 
         let cmd = CommandCode::from_u8(command_code).ok_or(StatusCode::InvalidCommand)?;
+
+        // Validate the restricted CTAP CBOR profile before typed decoding,
+        // authorization, or cryptographic processing. Commands with no request
+        // parameters legitimately have an empty command_data slice.
+        if !command_data.is_empty() {
+            validate_ctap_cbor(command_data)?;
+        }
 
         match cmd {
             CommandCode::MakeCredential => {
@@ -143,11 +151,7 @@ mod tests {
         let authenticator = Authenticator::new(config, MockCallbacks);
         let mut dispatcher = CommandDispatcher::new(authenticator);
 
-        // Invalid command code
-        let command = vec![0xFF];
-
-        let result = dispatcher.dispatch(&command);
-        assert!(result.is_err());
+        let result = dispatcher.dispatch(&[0xff]);
         assert_eq!(result.unwrap_err(), StatusCode::InvalidCommand);
     }
 
@@ -158,8 +162,28 @@ mod tests {
         let mut dispatcher = CommandDispatcher::new(authenticator);
 
         let result = dispatcher.dispatch(&[]);
-        assert!(result.is_err());
         assert_eq!(result.unwrap_err(), StatusCode::InvalidParameter);
+    }
+
+    #[test]
+    fn rejects_ambiguous_cbor_before_command_processing() {
+        let config = AuthenticatorConfig::new();
+        let authenticator = Authenticator::new(config, MockCallbacks);
+        let mut dispatcher = CommandDispatcher::new(authenticator);
+
+        // makeCredential plus a map containing duplicate key 1.
+        let command = vec![0x01, 0xa2, 0x01, 0x01, 0x01, 0x02];
+        assert_eq!(
+            dispatcher.dispatch(&command),
+            Err(StatusCode::InvalidCbor)
+        );
+
+        // One valid map followed by an ignored second CBOR item.
+        let command = vec![0x01, 0xa0, 0xa0];
+        assert_eq!(
+            dispatcher.dispatch(&command),
+            Err(StatusCode::InvalidCbor)
+        );
     }
 
     #[test]
@@ -174,9 +198,7 @@ mod tests {
         let command = vec![0x07];
 
         let response = dispatcher.dispatch(&command).unwrap();
-        assert!(response.is_empty()); // Reset returns empty response
-
-        // PIN should be cleared after reset
+        assert!(response.is_empty());
         assert!(!dispatcher.authenticator().is_pin_set());
     }
 }
