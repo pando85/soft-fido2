@@ -82,8 +82,8 @@ assert text.count(old_loop_token) == 1
 text = text.replace(old_loop_token, new_loop_token, 1)
 
 # The PIN-persistence test is verifying retry behavior, so provide the RP ID
-# required by an explicit makeCredential permission and allow the request to
-# reach the PIN hash comparison.
+# required by an explicit makeCredential permission and allow every request to
+# reach the PIN hash comparison, including the post-restart request.
 wrong_start = text.index("    // Send WRONG PIN hash")
 wrong_end = text.index("    // Should fail with PIN invalid", wrong_start)
 wrong_segment = text[wrong_start:wrong_end]
@@ -101,5 +101,22 @@ correct_segment = correct_segment.replace(
     "        None,\n", '        Some("example.com"),\n', 1
 )
 text = text[:correct_start] + correct_segment + text[correct_end:]
+
+loaded_start = text.index(
+    "    // Verify we can authenticate with the loaded PIN by trying to get a PIN token"
+)
+loaded_end = text.index(
+    "    let mut ctap_request = vec![0x06];",
+    text.index(
+        "    let get_pin_token_cbor = build_get_pin_uv_auth_token_using_pin_with_permissions_request(",
+        loaded_start,
+    ),
+)
+loaded_segment = text[loaded_start:loaded_end]
+assert loaded_segment.count("        None,\n") == 1
+loaded_segment = loaded_segment.replace(
+    "        None,\n", '        Some("example.com"),\n', 1
+)
+text = text[:loaded_start] + loaded_segment + text[loaded_end:]
 
 path.write_text(text)
