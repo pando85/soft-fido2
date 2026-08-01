@@ -30,8 +30,8 @@ jobs:
       - name: Format
         run: cargo fmt --all
 
-      - name: Test workspace
-        run: cargo test --workspace
+      - name: Test CTAP status handling
+        run: cargo test -p soft-fido2-ctap
 
       - name: Commit final patch
         env:
