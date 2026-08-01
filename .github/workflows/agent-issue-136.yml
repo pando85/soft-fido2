@@ -4,6 +4,9 @@ on:
   push:
     branches:
       - agent/fix-cm-rp-scope
+  pull_request:
+    branches:
+      - master
 
 permissions:
   contents: write
@@ -18,8 +21,12 @@ jobs:
           ref: agent/fix-cm-rp-scope
       - name: Apply patch
         run: |
-          git apply --check .agent/issue-136.patch
-          git apply .agent/issue-136.patch
+          if git apply --check .agent/issue-136.patch; then
+            git apply .agent/issue-136.patch
+          else
+            echo "Patch is already applied"
+            exit 0
+          fi
       - name: Commit source changes
         run: |
           git config user.name github-actions[bot]
