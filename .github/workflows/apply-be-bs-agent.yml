@@ -68,18 +68,12 @@ jobs:
                   if 'backup_state:' not in block and 'cred_random:' in block:
                       block, count = re.subn(
                           r'(?m)^(\s*)cred_random:',
-                          r'\1backup_state: CredentialBackupState::NotEligible,\n\1cred_random:',
+                          r'\1backup_state: soft_fido2::CredentialBackupState::NotEligible,\n\1cred_random:',
                           block,
                           count=1,
                       )
                       if count != 1:
                           raise SystemExit(f'cannot patch Extensions literal in {path}')
-                      if 'CredentialBackupState' not in source[:start].split('\n', 1)[0]:
-                          source = source.replace(
-                              'use soft_fido2::{',
-                              'use soft_fido2::{CredentialBackupState, ',
-                              1,
-                          )
                       changed = True
                   output.append(block)
                   position = end
