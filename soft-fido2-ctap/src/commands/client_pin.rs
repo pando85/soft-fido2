@@ -91,24 +91,28 @@ mod resp_keys {
 const DEFAULT_PERMISSION_MASK: u8 =
     Permission::MakeCredential as u8 | Permission::GetAssertion as u8;
 
-const KNOWN_PERMISSION_MASK: u8 = Permission::MakeCredential as u8
+const DEFINED_PERMISSION_MASK: u8 = Permission::MakeCredential as u8
     | Permission::GetAssertion as u8
     | Permission::CredentialManagement as u8
     | Permission::BioEnrollment as u8
     | Permission::LargeBlobWrite as u8
-    | Permission::AuthenticatorConfiguration as u8;
+    | Permission::AuthenticatorConfiguration as u8
+    | Permission::PersistentCredentialManagementReadOnly as u8;
 
 fn validate_requested_permissions<
     C: AuthenticatorCallbacks,
     K: crate::key_provider::CredentialKeyProvider,
 >(
     auth: &Authenticator<C, K>,
-    permissions: u8,
-) -> Result<()> {
-    if permissions == 0 || permissions & !KNOWN_PERMISSION_MASK != 0 {
+    requested_permissions: u8,
+) -> Result<u8> {
+    if requested_permissions == 0 {
         return Err(StatusCode::InvalidParameter);
     }
 
+    // CTAP 2.3 requires undefined permission bits to be ignored when the
+    // token's permissions are assigned.
+    let permissions = requested_permissions & DEFINED_PERMISSION_MASK;
     let options = &auth.config().options;
 
     if Permission::CredentialManagement.is_set_in(permissions) && !options.cred_mgmt {
@@ -123,8 +127,13 @@ fn validate_requested_permissions<
     if Permission::AuthenticatorConfiguration.is_set_in(permissions) && !options.authnr_cfg {
         return Err(StatusCode::UnauthorizedPermission);
     }
+    // Persistent read-only credential management is not implemented yet and
+    // perCredMgmtRO is therefore absent from GetInfo.
+    if Permission::PersistentCredentialManagementReadOnly.is_set_in(permissions) {
+        return Err(StatusCode::UnauthorizedPermission);
+    }
 
-    Ok(())
+    Ok(permissions)
 }
 
 /// Handle authenticatorClientPIN command
@@ -420,6 +429,13 @@ fn handle_get_pin_token<
     let protocol: u8 = parser.get(req_keys::PIN_UV_AUTH_PROTOCOL)?;
     let pin_hash_enc: Vec<u8> = parser.get_bytes(req_keys::PIN_HASH_ENC)?;
 
+    // The superseded getPinToken command does not accept explicit
+    // permissions or an RP ID.
+    if parser.get_raw(req_keys::PERMISSIONS).is_some() || parser.get_raw(req_keys::RP_ID).is_some()
+    {
+        return Err(StatusCode::InvalidParameter);
+    }
+
     // Get platform's key agreement key
     let key_agreement: crate::cbor::Value = parser.get(req_keys::KEY_AGREEMENT)?;
     let platform_public_key = parse_cose_key(&key_agreement)?;
@@ -501,10 +517,16 @@ fn handle_get_pin_uv_auth_token_using_pin_with_permissions<
 
     let protocol: u8 = parser.get(req_keys::PIN_UV_AUTH_PROTOCOL)?;
     let pin_hash_enc: Vec<u8> = parser.get_bytes(req_keys::PIN_HASH_ENC)?;
-    let permissions: u8 = parser.get(req_keys::PERMISSIONS)?;
+    let requested_permissions: u8 = parser.get(req_keys::PERMISSIONS)?;
     let rp_id: Option<String> = parser.get_opt(req_keys::RP_ID)?;
 
-    validate_requested_permissions(auth, permissions)?;
+    let permissions = validate_requested_permissions(auth, requested_permissions)?;
+    if (Permission::MakeCredential.is_set_in(permissions)
+        || Permission::GetAssertion.is_set_in(permissions))
+        && rp_id.is_none()
+    {
+        return Err(StatusCode::MissingParameter);
+    }
 
     // Get platform's key agreement key
     let key_agreement: crate::cbor::Value = parser.get(req_keys::KEY_AGREEMENT)?;
@@ -605,7 +627,7 @@ fn handle_get_pin_uv_auth_token_using_uv_with_permissions<
     let key_agreement: crate::cbor::Value = parser
         .get(req_keys::KEY_AGREEMENT)
         .map_err(|_| StatusCode::MissingParameter)?;
-    let permissions: u8 = parser
+    let requested_permissions: u8 = parser
         .get(req_keys::PERMISSIONS)
         .map_err(|_| StatusCode::MissingParameter)?;
     let rp_id: Option<String> = parser.get_opt(req_keys::RP_ID)?;
@@ -615,7 +637,13 @@ fn handle_get_pin_uv_auth_token_using_uv_with_permissions<
         return Err(StatusCode::InvalidParameter);
     }
 
-    validate_requested_permissions(auth, permissions)?;
+    let permissions = validate_requested_permissions(auth, requested_permissions)?;
+    if (Permission::MakeCredential.is_set_in(permissions)
+        || Permission::GetAssertion.is_set_in(permissions))
+        && rp_id.is_none()
+    {
+        return Err(StatusCode::MissingParameter);
+    }
 
     let config = auth.config();
 
@@ -1485,16 +1513,24 @@ mod tests {
     }
 
     #[test]
-    fn permission_validation_rejects_zero_and_unknown_bits() {
+    fn permission_validation_rejects_zero_and_ignores_undefined_bits() {
         let auth = create_test_authenticator();
 
         assert_eq!(
             validate_requested_permissions(&auth, 0),
             Err(StatusCode::InvalidParameter)
         );
+        assert_eq!(validate_requested_permissions(&auth, 0x80), Ok(0));
         assert_eq!(
-            validate_requested_permissions(&auth, 0x40),
-            Err(StatusCode::InvalidParameter)
+            validate_requested_permissions(&auth, Permission::MakeCredential as u8 | 0x80,),
+            Ok(Permission::MakeCredential as u8)
+        );
+        assert_eq!(
+            validate_requested_permissions(
+                &auth,
+                Permission::PersistentCredentialManagementReadOnly as u8,
+            ),
+            Err(StatusCode::UnauthorizedPermission)
         );
     }
 
@@ -1557,14 +1593,17 @@ mod tests {
                 MapBuilder::new().build_value().unwrap(),
             )
             .unwrap()
-            .insert(req_keys::PERMISSIONS, 0x40u8)
+            .insert(
+                req_keys::PERMISSIONS,
+                Permission::PersistentCredentialManagementReadOnly as u8,
+            )
             .unwrap()
             .build()
             .unwrap();
 
         assert_eq!(
             handle(&mut auth, &request),
-            Err(StatusCode::InvalidParameter)
+            Err(StatusCode::UnauthorizedPermission)
         );
     }
 
@@ -1597,14 +1636,79 @@ mod tests {
             .unwrap()
             .insert_bytes(req_keys::PIN_HASH_ENC, &[0u8; 16])
             .unwrap()
-            .insert(req_keys::PERMISSIONS, 0x40u8)
+            .insert(
+                req_keys::PERMISSIONS,
+                Permission::PersistentCredentialManagementReadOnly as u8,
+            )
             .unwrap()
             .build()
             .unwrap();
 
         assert_eq!(
             handle(&mut auth, &request),
-            Err(StatusCode::InvalidParameter)
+            Err(StatusCode::UnauthorizedPermission)
         );
+    }
+
+    #[test]
+    fn legacy_get_pin_token_rejects_permissions_and_rp_id() {
+        let mut auth = create_test_authenticator();
+        auth.set_pin("1234").unwrap();
+
+        for (key, value) in [
+            (req_keys::PERMISSIONS, crate::cbor::Value::Integer(1.into())),
+            (
+                req_keys::RP_ID,
+                crate::cbor::Value::Text("example.com".to_string()),
+            ),
+        ] {
+            let request = MapBuilder::new()
+                .insert(req_keys::SUBCOMMAND, 0x05u8)
+                .unwrap()
+                .insert(req_keys::PIN_UV_AUTH_PROTOCOL, 1u8)
+                .unwrap()
+                .insert_bytes(req_keys::PIN_HASH_ENC, &[0u8; 16])
+                .unwrap()
+                .insert(key, value)
+                .unwrap()
+                .build()
+                .unwrap();
+
+            assert_eq!(
+                handle(&mut auth, &request),
+                Err(StatusCode::InvalidParameter)
+            );
+        }
+    }
+
+    #[test]
+    fn explicit_mc_or_ga_permissions_require_an_rp_id() {
+        let mut auth = create_test_authenticator();
+        auth.set_pin("1234").unwrap();
+
+        for (subcommand, permission) in [
+            (0x09u8, Permission::MakeCredential),
+            (0x09u8, Permission::GetAssertion),
+            (0x06u8, Permission::MakeCredential),
+            (0x06u8, Permission::GetAssertion),
+        ] {
+            let mut builder = MapBuilder::new()
+                .insert(req_keys::SUBCOMMAND, subcommand)
+                .unwrap()
+                .insert(req_keys::PIN_UV_AUTH_PROTOCOL, 1u8)
+                .unwrap()
+                .insert(req_keys::PERMISSIONS, permission as u8)
+                .unwrap();
+            if subcommand == 0x09 {
+                builder = builder
+                    .insert_bytes(req_keys::PIN_HASH_ENC, &[0u8; 16])
+                    .unwrap();
+            }
+            let request = builder.build().unwrap();
+            assert_eq!(
+                handle(&mut auth, &request),
+                Err(StatusCode::MissingParameter)
+            );
+        }
     }
 }
