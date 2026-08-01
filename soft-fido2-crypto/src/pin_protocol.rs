@@ -359,9 +359,9 @@ pub mod v2 {
             return Err(CryptoError::EncryptionFailed);
         }
 
-        let mut rng = rand::thread_rng();
+        let mut rng = rand::rng();
         let mut iv: [u8; 16] = [0u8; 16];
-        rng.fill(&mut iv);
+        rng.fill_bytes(&mut iv);
 
         let mut output = vec![0u8; 16 + plaintext.len()];
 
