@@ -1,0 +1,49 @@
+name: Update issue 152 compatibility tests
+
+on:
+  pull_request:
+    types: [synchronize]
+    branches: [master]
+
+permissions:
+  contents: write
+
+jobs:
+  update-tests:
+    if: github.event.pull_request.head.ref == 'agent/restrict-legacy-pin-token-permissions'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.ref }}
+          fetch-depth: 0
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: 1.91
+          components: rustfmt
+
+      - name: Apply compatibility test updates
+        run: python3 scripts/update_issue_152_compat_tests.py
+
+      - name: Keep dev dependencies within the declared MSRV
+        run: sed -i 's/serial_test = "4.0"/serial_test = "3.2"/' Cargo.toml
+
+      - name: Format
+        run: cargo fmt --all
+
+      - name: Run full workspace suite
+        run: cargo test --workspace --all-features
+
+      - name: Commit clean test changes
+        env:
+          BRANCH: ${{ github.event.pull_request.head.ref }}
+        run: |
+          git checkout -- Cargo.toml
+          rm -f scripts/update_issue_152_compat_tests.py .github/workflows/update-issue-152-compat-tests.yml
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A
+          git commit -m "test: use conforming PIN/UV permission tokens"
+          git push origin "HEAD:${BRANCH}"
