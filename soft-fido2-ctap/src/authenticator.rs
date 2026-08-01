@@ -665,6 +665,16 @@ impl<C: AuthenticatorCallbacks, K: CredentialKeyProvider> Authenticator<C, K> {
             return Err(StatusCode::PinBlocked);
         }
         if self.is_pin_auth_blocked() {
+            self.pin_state.retries = self.pin_state.retries.saturating_sub(1);
+            if self.pin_state.retries == 0 {
+                if self.config.auto_lock_timeout > 0 {
+                    let lock_until = now + (self.config.auto_lock_timeout as u64 * 1000);
+                    self.pin_state.lock(lock_until);
+                }
+                self.save_pin_state()?;
+                return Err(StatusCode::PinBlocked);
+            }
+            self.save_pin_state()?;
             return Err(StatusCode::PinAuthBlocked);
         }
 
