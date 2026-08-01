@@ -1,0 +1,203 @@
+diff --git a/soft-fido2-ctap/src/authenticator.rs b/soft-fido2-ctap/src/authenticator.rs
+index 29cb937..0000000 100644
+--- a/soft-fido2-ctap/src/authenticator.rs
++++ b/soft-fido2-ctap/src/authenticator.rs
+@@ -398,6 +398,10 @@ pub struct Authenticator<
+     /// PIN token manager
+     pin_tokens: PinTokenManager,
+ 
++    /// Consecutive failed PIN attempts in the current device session.
++    /// Cleared by a successful PIN verification or software-device restart.
++    pin_consecutive_failures: u8,
++
+     /// User verification retry counter
+     uv_retries: u8,
+@@ -470,6 +474,7 @@ impl<C: AuthenticatorCallbacks, K: CredentialKeyProvider> Authenticator<C, K> {
+             pin_state,
+             pin_storage: None,
+             pin_tokens: PinTokenManager::new(),
++            pin_consecutive_failures: 0,
+             uv_retries: max_pin_retries,
+             custom_commands: BTreeMap::new(),
+@@ -549,6 +554,11 @@ impl<C: AuthenticatorCallbacks, K: CredentialKeyProvider> Authenticator<C, K> {
+         self.pin_state.is_blocked()
+     }
+ 
++    /// Check whether three consecutive failures require a software-device restart.
++    pub fn is_pin_auth_blocked(&self) -> bool {
++        self.pin_consecutive_failures >= 3
++    }
++
+     /// Check if PIN is temporarily locked (auto-lock feature)
+@@ -612,6 +622,9 @@ impl<C: AuthenticatorCallbacks, K: CredentialKeyProvider> Authenticator<C, K> {
+         self.pin_state.retries = self.config.max_pin_retries;
+         self.pin_state.force_pin_change = false;
+         self.pin_state.locked_until = None;
++        self.pin_consecutive_failures = 0;
++        self.pin_tokens.clear_token();
++        self.pin_protocol_keypairs.clear();
+ 
+         // Persist if storage is configured
+@@ -658,6 +671,11 @@ impl<C: AuthenticatorCallbacks, K: CredentialKeyProvider> Authenticator<C, K> {
+             return Err(StatusCode::PinBlocked);
+         }
+ 
++        // Three consecutive mismatches require a power cycle/session restart.
++        if self.is_pin_auth_blocked() {
++            return Err(StatusCode::PinAuthBlocked);
++        }
++
+         // Hash the provided PIN (raw PIN, not padded, per CTAP spec)
+@@ -669,6 +687,7 @@ impl<C: AuthenticatorCallbacks, K: CredentialKeyProvider> Authenticator<C, K> {
+             // PIN correct - reset retry counter and clear any lock
+             self.pin_state.retries = self.config.max_pin_retries;
+             self.pin_state.locked_until = None;
++            self.pin_consecutive_failures = 0;
+             self.save_pin_state()?;
+             Ok(())
+@@ -676,6 +695,7 @@ impl<C: AuthenticatorCallbacks, K: CredentialKeyProvider> Authenticator<C, K> {
+         } else {
+             // PIN incorrect - decrement retry counter
+             self.pin_state.retries = self.pin_state.retries.saturating_sub(1);
++            self.pin_consecutive_failures = self.pin_consecutive_failures.saturating_add(1);
+ 
+             // If retries exhausted, apply lock
+@@ -693,6 +713,9 @@ impl<C: AuthenticatorCallbacks, K: CredentialKeyProvider> Authenticator<C, K> {
+                 self.save_pin_state()?;
+                 Err(StatusCode::PinBlocked)
++            } else if self.is_pin_auth_blocked() {
++                self.save_pin_state()?;
++                Err(StatusCode::PinAuthBlocked)
+             } else {
+                 self.save_pin_state()?;
+@@ -721,6 +744,7 @@ impl<C: AuthenticatorCallbacks, K: CredentialKeyProvider> Authenticator<C, K> {
+     /// Persistence errors are propagated to allow callers to handle storage failures.
+     pub(crate) fn decrement_pin_retries(&mut self) -> Result<(), StatusCode> {
+         self.pin_state.retries = self.pin_state.retries.saturating_sub(1);
++        self.pin_consecutive_failures = self.pin_consecutive_failures.saturating_add(1);
+         self.save_pin_state()
+     }
+@@ -732,6 +756,7 @@ impl<C: AuthenticatorCallbacks, K: CredentialKeyProvider> Authenticator<C, K> {
+         self.pin_state.retries = self.config.max_pin_retries;
+         self.pin_state.locked_until = None;
++        self.pin_consecutive_failures = 0;
+         self.save_pin_state()
+@@ -779,6 +804,9 @@ impl<C: AuthenticatorCallbacks, K: CredentialKeyProvider> Authenticator<C, K> {
+ 
+         // Create and store token
+         let now = self.callbacks.get_timestamp_ms();
++        if now == 0 {
++            return Err(StatusCode::PinTokenExpired);
++        }
+         let token = PinToken::new(token_bytes, permissions, rp_id, now);
+@@ -1111,6 +1139,7 @@ impl<C: AuthenticatorCallbacks, K: CredentialKeyProvider> Authenticator<C, K> {
+         self.pin_tokens.clear_token();
+         self.pin_protocol_keypairs.clear();
+         self.assertion_state = None;
++        self.pin_consecutive_failures = 0;
+ 
+         // Persist reset state if storage is configured
+diff --git a/soft-fido2-ctap/src/commands/client_pin.rs b/soft-fido2-ctap/src/commands/client_pin.rs
+index 49a7785..0000000 100644
+--- a/soft-fido2-ctap/src/commands/client_pin.rs
++++ b/soft-fido2-ctap/src/commands/client_pin.rs
+@@ -134,6 +134,7 @@ fn handle_get_pin_retries<
+ ) -> Result<Vec<u8>> {
+     MapBuilder::new()
+         .insert(resp_keys::PIN_RETRIES, auth.pin_retries() as i32)?
++        .insert(resp_keys::POWER_CYCLE_STATE, auth.is_pin_auth_blocked())?
+         .build()
+ }
+@@ -342,6 +343,9 @@ fn handle_change_pin<C: AuthenticatorCallbacks, K: crate::key_provider::CredentialKeyProvider>(
+         if auth.is_pin_blocked() {
+             return Err(StatusCode::PinBlocked);
+         }
++        if auth.is_pin_auth_blocked() {
++            return Err(StatusCode::PinAuthBlocked);
++        }
+         return Err(StatusCode::PinInvalid);
+     }
+@@ -389,6 +393,9 @@ fn handle_get_pin_token<
+     if auth.is_pin_blocked() {
+         return Err(StatusCode::PinBlocked);
+     }
++    if auth.is_pin_auth_blocked() {
++        return Err(StatusCode::PinAuthBlocked);
++    }
+@@ -449,6 +456,9 @@ fn handle_get_pin_token<
+         if auth.is_pin_blocked() {
+             return Err(StatusCode::PinBlocked);
+         }
++        if auth.is_pin_auth_blocked() {
++            return Err(StatusCode::PinAuthBlocked);
++        }
+         return Err(StatusCode::PinInvalid);
+@@ -493,6 +503,9 @@ fn handle_get_pin_uv_auth_token_using_pin_with_permissions<
+     if auth.is_pin_blocked() {
+         return Err(StatusCode::PinBlocked);
+     }
++    if auth.is_pin_auth_blocked() {
++        return Err(StatusCode::PinAuthBlocked);
++    }
+@@ -584,6 +597,9 @@ fn handle_get_pin_uv_auth_token_using_pin_with_permissions<
+         if auth.is_pin_blocked() {
+             return Err(StatusCode::PinBlocked);
+         }
++        if auth.is_pin_auth_blocked() {
++            return Err(StatusCode::PinAuthBlocked);
++        }
+         return Err(StatusCode::PinInvalid);
+     }
+diff --git a/soft-fido2-ctap/src/pin_token.rs b/soft-fido2-ctap/src/pin_token.rs
+index 3b8a740..0000000 100644
+--- a/soft-fido2-ctap/src/pin_token.rs
++++ b/soft-fido2-ctap/src/pin_token.rs
+@@ -153,7 +153,9 @@ impl PinToken {
+     /// Check if token is still valid (within lifetime)
+     pub fn is_valid(&self, now: u64) -> bool {
++        if now == 0 || self.created_at == 0 || now < self.created_at {
++            return false;
++        }
+         let age = now.saturating_sub(self.created_at);
+         age < LIFETIME_MS
+     }
+@@ -166,6 +168,9 @@ impl PinToken {
+     /// within 19 seconds of creation, but operations started within that
+     /// window can continue until the token's full lifetime expires.
+     pub fn is_within_usage_window(&self, now: u64) -> bool {
++        if now == 0 || self.created_at == 0 || now < self.created_at {
++            return false;
++        }
+         let age = now.saturating_sub(self.created_at);
+         age < USAGE_WINDOW_MS
+@@ -535,6 +540,19 @@ mod tests {
+         assert_eq!(result, Err(StatusCode::PinTokenExpired));
+     }
++
++    #[test]
++    fn test_token_fails_closed_without_clock_or_after_clock_rollback() {
++        let token_data = [0x42u8; 32];
++        let permissions = Permission::MakeCredential.to_u8();
++
++        let zero_clock = PinToken::new(token_data, permissions, None, 0);
++        assert!(!zero_clock.is_valid(0));
++
++        let token = PinToken::new(token_data, permissions, None, 1000);
++        assert!(!token.is_valid(0));
++        assert!(!token.is_valid(999));
++    }
+ 
+     #[test]
+     fn test_token_manager_basic() {
+diff --git a/soft-fido2-ctap/src/test_utils.rs b/soft-fido2-ctap/src/test_utils.rs
+index f1e02cb..0000000 100644
+--- a/soft-fido2-ctap/src/test_utils.rs
++++ b/soft-fido2-ctap/src/test_utils.rs
+@@ -22,7 +22,7 @@ pub struct MockCallbacks;
+ 
+ impl PlatformCallbacks for MockCallbacks {
+     fn get_timestamp_ms(&self) -> u64 {
+-        0
++        1_000
+     }
+ }
