@@ -40,7 +40,9 @@ pub use ed25519_dalek::SIGNATURE_LENGTH;
 /// ```
 pub fn generate_keypair() -> (Zeroizing<[u8; 32]>, Vec<u8>) {
     let mut secret_key = [0u8; 32];
-    SysRng.try_fill_bytes(&mut secret_key).expect("SysRng failed");
+    SysRng
+        .try_fill_bytes(&mut secret_key)
+        .expect("SysRng failed");
 
     let signing_key = SigningKey::from_bytes(&secret_key);
     let verifying_key = signing_key.verifying_key();
