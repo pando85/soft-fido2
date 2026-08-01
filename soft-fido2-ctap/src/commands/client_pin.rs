@@ -1522,4 +1522,89 @@ mod tests {
             Err(StatusCode::UnauthorizedPermission)
         );
     }
+
+    #[test]
+    fn uv_with_permissions_path_rejects_unsupported_permissions() {
+        let mut auth = create_test_authenticator();
+
+        let request = MapBuilder::new()
+            .insert(req_keys::SUBCOMMAND, 0x06u8)
+            .unwrap()
+            .insert(req_keys::PIN_UV_AUTH_PROTOCOL, 1u8)
+            .unwrap()
+            .insert(
+                req_keys::KEY_AGREEMENT,
+                MapBuilder::new().build_value().unwrap(),
+            )
+            .unwrap()
+            .insert(req_keys::PERMISSIONS, Permission::BioEnrollment as u8)
+            .unwrap()
+            .build()
+            .unwrap();
+
+        assert_eq!(
+            handle(&mut auth, &request),
+            Err(StatusCode::UnauthorizedPermission)
+        );
+
+        let request = MapBuilder::new()
+            .insert(req_keys::SUBCOMMAND, 0x06u8)
+            .unwrap()
+            .insert(req_keys::PIN_UV_AUTH_PROTOCOL, 1u8)
+            .unwrap()
+            .insert(
+                req_keys::KEY_AGREEMENT,
+                MapBuilder::new().build_value().unwrap(),
+            )
+            .unwrap()
+            .insert(req_keys::PERMISSIONS, 0x40u8)
+            .unwrap()
+            .build()
+            .unwrap();
+
+        assert_eq!(
+            handle(&mut auth, &request),
+            Err(StatusCode::InvalidParameter)
+        );
+    }
+
+    #[test]
+    fn pin_with_permissions_path_rejects_unsupported_permissions() {
+        let mut auth = create_test_authenticator();
+        auth.set_pin("1234").unwrap();
+
+        let request = MapBuilder::new()
+            .insert(req_keys::SUBCOMMAND, 0x09u8)
+            .unwrap()
+            .insert(req_keys::PIN_UV_AUTH_PROTOCOL, 1u8)
+            .unwrap()
+            .insert_bytes(req_keys::PIN_HASH_ENC, &[0u8; 16])
+            .unwrap()
+            .insert(req_keys::PERMISSIONS, Permission::LargeBlobWrite as u8)
+            .unwrap()
+            .build()
+            .unwrap();
+
+        assert_eq!(
+            handle(&mut auth, &request),
+            Err(StatusCode::UnauthorizedPermission)
+        );
+
+        let request = MapBuilder::new()
+            .insert(req_keys::SUBCOMMAND, 0x09u8)
+            .unwrap()
+            .insert(req_keys::PIN_UV_AUTH_PROTOCOL, 1u8)
+            .unwrap()
+            .insert_bytes(req_keys::PIN_HASH_ENC, &[0u8; 16])
+            .unwrap()
+            .insert(req_keys::PERMISSIONS, 0x40u8)
+            .unwrap()
+            .build()
+            .unwrap();
+
+        assert_eq!(
+            handle(&mut auth, &request),
+            Err(StatusCode::InvalidParameter)
+        );
+    }
 }
