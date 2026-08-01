@@ -3,43 +3,78 @@ from pathlib import Path
 status_path = Path("soft-fido2-ctap/src/status.rs")
 text = status_path.read_text()
 
-replacements = {
-    """    /// PIN required for this operation
-    PinRequired = 0x36,
-""": """    /// PIN/UV auth token required
-    PuatRequired = 0x36,
-""",
-    """    /// PIN token expired
-    PinTokenExpired = 0x38,
-
-""": "",
-    """    /// PIN/UV auth token required
+# Remove obsolete modern-incompatible entries before renaming the legacy 0x36
+# variant, otherwise the intermediate source contains duplicate PuatRequired arms.
+replacements = [
+    (
+        """    /// PIN/UV auth token required
     PuatRequired = 0x41,
 
-""": "",
-    """            Self::PinRequired => \"PIN required\",
-""": """            Self::PuatRequired => \"PIN/UV auth token required\",
 """,
-    """            Self::PinTokenExpired => \"PIN token expired\",
-""": "",
-    """            Self::PuatRequired => \"PIN/UV auth token required\",
-""": "",
-    """            0x36 => Self::PinRequired,
-""": """            0x36 => Self::PuatRequired,
+        "",
+    ),
+    (
+        """            Self::PuatRequired => \"PIN/UV auth token required\",
 """,
-    """            0x38 => Self::PinTokenExpired,
-""": "",
-    """            0x41 => Self::PuatRequired,
-""": "",
-    """            \"PinRequired\" => Ok(Self::PinRequired),
-""": """            \"PinRequired\" => Ok(Self::PuatRequired),
+        "",
+    ),
+    (
+        """            0x41 => Self::PuatRequired,
 """,
-    """            \"PinTokenExpired\" => Ok(Self::PinTokenExpired),
-""": """            \"PinTokenExpired\" => Ok(Self::PinAuthInvalid),
-""",
-}
+        "",
+    ),
+    (
+        """    /// PIN token expired
+    PinTokenExpired = 0x38,
 
-for old, new in replacements.items():
+""",
+        "",
+    ),
+    (
+        """            Self::PinTokenExpired => \"PIN token expired\",
+""",
+        "",
+    ),
+    (
+        """            0x38 => Self::PinTokenExpired,
+""",
+        "",
+    ),
+    (
+        """    /// PIN required for this operation
+    PinRequired = 0x36,
+""",
+        """    /// PIN/UV auth token required
+    PuatRequired = 0x36,
+""",
+    ),
+    (
+        """            Self::PinRequired => \"PIN required\",
+""",
+        """            Self::PuatRequired => \"PIN/UV auth token required\",
+""",
+    ),
+    (
+        """            0x36 => Self::PinRequired,
+""",
+        """            0x36 => Self::PuatRequired,
+""",
+    ),
+    (
+        """            \"PinRequired\" => Ok(Self::PinRequired),
+""",
+        """            \"PinRequired\" => Ok(Self::PuatRequired),
+""",
+    ),
+    (
+        """            \"PinTokenExpired\" => Ok(Self::PinTokenExpired),
+""",
+        """            \"PinTokenExpired\" => Ok(Self::PinAuthInvalid),
+""",
+    ),
+]
+
+for old, new in replacements:
     assert text.count(old) == 1, repr(old)
     text = text.replace(old, new, 1)
 
