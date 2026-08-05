@@ -68,7 +68,7 @@ pub mod uhid;
 // Re-export main types at root level for convenience
 pub use authenticator::{
     Authenticator, AuthenticatorCallbacks, AuthenticatorConfig, AuthenticatorConfigBuilder,
-    UpResult, UvResult,
+    BuiltInUvState, UpResult, UvResult,
 };
 pub use ctap::CtapCommand;
 pub use error::{Error, Result};

@@ -579,6 +579,7 @@ fn handle_get_pin_uv_auth_token_using_uv_with_permissions<
 
     // Check permission authorization based on authenticator options
     // Permission bits: mc=0x01, ga=0x02, cm=0x04, be=0x08, lbw=0x10, acfg=0x20
+    let built_in_uv_state = auth.built_in_uv_state();
     let config = auth.config();
 
     // cm (0x04) requires credMgmt to be true
@@ -610,7 +611,7 @@ fn handle_get_pin_uv_auth_token_using_uv_with_permissions<
 
     // Check if built-in UV is configured
     // For our implementation, UV is always available via callbacks
-    if config.options.uv.is_none() || !config.options.uv.unwrap() {
+    if !built_in_uv_state.is_configured() {
         return Err(StatusCode::NotAllowed);
     }
 
@@ -758,13 +759,39 @@ mod tests {
     use super::*;
 
     use crate::{
-        authenticator::{Authenticator, AuthenticatorConfig},
+        authenticator::{Authenticator, AuthenticatorConfig, AuthenticatorOptions},
         test_utils::MockCallbacks,
     };
 
     fn create_test_authenticator() -> Authenticator<MockCallbacks> {
         let config = AuthenticatorConfig::new();
         Authenticator::new(config, MockCallbacks)
+    }
+
+    #[test]
+    fn test_uv_token_request_rejects_supported_not_configured_without_retry() {
+        let config = AuthenticatorConfig::new().with_options(AuthenticatorOptions {
+            uv: Some(false),
+            pin_uv_auth_token: true,
+            ..AuthenticatorOptions::new()
+        });
+        let mut auth = Authenticator::new(config, MockCallbacks);
+        let retries = auth.uv_retries();
+        let key_agreement = MapBuilder::new().build_value().unwrap();
+        let request = MapBuilder::new()
+            .insert(req_keys::SUBCOMMAND, 0x06u8)
+            .unwrap()
+            .insert(req_keys::PIN_UV_AUTH_PROTOCOL, 2u8)
+            .unwrap()
+            .insert(req_keys::KEY_AGREEMENT, key_agreement)
+            .unwrap()
+            .insert(req_keys::PERMISSIONS, 0x01u8)
+            .unwrap()
+            .build()
+            .unwrap();
+
+        assert_eq!(handle(&mut auth, &request), Err(StatusCode::NotAllowed));
+        assert_eq!(auth.uv_retries(), retries);
     }
 
     #[test]
