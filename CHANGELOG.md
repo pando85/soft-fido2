@@ -5,6 +5,23 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/), and this project
 adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [v0.17.0](https://github.com/pando85/soft-fido2/tree/v0.17.0) - 2026-08-05
+
+### Added
+
+- Add CTAP 2.3 negotiation and authorization regression matrix (#161) ([a86cda7](https://github.com/pando85/soft-fido2/commit/a86cda7))
+- Gate advertised FIDO versions on mandatory feature completeness (#160) ([dc4737f](https://github.com/pando85/soft-fido2/commit/dc4737f))
+- Detect wrapped credentials in makeCredential excludeList (#159) ([d665126](https://github.com/pando85/soft-fido2/commit/d665126))
+
+### Fixed
+
+- Align CTAP status-code values with FIDO_2_3 (#158) ([f2a72aa](https://github.com/pando85/soft-fido2/commit/f2a72aa))
+- Restrict legacy getPinToken tokens to mc|ga permissions (#157) ([5653de5](https://github.com/pando85/soft-fido2/commit/5653de5))
+
+### Build
+
+- deps: Update dependency rust to 1.97 (#165) ([8b7e0ab](https://github.com/pando85/soft-fido2/commit/8b7e0ab92356c526ff193f3f6bf316df361958ab))
+
 ## [v0.16.2](https://github.com/pando85/soft-fido2/tree/v0.16.2) - 2026-08-05
 
 ### Fixed
