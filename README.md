@@ -5,14 +5,14 @@
 [![Documentation](https://docs.rs/soft-fido2/badge.svg)](https://docs.rs/soft-fido2)
 [![License](https://img.shields.io/badge/license-GPL--3.0-blue.svg)](LICENSE)
 
-A pure Rust implementation of FIDO2/WebAuthn CTAP 2.0/2.1/2.2 protocol.
+A pure Rust implementation of a FIDO2/WebAuthn CTAP 2.0 authenticator core with selected CTAP 2.1 features.
 
 **soft-fido2** provides both **authenticator** and **client** FIDO2 capabilities for complete
 WebAuthn authentication flows.
 
 ## Features
 
-- **Full CTAP 2.0/2.1/2.2 Protocol** - Complete implementation of FIDO2 Authenticator Protocol
+- **CTAP 2.0 Core** - Registration, assertion, ClientPIN, credential management, and USB/UHID transport, with selected newer features
 - **no_std Support** - Core protocol and cryptography work in embedded environments
 - **Multiple Transports** - USB HID and Linux UHID virtual device support
 - **Testing-First** - Designed for WebAuthn integration testing and development
@@ -111,7 +111,7 @@ for details.
 
 ## References
 
-- [FIDO2 CTAP Specification](https://fidoalliance.org/specs/fido-v2.1-ps-20210615/)
+- [FIDO2 CTAP 2.3 Specification](https://fidoalliance.org/specs/fido-v2.3-ps-20260226/)
 - [WebAuthn Specification](https://www.w3.org/TR/webauthn-2/)
 - [COSE (CBOR Object Signing and Encryption)](https://tools.ietf.org/html/rfc8152)
 
