@@ -79,6 +79,11 @@ pub enum Permission {
     ///
     /// Allows authenticatorConfig operations
     AuthenticatorConfiguration = 0x20,
+
+    /// Persistent read-only credential management permission (0x40)
+    ///
+    /// Allows read-only credential management through the persistent token.
+    PersistentCredentialManagementReadOnly = 0x40,
 }
 
 impl Permission {
@@ -391,6 +396,10 @@ mod tests {
         assert_eq!(Permission::BioEnrollment.to_u8(), 0x08);
         assert_eq!(Permission::LargeBlobWrite.to_u8(), 0x10);
         assert_eq!(Permission::AuthenticatorConfiguration.to_u8(), 0x20);
+        assert_eq!(
+            Permission::PersistentCredentialManagementReadOnly.to_u8(),
+            0x40
+        );
     }
 
     #[test]
