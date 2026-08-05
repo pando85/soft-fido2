@@ -222,12 +222,12 @@ impl PinToken {
     ) -> Result<(), StatusCode> {
         // Check token is still valid
         if !self.is_valid(now) {
-            return Err(StatusCode::PinTokenExpired);
+            return Err(StatusCode::PinAuthInvalid);
         }
 
         // Check usage window for new operations
         if !self.is_within_usage_window(now) {
-            return Err(StatusCode::PinTokenExpired);
+            return Err(StatusCode::PinAuthInvalid);
         }
 
         // Check permission is granted
@@ -342,7 +342,7 @@ impl PinTokenManager {
     ) -> Result<(), StatusCode> {
         match self.get_token_mut(now) {
             Some(token) => token.verify_permission(permission, rp_id, now),
-            None => Err(StatusCode::PinRequired),
+            None => Err(StatusCode::PuatRequired),
         }
     }
 
@@ -536,7 +536,7 @@ mod tests {
         assert!(!token.is_within_usage_window(later)); // But usage window expired
 
         let result = token.verify_permission(Permission::MakeCredential, None, later);
-        assert_eq!(result, Err(StatusCode::PinTokenExpired));
+        assert_eq!(result, Err(StatusCode::PinAuthInvalid));
     }
 
     #[test]
@@ -552,7 +552,7 @@ mod tests {
         assert!(!token.is_valid(later));
 
         let result = token.verify_permission(Permission::MakeCredential, None, later);
-        assert_eq!(result, Err(StatusCode::PinTokenExpired));
+        assert_eq!(result, Err(StatusCode::PinAuthInvalid));
     }
 
     #[test]
@@ -592,7 +592,7 @@ mod tests {
         // No token - should fail
         let result =
             manager.verify_permission(Permission::MakeCredential, Some("example.com"), now);
-        assert_eq!(result, Err(StatusCode::PinRequired));
+        assert_eq!(result, Err(StatusCode::PuatRequired));
 
         // Set valid token
         manager.set_token(create_test_token(now));

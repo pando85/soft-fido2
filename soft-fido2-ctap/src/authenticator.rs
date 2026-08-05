@@ -876,7 +876,7 @@ impl<C: AuthenticatorCallbacks, K: CredentialKeyProvider> Authenticator<C, K> {
         // tokens cannot be issued safely.
         let now = self.callbacks.get_timestamp_ms();
         if now == 0 {
-            return Err(StatusCode::PinTokenExpired);
+            return Err(StatusCode::PinAuthInvalid);
         }
         let token = PinToken::new(token_bytes, permissions, rp_id, now);
         let value = *token.value();
@@ -926,7 +926,7 @@ impl<C: AuthenticatorCallbacks, K: CredentialKeyProvider> Authenticator<C, K> {
         let token = self
             .pin_tokens
             .get_token(now)
-            .ok_or(StatusCode::PinRequired)?;
+            .ok_or(StatusCode::PuatRequired)?;
 
         // Verify based on protocol version
         // Protocol v1 uses 16-byte HMAC, v2 uses 32-byte HMAC
