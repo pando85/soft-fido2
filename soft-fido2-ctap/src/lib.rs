@@ -27,7 +27,7 @@ pub mod test_utils;
 pub mod types;
 
 // Re-export commonly used types
-pub use authenticator::{Authenticator, AuthenticatorConfig};
+pub use authenticator::{Authenticator, AuthenticatorConfig, BuiltInUvState};
 #[cfg(feature = "transport")]
 pub use bridge::TransportBridge;
 pub use callbacks::{

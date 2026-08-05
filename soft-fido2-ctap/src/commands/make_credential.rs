@@ -216,7 +216,7 @@ pub fn handle<C: AuthenticatorCallbacks, K: CredentialKeyProvider>(
     // 5.3: If "uv" option is true, validate built-in UV support
     if options.uv {
         // Check if authenticator supports a built-in user verification method
-        if auth.config().options.uv != Some(true) {
+        if !auth.built_in_uv_state().is_configured() {
             return Err(StatusCode::InvalidOption);
         }
     }
