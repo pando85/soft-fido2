@@ -123,7 +123,7 @@ pub fn handle<C: AuthenticatorCallbacks, K: crate::key_provider::CredentialKeyPr
         ep: config.options.ep,
         rk: Some(config.options.rk),
         up: Some(config.options.up),
-        uv: config.options.uv,
+        uv: auth.built_in_uv_state().get_info_value(),
         plat: Some(config.options.plat),
         always_uv: Some(config.options.always_uv),
         cred_mgmt: Some(config.options.cred_mgmt),
@@ -199,10 +199,25 @@ mod tests {
     use super::*;
 
     use crate::{
-        authenticator::AuthenticatorConfig,
+        authenticator::{AuthenticatorConfig, AuthenticatorOptions, BuiltInUvState},
         cbor::{MapParser, Value},
         test_utils::MockCallbacks,
     };
+
+    fn option_bool(response: &[u8], name: &str) -> Option<bool> {
+        let parser = MapParser::from_bytes(response).unwrap();
+        let options: Value = parser.get(keys::OPTIONS).unwrap();
+        let Value::Map(options) = options else {
+            panic!("options must be a map");
+        };
+
+        options
+            .into_iter()
+            .find_map(|(key, value)| match (key, value) {
+                (Value::Text(key), Value::Bool(value)) if key == name => Some(value),
+                _ => None,
+            })
+    }
 
     #[test]
     fn test_get_info_basic() {
@@ -275,6 +290,29 @@ mod tests {
         let extensions: Vec<String> = parser.get(keys::EXTENSIONS).unwrap();
 
         assert_eq!(extensions, vec!["credProtect".to_string()]);
+    }
+
+    #[test]
+    fn test_get_info_derives_uv_from_runtime_state() {
+        let config = AuthenticatorConfig::new().with_options(AuthenticatorOptions {
+            uv: Some(true),
+            ..AuthenticatorOptions::new()
+        });
+        let mut auth = Authenticator::new(config, MockCallbacks);
+
+        assert_eq!(option_bool(&handle(&auth).unwrap(), "uv"), Some(true));
+
+        auth.set_built_in_uv_state(BuiltInUvState::SupportedNotConfigured)
+            .unwrap();
+        assert_eq!(option_bool(&handle(&auth).unwrap(), "uv"), Some(false));
+        assert_eq!(auth.config().options.uv, Some(true));
+
+        auth.set_built_in_uv_state(BuiltInUvState::Configured)
+            .unwrap();
+        assert_eq!(option_bool(&handle(&auth).unwrap(), "uv"), Some(true));
+
+        let unsupported = Authenticator::new(AuthenticatorConfig::new(), MockCallbacks);
+        assert_eq!(option_bool(&handle(&unsupported).unwrap(), "uv"), None);
     }
 
     #[test]

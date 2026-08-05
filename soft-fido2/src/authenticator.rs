@@ -6,6 +6,7 @@
 use crate::error::Error;
 use crate::error::Result;
 use crate::types::{Credential, CredentialBackupState, CredentialRef};
+pub use soft_fido2_ctap::authenticator::BuiltInUvState;
 use soft_fido2_ctap::authenticator::{
     Authenticator as CtapAuthenticator, AuthenticatorConfig as CtapConfig,
 };
@@ -898,6 +899,39 @@ impl<C: AuthenticatorCallbacks, K: CredentialKeyProvider + Send + 'static> Authe
         Ok(dispatcher.authenticator().uv_retries())
     }
 
+    /// Return the current built-in UV runtime state.
+    pub fn built_in_uv_state(&self) -> Result<BuiltInUvState> {
+        #[cfg(feature = "std")]
+        let dispatcher = self.dispatcher.lock().map_err(|_| Error::Other)?;
+        #[cfg(not(feature = "std"))]
+        let dispatcher = self.dispatcher.lock();
+
+        Ok(dispatcher.authenticator().built_in_uv_state())
+    }
+
+    /// Atomically transition built-in UV provisioning/availability.
+    pub fn set_built_in_uv_state(&mut self, state: BuiltInUvState) -> Result<()> {
+        #[cfg(feature = "std")]
+        let mut dispatcher = self.dispatcher.lock().map_err(|_| Error::Other)?;
+        #[cfg(not(feature = "std"))]
+        let mut dispatcher = self.dispatcher.lock();
+
+        dispatcher
+            .authenticator_mut()
+            .set_built_in_uv_state(state)
+            .map_err(Into::into)
+    }
+
+    /// Convenience transition between configured and supported-not-configured.
+    pub fn set_built_in_uv_configured(&mut self, configured: bool) -> Result<()> {
+        let state = if configured {
+            BuiltInUvState::Configured
+        } else {
+            BuiltInUvState::SupportedNotConfigured
+        };
+        self.set_built_in_uv_state(state)
+    }
+
     /// Reset UV retry counter to maximum value
     ///
     /// Delegates to the underlying CTAP authenticator's UV retry logic.
@@ -1114,6 +1148,32 @@ mod tests {
 
         assert_eq!(config.aaguid, [1u8; 16]);
         assert_eq!(config.max_credentials, 50);
+    }
+
+    #[test]
+    fn test_built_in_uv_state_machine_is_exposed() {
+        let options = crate::options::AuthenticatorOptions {
+            uv: Some(true),
+            ..Default::default()
+        };
+        let config = AuthenticatorConfig::builder().options(options).build();
+        let mut auth = Authenticator::with_config(TestCallbacks, config).unwrap();
+
+        assert_eq!(
+            auth.built_in_uv_state().unwrap(),
+            BuiltInUvState::Configured
+        );
+        auth.set_built_in_uv_state(BuiltInUvState::SupportedNotConfigured)
+            .unwrap();
+        assert_eq!(
+            auth.built_in_uv_state().unwrap(),
+            BuiltInUvState::SupportedNotConfigured
+        );
+        auth.set_built_in_uv_configured(true).unwrap();
+        assert_eq!(
+            auth.built_in_uv_state().unwrap(),
+            BuiltInUvState::Configured
+        );
     }
 
     #[test]

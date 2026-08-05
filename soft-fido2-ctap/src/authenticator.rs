@@ -341,6 +341,50 @@ impl AuthenticatorOptions {
     }
 }
 
+/// Runtime state of the authenticator's built-in user-verification method.
+///
+/// This mirrors the CTAP `authenticatorGetInfo.options.uv` tri-state while
+/// keeping runtime provisioning separate from immutable capability support.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum BuiltInUvState {
+    /// Built-in UV is not implemented by this authenticator.
+    Unsupported,
+    /// Built-in UV is supported but is not currently configured or available.
+    SupportedNotConfigured,
+    /// Built-in UV is supported and currently configured and available.
+    Configured,
+}
+
+impl BuiltInUvState {
+    /// Build the runtime state from the CTAP `uv` tri-state.
+    pub const fn from_get_info_value(value: Option<bool>) -> Self {
+        match value {
+            None => Self::Unsupported,
+            Some(false) => Self::SupportedNotConfigured,
+            Some(true) => Self::Configured,
+        }
+    }
+
+    /// Return the value that must be advertised in `authenticatorGetInfo`.
+    pub const fn get_info_value(self) -> Option<bool> {
+        match self {
+            Self::Unsupported => None,
+            Self::SupportedNotConfigured => Some(false),
+            Self::Configured => Some(true),
+        }
+    }
+
+    /// Whether this authenticator implements a built-in UV method.
+    pub const fn is_supported(self) -> bool {
+        !matches!(self, Self::Unsupported)
+    }
+
+    /// Whether built-in UV may currently be used by CTAP commands.
+    pub const fn is_configured(self) -> bool {
+        matches!(self, Self::Configured)
+    }
+}
+
 const ASSERTION_STATE_TIMEOUT_MS: u64 = 30_000;
 
 /// Context shared by authenticatorGetAssertion and authenticatorGetNextAssertion.
@@ -372,8 +416,11 @@ pub struct Authenticator<
     C: AuthenticatorCallbacks,
     K: CredentialKeyProvider = SoftwareCredentialKeyProvider,
 > {
-    /// Authenticator configuration
+    /// Authenticator configuration and immutable capabilities.
     config: AuthenticatorConfig,
+
+    /// Runtime provisioning/availability of built-in user verification.
+    built_in_uv_state: BuiltInUvState,
 
     /// Callbacks for user interaction and storage
     callbacks: Arc<C>,
@@ -460,12 +507,14 @@ impl<C: AuthenticatorCallbacks, K: CredentialKeyProvider> Authenticator<C, K> {
                 key
             }));
 
+        let built_in_uv_state = BuiltInUvState::from_get_info_value(config.options.uv);
         let max_pin_retries = config.max_pin_retries;
         let mut pin_state = PinState::new();
         pin_state.uv_retries = max_pin_retries;
 
         Self {
             config,
+            built_in_uv_state,
             callbacks: Arc::new(callbacks),
             key_provider,
             pin_state,
@@ -556,18 +605,54 @@ impl<C: AuthenticatorCallbacks, K: CredentialKeyProvider> Authenticator<C, K> {
         self.pin_state.is_locked(now)
     }
 
-    /// Check if built-in user verification is enabled
+    /// Return the current built-in UV runtime state.
+    pub fn built_in_uv_state(&self) -> BuiltInUvState {
+        self.built_in_uv_state
+    }
+
+    /// Atomically transition the built-in UV runtime state.
     ///
-    /// Built-in UV refers to biometric authentication methods (fingerprint,
-    /// face recognition, iris scan, etc.) that are built into the authenticator.
+    /// Capability support is immutable after construction: an unsupported
+    /// authenticator cannot become supported at runtime, and a supported
+    /// authenticator cannot remove that capability. Any real state transition
+    /// invalidates active PIN/UV tokens and pending assertion state so policy
+    /// changes take effect immediately.
+    pub fn set_built_in_uv_state(&mut self, state: BuiltInUvState) -> Result<(), StatusCode> {
+        use BuiltInUvState::Unsupported;
+
+        let current = self.built_in_uv_state;
+        if current == state {
+            return Ok(());
+        }
+
+        match (current, state) {
+            (Unsupported, _) | (_, Unsupported) => {
+                return Err(StatusCode::UnsupportedOption);
+            }
+            _ => {}
+        }
+
+        self.built_in_uv_state = state;
+        self.pin_tokens.clear_token();
+        self.assertion_state = None;
+        Ok(())
+    }
+
+    /// Convenience transition between configured and supported-not-configured.
+    pub fn set_built_in_uv_configured(&mut self, configured: bool) -> Result<(), StatusCode> {
+        let state = if configured {
+            BuiltInUvState::Configured
+        } else {
+            BuiltInUvState::SupportedNotConfigured
+        };
+        self.set_built_in_uv_state(state)
+    }
+
+    /// Check if built-in user verification is enabled.
     ///
-    /// For this virtual authenticator implementation, we consider built-in UV
-    /// as enabled if the `uv` config option is set to true. In a hardware
-    /// authenticator, this would check if biometric templates are enrolled.
-    ///
-    /// Note: Client PIN is NOT a built-in UV method per FIDO2 spec.
+    /// Note: Client PIN is not a built-in UV method.
     pub fn has_built_in_uv_enabled(&self) -> bool {
-        self.config.options.uv == Some(true)
+        self.built_in_uv_state.is_configured()
     }
 
     /// Check if authenticator is protected by any form of user verification
@@ -2147,6 +2232,42 @@ mod tests {
 
         // PIN meets new minimum
         assert!(auth.set_pin("12345678").is_ok());
+    }
+
+    #[test]
+    fn test_built_in_uv_state_machine_preserves_capability() {
+        let config = AuthenticatorConfig::new().with_options(AuthenticatorOptions {
+            uv: Some(true),
+            ..AuthenticatorOptions::new()
+        });
+        let mut auth = Authenticator::new(config, MockCallbacks);
+
+        assert_eq!(auth.built_in_uv_state(), BuiltInUvState::Configured);
+        auth.set_built_in_uv_state(BuiltInUvState::SupportedNotConfigured)
+            .unwrap();
+        assert_eq!(
+            auth.built_in_uv_state(),
+            BuiltInUvState::SupportedNotConfigured
+        );
+        assert_eq!(auth.config().options.uv, Some(true));
+        assert!(!auth.has_built_in_uv_enabled());
+
+        auth.set_built_in_uv_configured(true).unwrap();
+        assert_eq!(auth.built_in_uv_state(), BuiltInUvState::Configured);
+        assert!(auth.has_built_in_uv_enabled());
+
+        let config = AuthenticatorConfig::new().with_options(AuthenticatorOptions {
+            uv: None,
+            ..AuthenticatorOptions::new()
+        });
+        let mut unsupported = Authenticator::new(config, MockCallbacks);
+
+        assert_eq!(unsupported.built_in_uv_state(), BuiltInUvState::Unsupported);
+        assert_eq!(
+            unsupported.set_built_in_uv_configured(true),
+            Err(StatusCode::UnsupportedOption)
+        );
+        assert_eq!(unsupported.config().options.uv, None);
     }
 
     #[test]

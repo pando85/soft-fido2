@@ -274,17 +274,9 @@ pub fn handle<C: AuthenticatorCallbacks, K: CredentialKeyProvider>(
         options.uv = false;
     }
 
-    // Step 4.3: If "uv" option is present and true
-    if options.uv {
-        // Check if authenticator supports built-in user verification
-        if !auth.config().options.uv.unwrap_or(false) {
-            return Err(StatusCode::InvalidOption);
-        }
-        // Check if built-in user verification method is enabled
-        // Built-in UV refers to biometric methods (fingerprint, face recognition, etc.)
-        if !auth.has_built_in_uv_enabled() {
-            return Err(StatusCode::InvalidOption);
-        }
+    // Step 4.3: If "uv" is true, built-in UV must be configured now.
+    if options.uv && !auth.built_in_uv_state().is_configured() {
+        return Err(StatusCode::InvalidOption);
     }
 
     // Step 4.4: If "rk" option is present, return error
@@ -789,6 +781,41 @@ fn build_authenticator_data(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    use crate::{
+        authenticator::{Authenticator, AuthenticatorConfig, AuthenticatorOptions, BuiltInUvState},
+        cbor::Value,
+        test_utils::MockCallbacks,
+    };
+
+    #[test]
+    fn test_get_assertion_uses_runtime_built_in_uv_state() {
+        let config = AuthenticatorConfig::new().with_options(AuthenticatorOptions {
+            uv: Some(false),
+            pin_uv_auth_token: true,
+            ..AuthenticatorOptions::new()
+        });
+        let mut auth = Authenticator::new(config, MockCallbacks);
+        auth.set_built_in_uv_state(BuiltInUvState::Configured)
+            .unwrap();
+
+        let options = Value::Map(vec![(Value::Text("uv".into()), Value::Bool(true))]);
+        let request = MapBuilder::new()
+            .insert(req_keys::RP_ID, "example.com")
+            .unwrap()
+            .insert_bytes(req_keys::CLIENT_DATA_HASH, &[0x42; 32])
+            .unwrap()
+            .insert(req_keys::OPTIONS, options)
+            .unwrap()
+            .build()
+            .unwrap();
+
+        assert_eq!(handle(&mut auth, &request), Err(StatusCode::NoCredentials));
+
+        auth.set_built_in_uv_state(BuiltInUvState::SupportedNotConfigured)
+            .unwrap();
+        assert_eq!(handle(&mut auth, &request), Err(StatusCode::InvalidOption));
+    }
 
     #[test]
     fn test_build_authenticator_data() {
