@@ -556,6 +556,17 @@ impl<C: AuthenticatorCallbacks, K: CredentialKeyProvider> Authenticator<C, K> {
         self.pin_state.is_locked(now)
     }
 
+    /// Update whether built-in user verification is currently configured.
+    ///
+    /// This updates the `uv` value advertised by `authenticatorGetInfo` and
+    /// the built-in UV routing used by CTAP commands. If built-in UV is
+    /// unsupported (`uv` is absent), this method has no effect.
+    pub fn set_built_in_uv_configured(&mut self, configured: bool) {
+        if self.config.options.uv.is_some() {
+            self.config.options.uv = Some(configured);
+        }
+    }
+
     /// Check if built-in user verification is enabled
     ///
     /// Built-in UV refers to biometric authentication methods (fingerprint,
@@ -2147,6 +2158,33 @@ mod tests {
 
         // PIN meets new minimum
         assert!(auth.set_pin("12345678").is_ok());
+    }
+
+    #[test]
+    fn test_set_built_in_uv_configured_preserves_support_state() {
+        let config = AuthenticatorConfig::new().with_options(AuthenticatorOptions {
+            uv: Some(true),
+            ..AuthenticatorOptions::new()
+        });
+        let mut auth = Authenticator::new(config, MockCallbacks);
+
+        auth.set_built_in_uv_configured(false);
+        assert_eq!(auth.config().options.uv, Some(false));
+        assert!(!auth.has_built_in_uv_enabled());
+
+        auth.set_built_in_uv_configured(true);
+        assert_eq!(auth.config().options.uv, Some(true));
+        assert!(auth.has_built_in_uv_enabled());
+
+        let config = AuthenticatorConfig::new().with_options(AuthenticatorOptions {
+            uv: None,
+            ..AuthenticatorOptions::new()
+        });
+        let mut unsupported = Authenticator::new(config, MockCallbacks);
+
+        unsupported.set_built_in_uv_configured(true);
+        assert_eq!(unsupported.config().options.uv, None);
+        assert!(!unsupported.has_built_in_uv_enabled());
     }
 
     #[test]
