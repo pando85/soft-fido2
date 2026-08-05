@@ -334,7 +334,7 @@ impl AuthenticatorOptions {
             bio_enroll: Some(false),
             ep: None,
             large_blobs: None,
-            pin_uv_auth_token: true,
+            pin_uv_auth_token: false,
             set_min_pin_length: false,
             make_cred_uv_not_rqd: false,
         }
@@ -618,7 +618,7 @@ impl<C: AuthenticatorCallbacks, K: CredentialKeyProvider> Authenticator<C, K> {
     /// invalidates active PIN/UV tokens and pending assertion state so policy
     /// changes take effect immediately.
     pub fn set_built_in_uv_state(&mut self, state: BuiltInUvState) -> Result<(), StatusCode> {
-        use BuiltInUvState::{Configured, Unsupported};
+        use BuiltInUvState::Unsupported;
 
         let current = self.built_in_uv_state;
         if current == state {
@@ -628,9 +628,6 @@ impl<C: AuthenticatorCallbacks, K: CredentialKeyProvider> Authenticator<C, K> {
         match (current, state) {
             (Unsupported, _) | (_, Unsupported) => {
                 return Err(StatusCode::UnsupportedOption);
-            }
-            (_, Configured) if !self.config.options.pin_uv_auth_token => {
-                return Err(StatusCode::InvalidOption);
             }
             _ => {}
         }
@@ -2271,25 +2268,6 @@ mod tests {
             Err(StatusCode::UnsupportedOption)
         );
         assert_eq!(unsupported.config().options.uv, None);
-    }
-
-    #[test]
-    fn test_configuring_uv_requires_pin_uv_auth_token_support() {
-        let config = AuthenticatorConfig::new().with_options(AuthenticatorOptions {
-            uv: Some(false),
-            pin_uv_auth_token: false,
-            ..AuthenticatorOptions::new()
-        });
-        let mut auth = Authenticator::new(config, MockCallbacks);
-
-        assert_eq!(
-            auth.set_built_in_uv_state(BuiltInUvState::Configured),
-            Err(StatusCode::InvalidOption)
-        );
-        assert_eq!(
-            auth.built_in_uv_state(),
-            BuiltInUvState::SupportedNotConfigured
-        );
     }
 
     #[test]
