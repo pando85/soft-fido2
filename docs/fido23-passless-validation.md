@@ -19,7 +19,7 @@ The workflow then patches these Passless dependencies to local paths:
 - `soft-fido2-ctap`
 - `soft-fido2-transport`
 
-It checks `passless-core`, `passless-uhid`, and `passless-rs`. This validates Rust API, feature,
+It checks `passless-core` and `passless-rs`. This validates Rust API, feature,
 type, and transport integration without requiring a privileged kernel device.
 
 ## Privileged UHID validation
@@ -31,8 +31,8 @@ sudo modprobe uhid
 sudo test -r /dev/uhid -a -w /dev/uhid
 
 # In Passless, patch the three soft-fido2 crates to the local checkout as done by CI.
-cargo build -p passless-rs -p passless-uhid
-cargo test -p passless-core -p passless-uhid
+cargo build -p passless-rs
+cargo test -p passless-core
 
 # Start the virtual authenticator using the normal Passless configuration and verify:
 # 1. libfido2/browser discovery;
