@@ -716,6 +716,27 @@ fn collect_user_presence<C: AuthenticatorCallbacks, K: CredentialKeyProvider>(
     Ok(())
 }
 
+/// credProtect level stored when the client did not send the extension.
+///
+/// CTAP 2.1 leaves the default to the authenticator. When UV was performed the
+/// configured `default_cred_protect_with_uv` is used (level 2 by default), which
+/// hides discoverable credentials from unverified requests without an allowList
+/// but still permits allowList signing with `up` only (e.g. OpenSSH `*-sk`
+/// keys). Without UV, level 1 is stored.
+///
+/// Non-discoverable credentials carry no stored level: their credential ID is
+/// only usable through an allowList, which matches level 2 semantics.
+fn default_cred_protect_level<C: AuthenticatorCallbacks, K: CredentialKeyProvider>(
+    auth: &Authenticator<C, K>,
+    uv_performed: bool,
+) -> u8 {
+    if uv_performed {
+        auth.config().default_cred_protect_with_uv.to_u8()
+    } else {
+        CredProtect::UserVerificationOptional as u8
+    }
+}
+
 /// Step 17: Create credential (resident or non-resident)
 #[allow(clippy::too_many_arguments)]
 fn create_credential<C: AuthenticatorCallbacks, K: CredentialKeyProvider>(
@@ -746,13 +767,7 @@ fn create_credential<C: AuthenticatorCallbacks, K: CredentialKeyProvider>(
         let cred_protect_value = extensions
             .cred_protect
             .map(|p| p.to_u8())
-            .unwrap_or_else(|| {
-                if response_state.uv {
-                    CredProtect::UserVerificationRequired as u8
-                } else {
-                    CredProtect::UserVerificationOptional as u8
-                }
-            });
+            .unwrap_or_else(|| default_cred_protect_level(auth, response_state.uv));
 
         let credential = crate::types::Credential {
             id: id.clone(),
@@ -1311,6 +1326,47 @@ mod tests {
         assert_eq!(
             excluded_credential_policy(&auth, &descriptor, "example.com"),
             None
+        );
+    }
+
+    #[test]
+    fn default_cred_protect_is_level_2_with_uv_and_level_1_without() {
+        use crate::{
+            authenticator::{Authenticator, AuthenticatorConfig},
+            test_utils::MockCallbacks,
+        };
+
+        let auth = Authenticator::new(AuthenticatorConfig::new(), MockCallbacks);
+
+        assert_eq!(
+            default_cred_protect_level(&auth, true),
+            CredProtect::UserVerificationOptionalWithCredentialIdList as u8
+        );
+        assert_eq!(
+            default_cred_protect_level(&auth, false),
+            CredProtect::UserVerificationOptional as u8
+        );
+    }
+
+    #[test]
+    fn default_cred_protect_with_uv_is_configurable() {
+        use crate::{
+            authenticator::{Authenticator, AuthenticatorConfig},
+            test_utils::MockCallbacks,
+        };
+
+        let config = AuthenticatorConfig::new()
+            .with_default_cred_protect_with_uv(CredProtect::UserVerificationRequired);
+        let auth = Authenticator::new(config, MockCallbacks);
+
+        assert_eq!(
+            default_cred_protect_level(&auth, true),
+            CredProtect::UserVerificationRequired as u8
+        );
+        // Without UV the level stays 1 regardless of configuration.
+        assert_eq!(
+            default_cred_protect_level(&auth, false),
+            CredProtect::UserVerificationOptional as u8
         );
     }
 }
