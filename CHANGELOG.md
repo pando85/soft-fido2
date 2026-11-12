@@ -5,6 +5,24 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/), and this project
 adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [v0.18.0](https://github.com/pando85/soft-fido2/tree/v0.18.0) - 2026-11-12
+
+### Fixed
+
+- Default credprotect to level 2 when user verification was performed (#176) ([f632a56](https://github.com/pando85/soft-fido2/commit/f632a569e1321eeedf128d33be1cf75f7158eb57))
+
+### Build
+
+- deps: Update actions/checkout action to v7 (#166) ([dd59af6](https://github.com/pando85/soft-fido2/commit/dd59af6df9e0840c5fef0901bcd9b5d8176ae708))
+- deps: Update clechasseur/rs-clippy-check action to v6.0.7 (#169) ([c5380ae](https://github.com/pando85/soft-fido2/commit/c5380aef3e478b8343548a255ecf5c8ff84d5ca0))
+- deps: Update dependency rust to 1.98 (#170) ([7249dcb](https://github.com/pando85/soft-fido2/commit/7249dcb5bd7cee0b4f6bf61ff5e7c23bb43fc665))
+- deps: Update clechasseur/rs-clippy-check action to v6.1.0 (#171) ([e352b88](https://github.com/pando85/soft-fido2/commit/e352b8829f8140a62d1e2c57c4c59535fa215031))
+- deps: Update pre-commit hook alessandrojcm/commitlint-pre-commit-hook to v9.27.0 (#172) ([ef579a7](https://github.com/pando85/soft-fido2/commit/ef579a74aef7630005bc774d08a4b7f9ca095b91))
+- deps: Update Rust crate serial_test to v4 (#168) ([a547de3](https://github.com/pando85/soft-fido2/commit/a547de3e37225b391ed140860310d05c0498ca51))
+- deps: Update clechasseur/rs-clippy-check action to v6.1.1 (#174) ([d292a03](https://github.com/pando85/soft-fido2/commit/d292a0359e93129b6b88e80ed562c518ce96fcdb))
+- deps: Update dependency rust to 1.99 (#173) ([4768ca0](https://github.com/pando85/soft-fido2/commit/4768ca081cf70f78550fdc57b9f009c07b19bac5))
+- deps: Update Rust crate webauthn-rs to 0.6.0 (#175) ([7918b62](https://github.com/pando85/soft-fido2/commit/7918b62434e8dd939de0a5fd402dce6a39ac4b0d))
+
 ## [v0.17.0](https://github.com/pando85/soft-fido2/tree/v0.17.0) - 2026-08-05
 
 ### Added
