@@ -64,7 +64,7 @@ use alloc::vec::Vec;
 
 use serde::{Deserialize, Serialize};
 
-pub use soft_fido2_ctap::types::{CredentialBackupState, RelyingParty, User};
+pub use soft_fido2_ctap::types::{CredProtect, CredentialBackupState, RelyingParty, User};
 
 /// Credential extension data
 #[derive(Clone, Debug, Default, Serialize, Deserialize, PartialEq)]

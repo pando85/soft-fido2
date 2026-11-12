@@ -9,7 +9,7 @@ use crate::{
     cbor::MAX_CTAP_MESSAGE_SIZE,
     key_provider::{CredentialKey, CredentialKeyProvider, SoftwareCredentialKeyProvider},
     pin_token::{Permission, PinToken, PinTokenManager},
-    types::{CredentialBackupState, PinState},
+    types::{CredProtect, CredentialBackupState, PinState},
 };
 
 use soft_fido2_crypto::pin_protocol::{self, v2};
@@ -125,6 +125,24 @@ pub struct AuthenticatorConfig {
     /// Backup state assigned to newly created stored credentials.
     pub default_credential_backup_state: CredentialBackupState,
 
+    /// credProtect level stored for new discoverable credentials when user
+    /// verification was performed and the client did not send a `credProtect`
+    /// extension.
+    ///
+    /// CTAP 2.1 lets the authenticator choose this default. Level 2
+    /// (`UserVerificationOptionalWithCredentialIdList`) keeps discoverable
+    /// credentials hidden from unverified requests without an allowList, while
+    /// allowList signing with `up` only (e.g. OpenSSH `ed25519-sk`) keeps
+    /// working. Level 3 would reject such signing without UV.
+    ///
+    /// When UV was not performed, level 1 is stored. An explicit client
+    /// `credProtect` request always takes precedence. The level is stored per
+    /// credential at creation time; changing this does not affect existing
+    /// credentials.
+    ///
+    /// Default: `CredProtect::UserVerificationOptionalWithCredentialIdList`
+    pub default_cred_protect_with_uv: CredProtect,
+
     /// Use constant signature counter (for privacy)
     ///
     /// When true, the signature counter will not increment and remain at 0.
@@ -156,6 +174,7 @@ impl AuthenticatorConfig {
             credential_wrapping_key: None, // Will be generated if needed
             force_resident_keys: true,
             default_credential_backup_state: CredentialBackupState::NotEligible,
+            default_cred_protect_with_uv: CredProtect::UserVerificationOptionalWithCredentialIdList,
             constant_sign_count: false,
         }
     }
@@ -211,6 +230,15 @@ impl AuthenticatorConfig {
     /// Set the backup state assigned to newly created stored credentials.
     pub fn with_default_credential_backup_state(mut self, state: CredentialBackupState) -> Self {
         self.default_credential_backup_state = state;
+        self
+    }
+
+    /// Set the credProtect level stored for new discoverable credentials when
+    /// UV was performed and the client did not request `credProtect`.
+    ///
+    /// See [`AuthenticatorConfig::default_cred_protect_with_uv`].
+    pub fn with_default_cred_protect_with_uv(mut self, level: CredProtect) -> Self {
+        self.default_cred_protect_with_uv = level;
         self
     }
 

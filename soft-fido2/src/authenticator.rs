@@ -5,7 +5,7 @@
 #[cfg(feature = "std")]
 use crate::error::Error;
 use crate::error::Result;
-use crate::types::{Credential, CredentialBackupState, CredentialRef};
+use crate::types::{CredProtect, Credential, CredentialBackupState, CredentialRef};
 pub use soft_fido2_ctap::authenticator::BuiltInUvState;
 use soft_fido2_ctap::authenticator::{
     Authenticator as CtapAuthenticator, AuthenticatorConfig as CtapConfig,
@@ -376,6 +376,13 @@ pub struct AuthenticatorConfig {
     pub constant_sign_count: bool,
     /// Backup state assigned to newly created stored credentials.
     pub default_credential_backup_state: CredentialBackupState,
+    /// credProtect level stored for new discoverable credentials when UV was
+    /// performed and the client did not request `credProtect`.
+    ///
+    /// Defaults to level 2 (`UserVerificationOptionalWithCredentialIdList`),
+    /// which keeps allowList signing with `up` only (e.g. OpenSSH `*-sk` keys)
+    /// working. Level 1 is stored when UV was not performed.
+    pub default_cred_protect_with_uv: CredProtect,
     pub max_msg_size: usize,
     /// Supported COSE algorithms (e.g., -7 for ES256, -8 for EdDSA)
     pub algorithms: Vec<i32>,
@@ -405,6 +412,7 @@ impl Default for AuthenticatorConfig {
             firmware_version: None,
             constant_sign_count: false,
             default_credential_backup_state: CredentialBackupState::NotEligible,
+            default_cred_protect_with_uv: CredProtect::UserVerificationOptionalWithCredentialIdList,
             max_msg_size: MAX_CTAP_MESSAGE_SIZE,
             algorithms: vec![-7, -19], // ES256, Ed25519
             device_name: None,
@@ -434,6 +442,7 @@ pub struct AuthenticatorConfigBuilder {
     firmware_version: Option<u32>,
     constant_sign_count: bool,
     default_credential_backup_state: CredentialBackupState,
+    default_cred_protect_with_uv: CredProtect,
     max_msg_size: usize,
     algorithms: Vec<i32>,
     device_name: Option<String>,
@@ -455,6 +464,7 @@ impl Default for AuthenticatorConfigBuilder {
             force_resident_keys: true,
             firmware_version: None,
             default_credential_backup_state: CredentialBackupState::NotEligible,
+            default_cred_protect_with_uv: CredProtect::UserVerificationOptionalWithCredentialIdList,
             constant_sign_count: false,
             algorithms: vec![-7, -19], // ES256, Ed25519
             device_name: None,
@@ -516,6 +526,15 @@ impl AuthenticatorConfigBuilder {
     /// Set the backup state assigned to newly created stored credentials.
     pub fn default_credential_backup_state(mut self, state: CredentialBackupState) -> Self {
         self.default_credential_backup_state = state;
+        self
+    }
+
+    /// Set the credProtect level stored for new discoverable credentials when
+    /// UV was performed and the client did not request `credProtect`.
+    ///
+    /// Default is level 2 (`UserVerificationOptionalWithCredentialIdList`).
+    pub fn default_cred_protect_with_uv(mut self, level: CredProtect) -> Self {
+        self.default_cred_protect_with_uv = level;
         self
     }
 
@@ -588,6 +607,7 @@ impl AuthenticatorConfigBuilder {
             firmware_version: self.firmware_version,
             constant_sign_count: self.constant_sign_count,
             default_credential_backup_state: self.default_credential_backup_state,
+            default_cred_protect_with_uv: self.default_cred_protect_with_uv,
             max_msg_size: self.max_msg_size,
             algorithms: if self.algorithms.is_empty() {
                 vec![-7, -8] // Default: ES256, EdDSA
@@ -748,6 +768,7 @@ impl<C: AuthenticatorCallbacks, K: CredentialKeyProvider + Send + 'static> Authe
             .with_force_resident_keys(config.force_resident_keys)
             .with_constant_sign_count(config.constant_sign_count)
             .with_default_credential_backup_state(config.default_credential_backup_state)
+            .with_default_cred_protect_with_uv(config.default_cred_protect_with_uv)
             .with_max_msg_size(config.max_msg_size)
             .with_algorithms(config.algorithms)
             .with_max_pin_retries(config.max_pin_retries)
