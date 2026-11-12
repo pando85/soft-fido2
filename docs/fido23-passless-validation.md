@@ -6,7 +6,7 @@ soft-fido2 source tree rather than against the latest crates.io release.
 ## Hosted CI coverage
 
 Before checking Passless, the workflow runs the complete soft-fido2 workspace suite with all
-features under the declared Rust 1.91 toolchain. This includes the compatibility fixtures for:
+features under the declared Rust 1.99 toolchain. This includes the compatibility fixtures for:
 
 - RP-scoped `makeCredential` permission tokens;
 - separately authorized Credential Management operations;
