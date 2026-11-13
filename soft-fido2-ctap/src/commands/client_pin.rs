@@ -708,6 +708,10 @@ fn handle_get_pin_uv_auth_token_using_uv_with_permissions<
         crate::UvResult::Timeout => {
             return Err(StatusCode::UserActionTimeout);
         }
+        crate::UvResult::Unavailable => {
+            // Not a failed attempt: no retry is consumed.
+            return Err(StatusCode::OperationDenied);
+        }
     };
 
     // Get PIN/UV auth token with the requested permissions

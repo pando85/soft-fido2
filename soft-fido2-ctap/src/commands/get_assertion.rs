@@ -421,6 +421,19 @@ pub fn handle<C: AuthenticatorCallbacks, K: CredentialKeyProvider>(
 
                     return Err(StatusCode::OperationDenied);
                 }
+                UvResult::Unavailable => {
+                    // Not a failed attempt: no retry is consumed, and a PIN, which is what the
+                    // platform needs, is asked for even when the UV retries are exhausted.
+                    if auth.is_pin_set() {
+                        return Err(StatusCode::PuatRequired);
+                    }
+
+                    if auth.is_uv_blocked() {
+                        return Err(StatusCode::UvBlocked);
+                    }
+
+                    return Err(StatusCode::OperationDenied);
+                }
             }
             // Continue to Step 8
         }
