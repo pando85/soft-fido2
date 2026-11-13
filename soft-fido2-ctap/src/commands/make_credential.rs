@@ -566,6 +566,19 @@ fn perform_built_in_uv<C: AuthenticatorCallbacks, K: CredentialKeyProvider>(
 
             Err(StatusCode::OperationDenied)
         }
+        UvResult::Unavailable => {
+            // Not a failed attempt: no retry is consumed, and a PIN is asked for even when the
+            // UV retries are exhausted.
+            if auth.is_pin_set() {
+                return Err(StatusCode::PuatRequired);
+            }
+
+            if auth.is_uv_blocked() {
+                return Err(StatusCode::UvBlocked);
+            }
+
+            Err(StatusCode::OperationDenied)
+        }
     }
 }
 

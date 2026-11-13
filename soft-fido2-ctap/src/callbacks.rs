@@ -40,6 +40,14 @@ pub enum UvResult {
     AcceptedWithUp,
     /// Operation timed out
     Timeout,
+    /// Built-in user verification is not offered by policy, for example because a PIN must be
+    /// used instead.
+    ///
+    /// The request fails like [`UvResult::Denied`], with the same status, but nobody failed a
+    /// verification attempt, so no UV retry is consumed. When a PIN is set the answer is
+    /// `CTAP2_ERR_PUAT_REQUIRED`, so the platform falls back to the PIN even when the UV retries
+    /// were already exhausted.
+    Unavailable,
 }
 
 impl UvResult {
@@ -257,6 +265,8 @@ mod tests {
         assert!(UvResult::AcceptedWithUp.is_verified());
         assert!(!UvResult::Denied.is_verified());
         assert!(!UvResult::Timeout.is_verified());
+        assert!(!UvResult::Unavailable.is_verified());
+        assert!(!UvResult::Unavailable.has_up());
 
         assert!(!UvResult::Accepted.has_up());
         assert!(UvResult::AcceptedWithUp.has_up());

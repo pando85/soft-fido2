@@ -89,6 +89,9 @@ pub enum UvResult {
     Accepted,
     AcceptedWithUp,
     Timeout,
+    /// Built-in user verification is not offered by policy (for example a PIN must be used
+    /// instead). Fails like [`UvResult::Denied`] but consumes no UV retry.
+    Unavailable,
 }
 
 impl From<UvResult> for CtapUvResult {
@@ -98,6 +101,7 @@ impl From<UvResult> for CtapUvResult {
             UvResult::Accepted => CtapUvResult::Accepted,
             UvResult::AcceptedWithUp => CtapUvResult::AcceptedWithUp,
             UvResult::Timeout => CtapUvResult::Timeout,
+            UvResult::Unavailable => CtapUvResult::Unavailable,
         }
     }
 }
@@ -109,6 +113,7 @@ impl From<CtapUvResult> for UvResult {
             CtapUvResult::Accepted => UvResult::Accepted,
             CtapUvResult::AcceptedWithUp => UvResult::AcceptedWithUp,
             CtapUvResult::Timeout => UvResult::Timeout,
+            CtapUvResult::Unavailable => UvResult::Unavailable,
             _ => UvResult::Denied,
         }
     }
@@ -1011,6 +1016,23 @@ impl<C: AuthenticatorCallbacks, K: CredentialKeyProvider + Send + 'static> Authe
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn uv_result_unavailable_round_trips_to_the_ctap_result() {
+        for result in [
+            UvResult::Denied,
+            UvResult::Accepted,
+            UvResult::AcceptedWithUp,
+            UvResult::Timeout,
+            UvResult::Unavailable,
+        ] {
+            assert_eq!(UvResult::from(CtapUvResult::from(result)), result);
+        }
+        assert_eq!(
+            CtapUvResult::from(UvResult::Unavailable),
+            CtapUvResult::Unavailable
+        );
+    }
 
     use soft_fido2_ctap::SecBytes;
     use soft_fido2_ctap::key_provider::{
