@@ -47,7 +47,7 @@ lazy_static = "1.5"
 hidapi = "2.6"
 
 # Platform-specific (Linux UHID)
-nix = { version = "0.31", features = ["fs", "ioctl"] }
+nix = { version = "0.32", features = ["fs", "ioctl"] }
 
 # Dev dependencies
 base64 = "0.23"
