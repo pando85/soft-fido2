@@ -458,12 +458,10 @@ pub fn handle<C: AuthenticatorCallbacks, K: CredentialKeyProvider>(
             }
 
             // If not found, try unwrapping (for non-resident credentials)
-            if let Ok((key, cred_rp_id, algorithm)) = auth.unwrap_credential(&desc.id)
-                && cred_rp_id == rp_id
-            {
+            if let Ok((key, algorithm)) = auth.unwrap_credential_for_rp(&desc.id, &rp_id) {
                 let cred = crate::types::Credential {
                     id: desc.id.clone(),
-                    rp_id: cred_rp_id,
+                    rp_id: rp_id.clone(),
                     rp_name: None,
                     user_id: Vec::new(),
                     user_name: None,
@@ -996,6 +994,44 @@ mod tests {
             auth.wrapped_cred_random(&b).as_slice()
         );
         assert_eq!(auth.wrapped_cred_random(&a).as_slice().len(), 32);
+    }
+
+    #[test]
+    fn test_get_assertion_wrapped_credential_long_rp_id() {
+        // A browser extension's RP ID is long ("chrome-extension://" + 32 characters).
+        // The wrapped credential ID must stay within maxCredentialIdLength, or the
+        // platform drops it from the allow list, and it must work only for its RP.
+        let rp_id = "chrome-extension://akcobkeppmnfeociijgeoomhlljaapop";
+        let mut auth = Authenticator::new(AuthenticatorConfig::new(), MockCallbacks);
+        let (private_key, _) = soft_fido2_crypto::ecdsa::generate_keypair();
+        let key = crate::key_provider::CredentialKey::software(crate::SecBytes::from_slice(
+            private_key.as_slice(),
+        ));
+        let id = auth
+            .wrap_credential(&key, rp_id, crate::CoseAlgorithm::ES256.to_i32())
+            .unwrap();
+        assert!(id.len() <= auth.config().max_credential_id_length.unwrap());
+
+        let request = |rp: &str| {
+            let allow_list = Value::Array(vec![Value::Map(vec![
+                (Value::Text("type".into()), Value::Text("public-key".into())),
+                (Value::Text("id".into()), Value::Bytes(id.clone())),
+            ])]);
+            MapBuilder::new()
+                .insert(req_keys::RP_ID, rp)
+                .unwrap()
+                .insert_bytes(req_keys::CLIENT_DATA_HASH, &[0x42; 32])
+                .unwrap()
+                .insert(req_keys::ALLOW_LIST, allow_list)
+                .unwrap()
+                .build()
+                .unwrap()
+        };
+        assert!(handle(&mut auth, &request(rp_id)).is_ok());
+        assert_eq!(
+            handle(&mut auth, &request("example.com")),
+            Err(StatusCode::NoCredentials)
+        );
     }
 
     #[test]

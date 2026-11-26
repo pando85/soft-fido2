@@ -415,6 +415,23 @@ impl BuiltInUvState {
 
 const ASSERTION_STATE_TIMEOUT_MS: u64 = 30_000;
 
+/// Wrapped credential ID format that binds the RP ID into the MAC instead of
+/// storing it (see `Authenticator::wrap_credential`).
+const WRAPPED_V3: u8 = 3;
+
+/// MAC of a wrapped credential ID: the first 16 bytes of
+/// HMAC-SHA-256(key, id_without_mac || SHA-256(rp_id)).
+fn wrapped_id_mac(key: &[u8; 32], id_without_mac: &[u8], rp_id: &str) -> [u8; 16] {
+    let rp_id_hash = Sha256::digest(rp_id.as_bytes());
+    let mut data = Vec::with_capacity(id_without_mac.len() + rp_id_hash.len());
+    data.extend_from_slice(id_without_mac);
+    data.extend_from_slice(&rp_id_hash);
+    let mac = v2::authenticate(key, &data);
+    let mut out = [0u8; 16];
+    out.copy_from_slice(&mac[..16]);
+    out
+}
+
 /// Context shared by authenticatorGetAssertion and authenticatorGetNextAssertion.
 #[derive(Clone)]
 pub struct AssertionContext {
@@ -1339,19 +1356,129 @@ impl<C: AuthenticatorCallbacks, K: CredentialKeyProvider> Authenticator<C, K> {
     ///
     /// Format v2 (generic provider):
     ///   version(2) || IV(16) || encrypted(provider_id_len(2) || provider_id || format_version(2) || key_material_len(2) || key_material || rp_id_len(2) || rp_id || algorithm(4)) || HMAC(16)
+    ///
+    /// Format v3 (every provider; 97 bytes for a software key):
+    ///   version(3) || IV(16) || encrypted(provider_id_len(2) || provider_id || format_version(2) || key_material_len(2) || key_material || algorithm(4) || zero padding) || MAC(16)
+    ///   with MAC = HMAC-SHA-256(wrapping key, version || IV || ciphertext || SHA-256(rp_id)), first 16 bytes.
+    ///
+    /// New IDs are written as v3. It does not store the RP ID but binds its
+    /// hash into the MAC: the ID is only valid for the RP it was made for, and
+    /// its length does not depend on the RP ID (it must stay within the
+    /// `maxCredentialIdLength` reported in getInfo). v1 / v2 IDs grow with the
+    /// RP ID; they are still read by [`Self::unwrap_credential_for_rp`].
     pub fn wrap_credential(
         &self,
         key: &CredentialKey,
         rp_id: &str,
         algorithm: i32,
     ) -> Result<Vec<u8>, StatusCode> {
-        if key.provider.is_software() && key.format_version == 1 {
-            self.wrap_credential_v1(key, rp_id, algorithm)
-        } else {
-            self.wrap_credential_v2(key, rp_id, algorithm)
+        let provider_bytes = key.provider.as_bytes();
+        let key_material = key.material.as_slice();
+        if provider_bytes.len() > u16::MAX as usize || key_material.len() > u16::MAX as usize {
+            return Err(StatusCode::InvalidLength);
         }
+        let mut plaintext = Vec::new();
+        plaintext.extend_from_slice(&(provider_bytes.len() as u16).to_be_bytes());
+        plaintext.extend_from_slice(provider_bytes);
+        plaintext.extend_from_slice(&key.format_version.to_be_bytes());
+        plaintext.extend_from_slice(&(key_material.len() as u16).to_be_bytes());
+        plaintext.extend_from_slice(key_material);
+        plaintext.extend_from_slice(&algorithm.to_be_bytes());
+        while plaintext.len() % 16 != 0 {
+            plaintext.push(0);
+        }
+        let plaintext = Zeroizing::new(plaintext);
+
+        let wrapping_key = Zeroizing::new(self.active_credential_wrapping_key());
+        let encrypted = v2::encrypt(&wrapping_key, &plaintext).map_err(|_| StatusCode::Other)?;
+
+        let mut credential_id = Vec::with_capacity(1 + encrypted.len() + 16);
+        credential_id.push(WRAPPED_V3);
+        credential_id.extend_from_slice(&encrypted);
+        let mac = wrapped_id_mac(&wrapping_key, &credential_id, rp_id);
+        credential_id.extend_from_slice(&mac);
+
+        if self
+            .config
+            .max_credential_id_length
+            .is_some_and(|max_len| credential_id.len() > max_len)
+        {
+            return Err(StatusCode::InvalidLength);
+        }
+
+        Ok(credential_id)
     }
 
+    /// Unwrap a credential ID made by [`Self::wrap_credential`] for `rp_id`.
+    ///
+    /// Returns the credential key and algorithm when the ID was made by this
+    /// authenticator (current wrapping key) for this RP; otherwise
+    /// `InvalidParameter`, without telling a foreign ID from one of another RP.
+    /// Accepts the current format (v3) and the older ones that store the RP ID
+    /// (v1, v2).
+    pub fn unwrap_credential_for_rp(
+        &self,
+        credential_id: &[u8],
+        rp_id: &str,
+    ) -> Result<(CredentialKey, i32), StatusCode> {
+        match credential_id.first() {
+            Some(&WRAPPED_V3) => {}
+            _ => {
+                let (key, stored_rp_id, algorithm) = self.unwrap_credential(credential_id)?;
+                return if stored_rp_id == rp_id {
+                    Ok((key, algorithm))
+                } else {
+                    Err(StatusCode::InvalidParameter)
+                };
+            }
+        }
+
+        // version(1) || IV(16) || at least one block(16) || MAC(16)
+        if credential_id.len() < 49 || !(credential_id.len() - 33).is_multiple_of(16) {
+            return Err(StatusCode::InvalidParameter);
+        }
+        let mac_start = credential_id.len() - 16;
+        let wrapping_key = Zeroizing::new(self.active_credential_wrapping_key());
+        let expected = wrapped_id_mac(&wrapping_key, &credential_id[..mac_start], rp_id);
+        if !bool::from(expected.ct_eq(&credential_id[mac_start..])) {
+            return Err(StatusCode::InvalidParameter);
+        }
+        let plaintext = Zeroizing::new(
+            v2::decrypt(&wrapping_key, &credential_id[1..mac_start])
+                .map_err(|_| StatusCode::InvalidParameter)?,
+        );
+
+        let read_u16 = |at: usize| -> Result<usize, StatusCode> {
+            plaintext
+                .get(at..at + 2)
+                .map(|b| u16::from_be_bytes([b[0], b[1]]) as usize)
+                .ok_or(StatusCode::InvalidParameter)
+        };
+        let provider_len = read_u16(0)?;
+        let provider = plaintext
+            .get(2..2 + provider_len)
+            .ok_or(StatusCode::InvalidParameter)?;
+        let format_version = read_u16(2 + provider_len)? as u16;
+        let material_at = 4 + provider_len;
+        let material_len = read_u16(material_at)?;
+        let material = plaintext
+            .get(material_at + 2..material_at + 2 + material_len)
+            .ok_or(StatusCode::InvalidParameter)?;
+        let key = CredentialKey::new(
+            crate::key_provider::CredentialKeyProviderId::new(provider),
+            format_version,
+            SecBytes::from_slice(material),
+        );
+        let alg_at = material_at + 2 + material_len;
+        let algorithm = plaintext
+            .get(alg_at..alg_at + 4)
+            .map(|b| i32::from_be_bytes([b[0], b[1], b[2], b[3]]))
+            .ok_or(StatusCode::InvalidParameter)?;
+        Ok((key, algorithm))
+    }
+
+    /// Format v1 writer; new IDs use v3 (kept for compatibility tests).
+    #[cfg(test)]
     fn wrap_credential_v1(
         &self,
         key: &CredentialKey,
@@ -1388,6 +1515,8 @@ impl<C: AuthenticatorCallbacks, K: CredentialKeyProvider> Authenticator<C, K> {
         Ok(credential_id)
     }
 
+    /// Format v2 writer; new IDs use v3 (kept for compatibility tests).
+    #[cfg(test)]
     fn wrap_credential_v2(
         &self,
         key: &CredentialKey,
@@ -1448,6 +1577,9 @@ impl<C: AuthenticatorCallbacks, K: CredentialKeyProvider> Authenticator<C, K> {
     ///
     /// Decrypts and verifies a wrapped credential ID, returning the credential key
     /// and metadata if valid.
+    ///
+    /// Only formats v1 and v2 store the RP ID; v3 IDs are refused here.
+    /// [`Self::unwrap_credential_for_rp`] reads every format.
     ///
     /// Returns: (credential_key, rp_id, algorithm)
     pub fn unwrap_credential(
@@ -1812,7 +1944,10 @@ mod tests {
         let wrapped = auth
             .wrap_credential(&key, "example.com", -7)
             .expect("credential should wrap before reset");
-        assert!(auth.unwrap_credential(&wrapped).is_ok());
+        assert!(
+            auth.unwrap_credential_for_rp(&wrapped, "example.com")
+                .is_ok()
+        );
 
         auth.reset().unwrap();
 
@@ -1820,7 +1955,7 @@ mod tests {
         assert_eq!(auth.pin_retries(), MAX_PIN_RETRIES);
         assert_eq!(auth.pin_state.credential_wrapping_generation, 1);
         assert!(matches!(
-            auth.unwrap_credential(&wrapped),
+            auth.unwrap_credential_for_rp(&wrapped, "example.com"),
             Err(StatusCode::InvalidParameter)
         ));
     }
@@ -2698,7 +2833,7 @@ mod tests {
         let rp_id = "example.com";
         let algorithm = -7i32;
 
-        let wrapped = auth.wrap_credential(&key, rp_id, algorithm).unwrap();
+        let wrapped = auth.wrap_credential_v1(&key, rp_id, algorithm).unwrap();
         assert_eq!(wrapped[0], 1);
 
         let (unwrapped_key, unwrapped_rp_id, unwrapped_alg) =
@@ -2722,7 +2857,7 @@ mod tests {
         let rp_id = "example.com";
         let algorithm = -7i32;
 
-        let wrapped = auth.wrap_credential(&key, rp_id, algorithm).unwrap();
+        let wrapped = auth.wrap_credential_v2(&key, rp_id, algorithm).unwrap();
         assert_eq!(wrapped[0], 2);
 
         let (unwrapped_key, unwrapped_rp_id, unwrapped_alg) =
@@ -2747,7 +2882,7 @@ mod tests {
         let rp_id = "a".repeat(256);
         let algorithm = -7i32;
 
-        let wrapped = auth.wrap_credential(&key, &rp_id, algorithm).unwrap();
+        let wrapped = auth.wrap_credential_v2(&key, &rp_id, algorithm).unwrap();
         let (unwrapped_key, unwrapped_rp_id, unwrapped_alg) =
             auth.unwrap_credential(&wrapped).unwrap();
         assert_eq!(unwrapped_key.material.as_slice(), key.material.as_slice());
@@ -2766,7 +2901,7 @@ mod tests {
             SecBytes::from_slice(&[0xABu8; 64]),
         );
 
-        let mut wrapped = auth.wrap_credential(&key, "example.com", -7).unwrap();
+        let mut wrapped = auth.wrap_credential_v2(&key, "example.com", -7).unwrap();
         let last = wrapped.len() - 1;
         wrapped[last] ^= 0xFF;
 
@@ -2774,12 +2909,149 @@ mod tests {
         assert!(result.is_err());
     }
 
+    fn software_key() -> CredentialKey {
+        CredentialKey::software(SecBytes::from_slice(&[42u8; 32]))
+    }
+
+    fn provider_key() -> CredentialKey {
+        CredentialKey::new(
+            crate::key_provider::CredentialKeyProviderId::new(b"tpm-v1"),
+            2,
+            SecBytes::from_slice(&[0xABu8; 64]),
+        )
+    }
+
+    #[test]
+    fn test_wrap_unwrap_credential_v3_software() {
+        let auth = create_test_authenticator();
+        let key = software_key();
+
+        let wrapped = auth.wrap_credential(&key, "example.com", -7).unwrap();
+        assert_eq!(wrapped[0], 3);
+        assert_eq!(wrapped.len(), 97);
+
+        let (unwrapped_key, alg) = auth
+            .unwrap_credential_for_rp(&wrapped, "example.com")
+            .unwrap();
+        assert_eq!(unwrapped_key.material.as_slice(), key.material.as_slice());
+        assert!(unwrapped_key.provider.is_software());
+        assert_eq!(unwrapped_key.format_version, 1);
+        assert_eq!(alg, -7);
+    }
+
+    #[test]
+    fn test_wrap_unwrap_credential_v3_provider() {
+        let auth = create_test_authenticator();
+        let key = provider_key();
+
+        let wrapped = auth.wrap_credential(&key, "example.com", -8).unwrap();
+        assert_eq!(wrapped[0], 3);
+
+        let (unwrapped_key, alg) = auth
+            .unwrap_credential_for_rp(&wrapped, "example.com")
+            .unwrap();
+        assert_eq!(unwrapped_key.provider.as_bytes(), b"tpm-v1");
+        assert_eq!(unwrapped_key.format_version, 2);
+        assert_eq!(unwrapped_key.material.as_slice(), key.material.as_slice());
+        assert_eq!(alg, -8);
+    }
+
+    #[test]
+    fn test_wrapped_credential_is_bound_to_its_rp() {
+        let auth = create_test_authenticator();
+        for key in [software_key(), provider_key()] {
+            let wrapped = auth.wrap_credential(&key, "example.com", -7).unwrap();
+            for other in ["example.org", "sub.example.com", "", "Example.com"] {
+                assert!(matches!(
+                    auth.unwrap_credential_for_rp(&wrapped, other),
+                    Err(StatusCode::InvalidParameter)
+                ));
+            }
+            // The RP ID is not stored: the RP-less legacy API cannot read the ID.
+            assert!(auth.unwrap_credential(&wrapped).is_err());
+        }
+    }
+
+    #[test]
+    fn test_wrapped_credential_length_does_not_depend_on_rp_id() {
+        // CTAP: credential IDs must not exceed maxCredentialIdLength (getInfo,
+        // 128 by default). Long RP IDs, e.g. a browser extension's origin
+        // ("chrome-extension://" + 32 characters) or a 253-character domain,
+        // used to produce longer IDs.
+        let auth = create_test_authenticator();
+        let max = auth.config().max_credential_id_length.unwrap();
+        for key in [software_key(), provider_key()] {
+            let short = auth.wrap_credential(&key, "a.io", -7).unwrap();
+            for rp_id in [
+                "chrome-extension://akcobkeppmnfeociijgeoomhlljaapop".to_string(),
+                "a".repeat(253),
+                "a".repeat(1024),
+            ] {
+                let wrapped = auth.wrap_credential(&key, &rp_id, -7).unwrap();
+                assert_eq!(wrapped.len(), short.len());
+                assert!(wrapped.len() <= max);
+                assert!(auth.unwrap_credential_for_rp(&wrapped, &rp_id).is_ok());
+            }
+        }
+    }
+
+    #[test]
+    fn test_legacy_wrapped_credentials_still_unwrap() {
+        let mut config = AuthenticatorConfig::new();
+        config.max_credential_id_length = Some(512);
+        let auth = Authenticator::new(config, MockCallbacks);
+
+        let v1 = auth
+            .wrap_credential_v1(&software_key(), "example.com", -7)
+            .unwrap();
+        let v2 = auth
+            .wrap_credential_v2(&provider_key(), "example.com", -7)
+            .unwrap();
+        assert_eq!((v1[0], v2[0]), (1, 2));
+
+        for (id, provider) in [(&v1, &b"software"[..]), (&v2, &b"tpm-v1"[..])] {
+            let (key, alg) = auth.unwrap_credential_for_rp(id, "example.com").unwrap();
+            assert_eq!(alg, -7);
+            if provider == b"tpm-v1" {
+                assert_eq!(key.provider.as_bytes(), provider);
+            } else {
+                assert!(key.provider.is_software());
+            }
+            assert!(matches!(
+                auth.unwrap_credential_for_rp(id, "example.org"),
+                Err(StatusCode::InvalidParameter)
+            ));
+            let (_, stored_rp_id, _) = auth.unwrap_credential(id).unwrap();
+            assert_eq!(stored_rp_id, "example.com");
+        }
+    }
+
+    #[test]
+    fn test_unwrap_credential_v3_tampered_detected() {
+        let auth = create_test_authenticator();
+        for key in [software_key(), provider_key()] {
+            let wrapped = auth.wrap_credential(&key, "example.com", -7).unwrap();
+            for at in [0, 1, 20, wrapped.len() - 1] {
+                let mut tampered = wrapped.clone();
+                tampered[at] ^= 0x01;
+                assert!(
+                    auth.unwrap_credential_for_rp(&tampered, "example.com")
+                        .is_err()
+                );
+            }
+            assert!(
+                auth.unwrap_credential_for_rp(&wrapped[..wrapped.len() - 1], "example.com")
+                    .is_err()
+            );
+        }
+    }
+
     #[test]
     fn test_unwrap_credential_unknown_version() {
         let auth = create_test_authenticator();
         let mut data = vec![0u8; 64];
         data[0] = 99;
-        let result = auth.unwrap_credential(&data);
-        assert!(result.is_err());
+        assert!(auth.unwrap_credential(&data).is_err());
+        assert!(auth.unwrap_credential_for_rp(&data, "example.com").is_err());
     }
 }
