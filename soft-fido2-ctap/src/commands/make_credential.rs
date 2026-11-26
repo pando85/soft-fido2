@@ -622,10 +622,9 @@ fn excluded_credential_policy<C: AuthenticatorCallbacks, K: CredentialKeyProvide
 
     // Non-discoverable credentials are self-contained authenticated blobs. A
     // successful unwrap proves that this authenticator created the credential;
-    // the embedded RP ID still has to match the current request.
-    if let Ok((_key, wrapped_rp_id, _algorithm)) = auth.unwrap_credential(&credential.id)
-        && wrapped_rp_id == rp_id
-    {
+    // the RP ID (stored in v1/v2, bound into the MAC in v3) still has to
+    // match the current request.
+    if auth.unwrap_credential_for_rp(&credential.id, rp_id).is_ok() {
         // The current wrapped formats predate embedded credProtect metadata and
         // therefore use the default optional policy, matching GetAssertion.
         return Some(CredProtect::UserVerificationOptional as u8);
