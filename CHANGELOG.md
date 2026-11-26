@@ -5,6 +5,23 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/), and this project
 adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [v0.20.0](https://github.com/pando85/soft-fido2/tree/v0.20.0) - 2026-11-26
+
+### Added
+
+- Advertise hmac-secret in getInfo (#185) (#187) ([6b01ef0](https://github.com/pando85/soft-fido2/commit/6b01ef0adb5d8e9b4a5990b5c6f9a51b92222822))
+
+### Fixed
+
+- ctap: Require user presence for hmac-secret assertions (#186) ([77c37e6](https://github.com/pando85/soft-fido2/commit/77c37e6a06a34773048348f18da79b89062c8eaf))
+- Use separate hmac-secret CredRandom values with and without user verification (#184) ([248890f](https://github.com/pando85/soft-fido2/commit/248890f0c2a4173db6cb4d9a9a2d224c2de43a9a))
+- Answer hmac-secret for wrapped (non-discoverable) credentials (#183) ([c72fe6e](https://github.com/pando85/soft-fido2/commit/c72fe6e806c82961f02728f1c06f7b277c6ae109))
+
+### Build
+
+- deps: Update Rust crate nix to 0.32 (#181) ([acf607e](https://github.com/pando85/soft-fido2/commit/acf607ef9ed15c2d00c0a4de9678309734761810))
+- deps: Update clechasseur/rs-clippy-check action to v6.1.2 (#182) ([bc6b4b4](https://github.com/pando85/soft-fido2/commit/bc6b4b40301fc28bbb7d2e10fef5744383a6162a))
+
 ## [v0.19.0](https://github.com/pando85/soft-fido2/tree/v0.19.0) - 2026-11-13
 
 ### Added
