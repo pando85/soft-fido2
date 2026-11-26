@@ -9,7 +9,7 @@ use crate::{
     authenticator::{AssertionContext, Authenticator},
     callbacks::AuthenticatorCallbacks,
     cbor::MapBuilder,
-    extensions::compute_hmac_secret,
+    extensions::{compute_hmac_secret, select_cred_random},
     key_provider::CredentialKeyProvider,
     status::{Result, StatusCode},
     types::{CredentialBackupState, PublicKeyCredentialDescriptor, auth_data_flags},
@@ -61,8 +61,11 @@ fn build_assertion_response<C: AuthenticatorCallbacks, K: CredentialKeyProvider>
         && let Some(hmac_input) = context.extensions.get_hmac_secret()
         && let Some(keypair) = auth.get_pin_protocol_keypair(hmac_input.pin_uv_auth_protocol)
         && let Some(cred_random) = &credential.cred_random
-        && let Some(encrypted_output) =
-            compute_hmac_secret(hmac_input, cred_random.as_slice(), keypair)
+        && let Some(encrypted_output) = compute_hmac_secret(
+            hmac_input,
+            select_cred_random(cred_random.as_slice(), context.uv).as_slice(),
+            keypair,
+        )
     {
         let output = (
             crate::cbor::Value::Text(crate::extensions::ext_ids::HMAC_SECRET.to_string()),

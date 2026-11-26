@@ -12,7 +12,7 @@ use crate::{
     commands::make_credential::{
         MAX_CREDENTIAL_ID_LENGTH, get_user_present_flag_value, get_user_verified_flag_value,
     },
-    extensions::{GetAssertionExtensions, compute_hmac_secret},
+    extensions::{GetAssertionExtensions, compute_hmac_secret, select_cred_random},
     key_provider::CredentialKeyProvider,
     status::{Result, StatusCode},
     types::{CredentialBackupState, PublicKeyCredentialDescriptor, auth_data_flags},
@@ -593,9 +593,11 @@ pub fn handle<C: AuthenticatorCallbacks, K: CredentialKeyProvider>(
             && let Some(cred_random) = &selected_cred.cred_random
         {
             // Compute hmac-secret output using the stored keypair
-            if let Some(encrypted_output) =
-                compute_hmac_secret(hmac_input, cred_random.as_slice(), auth_keypair)
-            {
+            if let Some(encrypted_output) = compute_hmac_secret(
+                hmac_input,
+                select_cred_random(cred_random.as_slice(), response_state.uv).as_slice(),
+                auth_keypair,
+            ) {
                 // Add hmac-secret to extension outputs
                 // Per spec, the output is just the encrypted bytes
                 let ext_name = crate::extensions::ext_ids::HMAC_SECRET;
@@ -868,5 +870,229 @@ mod tests {
 
         // Check flags (UP=1, UV=1)
         assert_eq!(auth_data[32], 0x05); // 0x01 | 0x04
+    }
+
+    /// Callbacks holding one stored credential (everything else as `MockCallbacks`).
+    struct OneCredential(crate::types::Credential);
+
+    impl crate::callbacks::PlatformCallbacks for OneCredential {
+        fn get_timestamp_ms(&self) -> u64 {
+            MockCallbacks.get_timestamp_ms()
+        }
+    }
+
+    impl crate::callbacks::UserInteractionCallbacks for OneCredential {
+        fn request_up(
+            &self,
+            info: &str,
+            user_name: Option<&str>,
+            rp_id: &str,
+        ) -> Result<crate::callbacks::UpResult> {
+            MockCallbacks.request_up(info, user_name, rp_id)
+        }
+
+        fn request_uv(
+            &self,
+            info: &str,
+            user_name: Option<&str>,
+            rp_id: &str,
+        ) -> Result<crate::callbacks::UvResult> {
+            MockCallbacks.request_uv(info, user_name, rp_id)
+        }
+
+        fn select_credential(&self, rp_id: &str, user_names: &[String]) -> Result<usize> {
+            MockCallbacks.select_credential(rp_id, user_names)
+        }
+    }
+
+    impl crate::callbacks::CredentialStorageCallbacks for OneCredential {
+        fn write_credential(&self, _credential: &crate::types::Credential) -> Result<()> {
+            Ok(())
+        }
+
+        fn delete_credential(&self, _credential_id: &[u8]) -> Result<()> {
+            Ok(())
+        }
+
+        fn read_credentials(
+            &self,
+            rp_id: &str,
+            _user_id: Option<&[u8]>,
+        ) -> Result<Vec<crate::types::Credential>> {
+            Ok(if rp_id == self.0.rp_id {
+                vec![self.0.clone()]
+            } else {
+                Vec::new()
+            })
+        }
+
+        fn credential_exists(&self, credential_id: &[u8]) -> Result<bool> {
+            Ok(credential_id == self.0.id.as_slice())
+        }
+
+        fn get_credential(&self, credential_id: &[u8]) -> Result<crate::types::Credential> {
+            if credential_id == self.0.id.as_slice() {
+                Ok(self.0.clone())
+            } else {
+                Err(StatusCode::NoCredentials)
+            }
+        }
+
+        fn update_credential(&self, _credential: &crate::types::Credential) -> Result<()> {
+            Ok(())
+        }
+
+        fn enumerate_rps(&self) -> Result<Vec<(String, Option<String>, usize)>> {
+            Ok(Vec::new())
+        }
+
+        fn credential_count(&self) -> Result<usize> {
+            Ok(1)
+        }
+    }
+
+    impl crate::callbacks::PinStorageCallbacks for OneCredential {
+        fn load_pin_state(&self) -> Result<crate::types::PinState> {
+            MockCallbacks.load_pin_state()
+        }
+
+        fn save_pin_state(&self, state: &crate::types::PinState) -> Result<()> {
+            MockCallbacks.save_pin_state(state)
+        }
+    }
+
+    /// getAssertion with hmac-secret (PIN/UV auth protocol 2) for `salt`; with a
+    /// PIN token when `pin_token` is given. Returns the decrypted output and
+    /// whether the UV flag was set.
+    fn hmac_secret_assertion_with_optional_pin(
+        auth: &mut Authenticator<OneCredential>,
+        salt: &[u8; 32],
+        pin_token: Option<&[u8; 32]>,
+    ) -> (Vec<u8>, bool) {
+        use soft_fido2_crypto::{ecdh::KeyPair, pin_protocol::v2};
+
+        let auth_keypair = KeyPair::generate().unwrap();
+        let auth_public = auth_keypair.public_key_bytes();
+        auth.set_pin_protocol_keypair(2, auth_keypair);
+        let platform = KeyPair::generate().unwrap();
+        let shared = platform.shared_secret(&auth_public).unwrap();
+        let enc_key = v2::derive_encryption_key(&shared);
+        let salt_enc = v2::encrypt(&enc_key, salt).unwrap();
+        let salt_auth = v2::authenticate(&v2::derive_hmac_key(&shared), &salt_enc);
+        let (x, y) = platform.public_key_cose();
+        let cose_key = Value::Map(vec![
+            (Value::Integer(1), Value::Integer(2)),
+            (Value::Integer(3), Value::Integer(-25)),
+            (Value::Integer(-1), Value::Integer(1)),
+            (Value::Integer(-2), Value::Bytes(x.to_vec())),
+            (Value::Integer(-3), Value::Bytes(y.to_vec())),
+        ]);
+        let extensions = Value::Map(vec![(
+            Value::Text("hmac-secret".into()),
+            Value::Map(vec![
+                (Value::Integer(1), cose_key),
+                (Value::Integer(2), Value::Bytes(salt_enc)),
+                (Value::Integer(3), Value::Bytes(salt_auth.to_vec())),
+                (Value::Integer(4), Value::Integer(2)),
+            ]),
+        )]);
+        let client_data_hash = [0x42u8; 32];
+        let allow_list = Value::Array(vec![Value::Map(vec![
+            (Value::Text("type".into()), Value::Text("public-key".into())),
+            (Value::Text("id".into()), Value::Bytes(vec![1, 2, 3])),
+        ])]);
+        let mut request = MapBuilder::new()
+            .insert(req_keys::RP_ID, "example.com")
+            .unwrap()
+            .insert_bytes(req_keys::CLIENT_DATA_HASH, &client_data_hash)
+            .unwrap()
+            .insert(req_keys::ALLOW_LIST, allow_list)
+            .unwrap()
+            .insert(req_keys::EXTENSIONS, extensions)
+            .unwrap();
+        if let Some(token) = pin_token {
+            request = request
+                .insert_bytes(
+                    req_keys::PIN_UV_AUTH_PARAM,
+                    &v2::authenticate(token, &client_data_hash),
+                )
+                .unwrap()
+                .insert(req_keys::PIN_UV_AUTH_PROTOCOL, 2)
+                .unwrap();
+        }
+
+        let response = handle(auth, &request.build().unwrap()).unwrap();
+        let auth_data = MapParser::from_bytes(&response)
+            .unwrap()
+            .get_bytes(resp_keys::AUTH_DATA)
+            .unwrap();
+        let uv = auth_data[32] & crate::types::auth_data_flags::UV != 0;
+        // rpIdHash (32) || flags (1) || signCount (4) || extensions
+        let Value::Map(outputs) = crate::cbor::decode::<Value>(&auth_data[37..]).unwrap() else {
+            panic!("no extension outputs");
+        };
+        let output = outputs
+            .into_iter()
+            .find_map(|(k, v)| match (k, v) {
+                (Value::Text(name), Value::Bytes(enc)) if name == "hmac-secret" => {
+                    v2::decrypt(&enc_key, &enc).ok()
+                }
+                _ => None,
+            })
+            .expect("hmac-secret output");
+        (output, uv)
+    }
+
+    #[test]
+    fn test_hmac_secret_differs_with_and_without_uv() {
+        let cred_random = [9u8; 32];
+        let (private_key, _) = soft_fido2_crypto::ecdsa::generate_keypair();
+        let credential = crate::types::Credential {
+            id: vec![1, 2, 3],
+            rp_id: "example.com".to_string(),
+            rp_name: None,
+            user_id: vec![7],
+            user_name: None,
+            user_display_name: None,
+            key: crate::key_provider::CredentialKey::software(crate::SecBytes::from_slice(
+                private_key.as_slice(),
+            )),
+            algorithm: crate::CoseAlgorithm::ES256.to_i32(),
+            sign_count: 0,
+            created: 0,
+            discoverable: true,
+            backup_state: CredentialBackupState::NotEligible,
+            cred_protect: 1,
+            cred_random: Some(crate::SecBytes::from_array(cred_random)),
+        };
+        let mut auth = Authenticator::new(AuthenticatorConfig::new(), OneCredential(credential));
+        auth.set_pin("1234").unwrap();
+        let salt = [5u8; 32];
+
+        // User presence only: CredRandomWithoutUV.
+        let (without_uv, uv) = hmac_secret_assertion_with_optional_pin(&mut auth, &salt, None);
+        assert!(!uv);
+        let expected = soft_fido2_crypto::hmac_sha256(
+            crate::extensions::select_cred_random(&cred_random, false).as_slice(),
+            &salt,
+        );
+        assert_eq!(without_uv, expected.to_vec());
+
+        // With the PIN: CredRandomWithUV (the stored value).
+        let token = auth
+            .get_pin_token(
+                "1234",
+                crate::pin_token::Permission::GetAssertion.to_u8(),
+                Some("example.com".to_string()),
+            )
+            .unwrap();
+        let (with_uv, uv) = hmac_secret_assertion_with_optional_pin(&mut auth, &salt, Some(&token));
+        assert!(uv);
+        assert_eq!(
+            with_uv,
+            soft_fido2_crypto::hmac_sha256(&cred_random, &salt).to_vec()
+        );
+
+        assert_ne!(with_uv, without_uv);
     }
 }
