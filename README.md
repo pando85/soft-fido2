@@ -1,9 +1,9 @@
 <h1 style="font-size: 64px; margin: 0"><span style="color: #de6e1c; font-size: 88px; line-height: 0.9;">🦀</span> <span style="color: inherit; font-size: 48px; vertical-align: middle;">soft-fido2</span></h1>
 
-![Build status](https://img.shields.io/github/actions/workflow/status/pando85/soft-fido2/rust.yml?branch=master)
-[![Crates.io](https://img.shields.io/crates/v/soft-fido2.svg)](https://crates.io/crates/soft-fido2)
+[![Build status](https://github.com/pando85/soft-fido2/actions/workflows/rust.yml/badge.svg?branch=master&event=push)](https://github.com/pando85/soft-fido2/actions/workflows/rust.yml)
+[![Crates.io](https://img.shields.io/crates/v/soft-fido2)](https://crates.io/crates/soft-fido2)
 [![Documentation](https://docs.rs/soft-fido2/badge.svg)](https://docs.rs/soft-fido2)
-[![License](https://img.shields.io/badge/license-GPL--3.0-blue.svg)](LICENSE)
+[![License](https://img.shields.io/badge/license-AGPL--3.0-blue.svg)](LICENSE)
 
 A pure Rust implementation of a FIDO2/WebAuthn CTAP 2.0 authenticator core with selected CTAP 2.1 features.
 
@@ -106,7 +106,7 @@ make test-e2e
 
 ## License
 
-This project is licensed under the GNU General Public License v3.0 - see the [LICENSE](LICENSE) file
+This project is licensed under the GNU Affero General Public License v3.0 - see the [LICENSE](LICENSE) file
 for details.
 
 ## References
