@@ -266,6 +266,11 @@ pub fn handle<C: AuthenticatorCallbacks, K: CredentialKeyProvider>(
     // Step 4: Process options
     let mut options = parse_options(&parser)?;
 
+    // hmac-secret requires user presence, even for a non-UV assertion.
+    if extensions.has_hmac_secret() && !options.up {
+        return Err(StatusCode::UnsupportedOption);
+    }
+
     // Step 4.1: If "uv" option is absent, treat as false (default)
     // This is already handled by parse_options() which defaults uv to false
 
@@ -921,6 +926,36 @@ mod tests {
         ));
         auth.wrap_credential(&key, "example.com", crate::CoseAlgorithm::ES256.to_i32())
             .unwrap()
+    }
+
+    #[test]
+    fn test_hmac_secret_rejects_silent_assertion() {
+        let mut auth = Authenticator::new(AuthenticatorConfig::new(), MockCallbacks);
+        let id = wrapped_credential(&auth);
+        let (extensions, _) = hmac_secret_extensions(&mut auth, &[7u8; 32]);
+        let allow_list = Value::Array(vec![Value::Map(vec![
+            (Value::Text("type".into()), Value::Text("public-key".into())),
+            (Value::Text("id".into()), Value::Bytes(id)),
+        ])]);
+        let options = Value::Map(vec![(Value::Text("up".into()), Value::Bool(false))]);
+        let request = MapBuilder::new()
+            .insert(req_keys::RP_ID, "example.com")
+            .unwrap()
+            .insert_bytes(req_keys::CLIENT_DATA_HASH, &[0x42; 32])
+            .unwrap()
+            .insert(req_keys::ALLOW_LIST, allow_list)
+            .unwrap()
+            .insert(req_keys::EXTENSIONS, extensions)
+            .unwrap()
+            .insert(req_keys::OPTIONS, options)
+            .unwrap()
+            .build()
+            .unwrap();
+
+        assert_eq!(
+            handle(&mut auth, &request),
+            Err(StatusCode::UnsupportedOption)
+        );
     }
 
     #[test]
