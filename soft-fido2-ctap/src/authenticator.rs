@@ -1374,8 +1374,8 @@ impl<C: AuthenticatorCallbacks, K: CredentialKeyProvider> Authenticator<C, K> {
     ///   version(3) || IV(16) || encrypted(provider_id_len(2) || provider_id || format_version(2) || key_material_len(2) || key_material || algorithm(4) || zero padding) || MAC(16)
     ///   with MAC = HMAC-SHA-256(wrapping key, version || IV || ciphertext || SHA-256(rp_id)), first 16 bytes.
     ///
-    /// Format v4: same layout as v3 with an authenticated credProtect byte
-    /// after the algorithm, and independently derived encryption and MAC keys.
+    /// Format v4: replaces the v3 provider length (u16) with two bytes:
+    /// credProtect (u8) and provider length (u8), and uses independent keys.
     /// New IDs use v4 (97 bytes for software keys). Formats v1-v3 remain readable.
     /// The RP ID is not stored; it is bound into the MAC.
     pub fn wrap_credential(
@@ -1414,13 +1414,15 @@ impl<C: AuthenticatorCallbacks, K: CredentialKeyProvider> Authenticator<C, K> {
     ) -> Result<Vec<u8>, StatusCode> {
         let provider_bytes = key.provider.as_bytes();
         let key_material = key.material.as_slice();
-        if provider_bytes.len() > u16::MAX as usize || key_material.len() > u16::MAX as usize {
+        if provider_bytes.len() > u16::MAX as usize
+            || key_material.len() > u16::MAX as usize
+            || (version == WRAPPED_V4 && provider_bytes.len() > u8::MAX as usize)
+        {
             return Err(StatusCode::InvalidLength);
         }
 
         // Compute the complete encoded length before allocating or encrypting.
-        let plaintext_len = 10 + provider_bytes.len() + key_material.len()
-            + usize::from(version == WRAPPED_V4);
+        let plaintext_len = 10 + provider_bytes.len() + key_material.len();
         let padded_len = plaintext_len.div_ceil(16) * 16;
         let id_len = 33 + padded_len;
         let max_len = self
@@ -1433,15 +1435,17 @@ impl<C: AuthenticatorCallbacks, K: CredentialKeyProvider> Authenticator<C, K> {
         }
 
         let mut plaintext = Zeroizing::new(Vec::with_capacity(padded_len));
-        plaintext.extend_from_slice(&(provider_bytes.len() as u16).to_be_bytes());
+        if version == WRAPPED_V4 {
+            plaintext.push(policy.to_u8());
+            plaintext.push(provider_bytes.len() as u8);
+        } else {
+            plaintext.extend_from_slice(&(provider_bytes.len() as u16).to_be_bytes());
+        }
         plaintext.extend_from_slice(provider_bytes);
         plaintext.extend_from_slice(&key.format_version.to_be_bytes());
         plaintext.extend_from_slice(&(key_material.len() as u16).to_be_bytes());
         plaintext.extend_from_slice(key_material);
         plaintext.extend_from_slice(&algorithm.to_be_bytes());
-        if version == WRAPPED_V4 {
-            plaintext.push(policy.to_u8());
-        }
         plaintext.resize(padded_len, 0);
 
         let wrapping_key = Zeroizing::new(self.active_credential_wrapping_key());
@@ -1518,7 +1522,13 @@ impl<C: AuthenticatorCallbacks, K: CredentialKeyProvider> Authenticator<C, K> {
                 .map(|b| u16::from_be_bytes([b[0], b[1]]) as usize)
                 .ok_or(StatusCode::InvalidParameter)
         };
-        let provider_len = read_u16(0)?;
+        let (provider_len, policy) = if version == WRAPPED_V4 {
+            let header = plaintext.get(..2).ok_or(StatusCode::InvalidParameter)?;
+            let policy = CredProtect::from_u8(header[0]).ok_or(StatusCode::InvalidParameter)?;
+            (header[1] as usize, policy)
+        } else {
+            (read_u16(0)?, CredProtect::UserVerificationOptional)
+        };
         let provider = plaintext
             .get(2..2 + provider_len)
             .ok_or(StatusCode::InvalidParameter)?;
@@ -1538,12 +1548,6 @@ impl<C: AuthenticatorCallbacks, K: CredentialKeyProvider> Authenticator<C, K> {
             .get(alg_at..alg_at + 4)
             .map(|b| i32::from_be_bytes([b[0], b[1], b[2], b[3]]))
             .ok_or(StatusCode::InvalidParameter)?;
-        let policy = if version == WRAPPED_V4 {
-            let value = *plaintext.get(alg_at + 4).ok_or(StatusCode::InvalidParameter)?;
-            CredProtect::from_u8(value).ok_or(StatusCode::InvalidParameter)?
-        } else {
-            CredProtect::UserVerificationOptional
-        };
         Ok((key, algorithm, policy))
     }
 
@@ -3147,8 +3151,15 @@ mod tests {
         assert_eq!(key, software_key());
         assert_eq!(alg, -7);
         assert_eq!(policy, CredProtect::UserVerificationOptional);
-        assert_eq!(restarted.wrapped_cred_random(&id).as_slice(), random.as_slice());
-        assert!(restarted.unwrap_credential_for_rp(&id, "other.example").is_err());
+        assert_eq!(
+            restarted.wrapped_cred_random(&id).as_slice(),
+            random.as_slice()
+        );
+        assert!(
+            restarted
+                .unwrap_credential_for_rp(&id, "other.example")
+                .is_err()
+        );
     }
 
     #[test]
@@ -3181,16 +3192,19 @@ mod tests {
             let mut config = AuthenticatorConfig::new();
             config.max_credential_id_length = Some(limit);
             let auth = Authenticator::new(config, MockCallbacks);
-            assert_eq!(auth.wrap_credential(&software_key(), "example.com", -7).is_ok(), succeeds);
+            assert_eq!(
+                auth.wrap_credential(&software_key(), "example.com", -7).is_ok(),
+                succeeds
+            );
         }
 
-        // Provider ID "tpm-v1" is 6 bytes; v4 metadata is 11 bytes.
-        // 975 bytes of material yields a 1025-byte ID; 959 yields 1009.
+        // Provider ID "tpm-v1" is 6 bytes; v4 metadata is 10 bytes.
+        // 961 bytes of material yields a 1025-byte ID; 960 yields 1009.
         for limit in [None, Some(2048), Some(1023)] {
             let mut config = AuthenticatorConfig::new();
             config.max_credential_id_length = limit;
             let auth = Authenticator::new(config, MockCallbacks);
-            for (material_len, succeeds) in [(959, true), (975, false)] {
+            for (material_len, succeeds) in [(960, true), (961, false)] {
                 let key = CredentialKey::new(
                     crate::key_provider::CredentialKeyProviderId::new(b"tpm-v1"),
                     2,
