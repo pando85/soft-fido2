@@ -25,12 +25,17 @@
 //! provides an encrypted salt, and the authenticator returns
 //! HMAC-SHA-256(cred_random, salt).
 //!
+//! With and without user verification the outputs differ: see
+//! `select_cred_random`.
+//!
 //! This extension is the foundation for WebAuthn's PRF extension, which allows
 //! web applications to derive symmetric keys from passkeys.
 //!
 //! Spec: <https://fidoalliance.org/specs/fido-v2.2-rd-20230321/fido-client-to-authenticator-protocol-v2.2-rd-20230321.html#sctn-extensions>
 
 use crate::status::Result;
+
+use zeroize::Zeroizing;
 
 use alloc::string::ToString;
 use alloc::{vec, vec::Vec};
@@ -421,6 +426,29 @@ impl GetAssertionExtensions {
     }
 }
 
+/// Label for deriving `CredRandomWithoutUV` from the stored `cred_random`.
+const CRED_RANDOM_WITHOUT_UV_LABEL: &[u8] = b"soft-fido2 hmac-secret CredRandomWithoutUV v1";
+
+/// The `CredRandom` hmac-secret uses for one assertion.
+///
+/// CTAP 2.1 gives every hmac-secret credential two values, CredRandomWithUV
+/// and CredRandomWithoutUV, and selects one by whether user verification was
+/// performed for the assertion: a secret obtained with user presence only
+/// never equals the one that required the PIN or built-in UV.
+///
+/// One value is stored (`cred_random`, used as CredRandomWithUV); the other is
+/// derived from it with HMAC-SHA-256, so the credential storage format stays
+/// unchanged.
+pub fn select_cred_random(cred_random: &[u8], uv_performed: bool) -> Zeroizing<Vec<u8>> {
+    if uv_performed {
+        Zeroizing::new(cred_random.to_vec())
+    } else {
+        Zeroizing::new(
+            soft_fido2_crypto::hmac_sha256(cred_random, CRED_RANDOM_WITHOUT_UV_LABEL).to_vec(),
+        )
+    }
+}
+
 /// Compute hmac-secret extension output
 ///
 /// Per FIDO2 CTAP2.1 spec (section 12.5), the hmac-secret extension:
@@ -563,6 +591,20 @@ mod tests {
         assert_eq!(
             exts.cred_protect,
             Some(CredProtectPolicy::UserVerificationRequired)
+        );
+    }
+
+    #[test]
+    fn test_select_cred_random() {
+        let stored = [3u8; 32];
+        let with_uv = select_cred_random(&stored, true);
+        let without_uv = select_cred_random(&stored, false);
+        assert_eq!(with_uv.as_slice(), &stored);
+        assert_eq!(without_uv.len(), 32);
+        assert_ne!(without_uv.as_slice(), with_uv.as_slice());
+        assert_eq!(
+            without_uv.as_slice(),
+            select_cred_random(&stored, false).as_slice()
         );
     }
 
