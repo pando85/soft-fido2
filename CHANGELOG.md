@@ -5,6 +5,24 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/), and this project
 adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Fixed
+
+- Keep non-discoverable credential IDs independent of RP ID length (#190), and enforce both
+  the configured limit and the 1023-byte protocol maximum before encryption.
+- Separate wrapping encryption and MAC keys using HKDF-SHA-256 and authenticate the
+  credential protection policy in new v4 IDs. Software IDs remain 97 bytes.
+- Read v1, v2 and v3 IDs with their original derivations and optional protection
+  policy. Existing IDs and hmac-secret outputs are unchanged; no storage migration
+  is needed. Older versions cannot read new v4 IDs, and previously oversized IDs
+  may still be filtered by the client.
+
+### Deprecated
+
+- `Authenticator::unwrap_credential` only reads v1/v2. Use
+  `unwrap_credential_for_rp` with the expected RP ID for all formats.
+
 ## [v0.20.0](https://github.com/pando85/soft-fido2/tree/v0.20.0) - 2026-11-26
 
 ### Added
