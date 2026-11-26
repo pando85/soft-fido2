@@ -1038,23 +1038,53 @@ mod tests {
 
     #[test]
     fn test_wrapped_uv_required_credential_rejects_unverified_assertions() {
-        let config = AuthenticatorConfig::new().with_options(AuthenticatorOptions {
-            uv: Some(true),
-            ..AuthenticatorOptions::new()
-        });
-        let mut auth = Authenticator::new(config, MockCallbacks);
-        let (private_key, _) = soft_fido2_crypto::ecdsa::generate_keypair();
-        let key = crate::key_provider::CredentialKey::software(crate::SecBytes::from_slice(
-            private_key.as_slice(),
-        ));
-        let id = auth
-            .wrap_credential_with_policy(
-                &key,
-                "example.com",
-                -7,
-                crate::CredProtect::UserVerificationRequired,
-            )
+        // Exercise registration, not just the low-level wrapping helper.
+        let rp_id = "chrome-extension://akcobkeppmnfeociijgeoomhlljaapop";
+        let mut config = AuthenticatorConfig::new()
+            .with_force_resident_keys(false)
+            .with_options(AuthenticatorOptions {
+                uv: Some(true),
+                ..AuthenticatorOptions::new()
+            });
+        config.credential_wrapping_key = Some([0x42; 32]);
+        let mut auth = Authenticator::new(config.clone(), MockCallbacks);
+        let rp = Value::Map(vec![(Value::Text("id".into()), Value::Text(rp_id.into()))]);
+        let user = Value::Map(vec![(Value::Text("id".into()), Value::Bytes(vec![1]))]);
+        let params = Value::Array(vec![Value::Map(vec![
+            (Value::Text("type".into()), Value::Text("public-key".into())),
+            (Value::Text("alg".into()), Value::Integer(-7)),
+        ])]);
+        let extensions = Value::Map(vec![(Value::Text("credProtect".into()), Value::Integer(3))]);
+        let options = Value::Map(vec![
+            (Value::Text("rk".into()), Value::Bool(false)),
+            (Value::Text("uv".into()), Value::Bool(true)),
+        ]);
+        let registration = MapBuilder::new()
+            .insert_bytes(1, &[0x41; 32])
+            .unwrap()
+            .insert(2, rp)
+            .unwrap()
+            .insert(3, user)
+            .unwrap()
+            .insert(4, params)
+            .unwrap()
+            .insert(6, extensions)
+            .unwrap()
+            .insert(7, options)
+            .unwrap()
+            .build()
             .unwrap();
+        let response = crate::commands::make_credential::handle(&mut auth, &registration).unwrap();
+        let parser = MapParser::from_bytes(&response).unwrap();
+        let auth_data = parser.get_bytes(2).unwrap();
+        // rpIdHash (32) + flags (1) + signCount (4) + AAGUID (16).
+        let id_len = u16::from_be_bytes([auth_data[53], auth_data[54]]) as usize;
+        let id = auth_data[55..55 + id_len].to_vec();
+        assert_eq!(id.len(), 97);
+        assert_eq!(id[0], 4);
+
+        // Restart with the same wrapping key and no credential storage.
+        let mut auth = Authenticator::new(config, MockCallbacks);
         let request = |uv: bool| {
             let allow_list = Value::Array(vec![Value::Map(vec![
                 (Value::Text("type".into()), Value::Text("public-key".into())),
@@ -1062,7 +1092,7 @@ mod tests {
             ])]);
             let options = Value::Map(vec![(Value::Text("uv".into()), Value::Bool(uv))]);
             MapBuilder::new()
-                .insert(req_keys::RP_ID, "example.com")
+                .insert(req_keys::RP_ID, rp_id)
                 .unwrap()
                 .insert_bytes(req_keys::CLIENT_DATA_HASH, &[0x42; 32])
                 .unwrap()
@@ -1073,7 +1103,10 @@ mod tests {
                 .build()
                 .unwrap()
         };
-        assert_eq!(handle(&mut auth, &request(false)), Err(StatusCode::NoCredentials));
+        assert_eq!(
+            handle(&mut auth, &request(false)),
+            Err(StatusCode::NoCredentials)
+        );
         assert!(handle(&mut auth, &request(true)).is_ok());
     }
 
