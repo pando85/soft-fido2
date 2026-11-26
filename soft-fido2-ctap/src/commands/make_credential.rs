@@ -798,7 +798,8 @@ fn create_credential<C: AuthenticatorCallbacks, K: CredentialKeyProvider>(
         Ok(id)
     } else {
         // Create non-discoverable credential
-        let policy = CredProtect::from_u8(cred_protect_value).ok_or(StatusCode::InvalidParameter)?;
+        let policy =
+            CredProtect::from_u8(cred_protect_value).ok_or(StatusCode::InvalidParameter)?;
         auth.wrap_credential_with_policy(key, &rp.id, algorithm, policy)
     }
 }

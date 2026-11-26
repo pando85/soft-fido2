@@ -425,10 +425,16 @@ fn wrapped_v4_keys(master: &[u8; 32]) -> (Zeroizing<[u8; 32]>, Zeroizing<[u8; 32
     let hkdf = hkdf::Hkdf::<Sha256>::new(None, master);
     let mut encryption = Zeroizing::new([0u8; 32]);
     let mut authentication = Zeroizing::new([0u8; 32]);
-    hkdf.expand(b"soft-fido2 wrapped credential v4 encryption", &mut *encryption)
-        .expect("32 bytes is a valid HKDF output length");
-    hkdf.expand(b"soft-fido2 wrapped credential v4 authentication", &mut *authentication)
-        .expect("32 bytes is a valid HKDF output length");
+    hkdf.expand(
+        b"soft-fido2 wrapped credential v4 encryption",
+        &mut *encryption,
+    )
+    .expect("32 bytes is a valid HKDF output length");
+    hkdf.expand(
+        b"soft-fido2 wrapped credential v4 authentication",
+        &mut *authentication,
+    )
+    .expect("32 bytes is a valid HKDF output length");
     (encryption, authentication)
 }
 
@@ -1465,7 +1471,8 @@ impl<C: AuthenticatorCallbacks, K: CredentialKeyProvider> Authenticator<C, K> {
             Some(&WRAPPED_V3) => WRAPPED_V3,
             Some(&WRAPPED_V4) => WRAPPED_V4,
             _ => {
-                let (key, stored_rp_id, algorithm) = self.unwrap_legacy_credential(credential_id)?;
+                let (key, stored_rp_id, algorithm) =
+                    self.unwrap_legacy_credential(credential_id)?;
                 return if stored_rp_id == rp_id {
                     Ok((key, algorithm, CredProtect::UserVerificationOptional))
                 } else {
@@ -3190,7 +3197,8 @@ mod tests {
             config.max_credential_id_length = Some(limit);
             let auth = Authenticator::new(config, MockCallbacks);
             assert_eq!(
-                auth.wrap_credential(&software_key(), "example.com", -7).is_ok(),
+                auth.wrap_credential(&software_key(), "example.com", -7)
+                    .is_ok(),
                 succeeds
             );
         }
