@@ -79,12 +79,18 @@ pub fn handle<C: AuthenticatorCallbacks, K: crate::key_provider::CredentialKeyPr
     builder = builder.insert(keys::VERSIONS, versions)?;
 
     // Advertise only extensions that are implemented end-to-end. Partial
-    // credBlob, largeBlobKey and hmac-secret behavior must not influence a
-    // platform's request path.
+    // credBlob and largeBlobKey behavior must not influence a platform's
+    // request path. hmac-secret is complete: CredRandom for discoverable and
+    // wrapped credentials, separate values with and without user verification.
     let extensions: Vec<&String> = config
         .extensions
         .iter()
-        .filter(|extension| extension.as_str() == crate::extensions::ext_ids::CRED_PROTECT)
+        .filter(|extension| {
+            matches!(
+                extension.as_str(),
+                crate::extensions::ext_ids::CRED_PROTECT | crate::extensions::ext_ids::HMAC_SECRET
+            )
+        })
         .collect();
     if !extensions.is_empty() {
         builder = builder.insert(keys::EXTENSIONS, extensions)?;
@@ -302,7 +308,10 @@ mod tests {
         let parser = MapParser::from_bytes(&response).unwrap();
         let extensions: Vec<String> = parser.get(keys::EXTENSIONS).unwrap();
 
-        assert_eq!(extensions, vec!["credProtect".to_string()]);
+        assert_eq!(
+            extensions,
+            vec!["credProtect".to_string(), "hmac-secret".to_string()]
+        );
     }
 
     #[test]
