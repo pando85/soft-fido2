@@ -380,7 +380,7 @@ pub fn handle<C: AuthenticatorCallbacks, K: CredentialKeyProvider>(
         .map_err(StatusCode::from)?;
 
     // Step 17: Resolve backup properties and create the credential. Wrapped
-    // non-resident credentials use the legacy format and remain single-device.
+    // non-resident credentials remain single-device.
     let backup_state = if options.rk || auth.config().force_resident_keys {
         auth.config().default_credential_backup_state
     } else {
@@ -622,15 +622,11 @@ fn excluded_credential_policy<C: AuthenticatorCallbacks, K: CredentialKeyProvide
 
     // Non-discoverable credentials are self-contained authenticated blobs. A
     // successful unwrap proves that this authenticator created the credential;
-    // the RP ID (stored in v1/v2, bound into the MAC in v3) still has to
-    // match the current request.
-    if auth.unwrap_credential_for_rp(&credential.id, rp_id).is_ok() {
-        // The current wrapped formats predate embedded credProtect metadata and
-        // therefore use the default optional policy, matching GetAssertion.
-        return Some(CredProtect::UserVerificationOptional as u8);
-    }
-
-    None
+    // the RP ID must match the current request. Legacy IDs retain their
+    // optional policy; new IDs carry their authenticated protection policy.
+    auth.unwrap_credential_with_policy(&credential.id, rp_id)
+        .ok()
+        .map(|(_, _, policy)| policy.to_u8())
 }
 
 /// Step 12: Check excludeList for credential exclusion.
@@ -736,8 +732,7 @@ fn collect_user_presence<C: AuthenticatorCallbacks, K: CredentialKeyProvider>(
 /// but still permits allowList signing with `up` only (e.g. OpenSSH `*-sk`
 /// keys). Without UV, level 1 is stored.
 ///
-/// Non-discoverable credentials carry no stored level: their credential ID is
-/// only usable through an allowList, which matches level 2 semantics.
+/// Wrapped credentials also authenticate this policy in their credential ID.
 fn default_cred_protect_level<C: AuthenticatorCallbacks, K: CredentialKeyProvider>(
     auth: &Authenticator<C, K>,
     uv_performed: bool,
@@ -771,15 +766,15 @@ fn create_credential<C: AuthenticatorCallbacks, K: CredentialKeyProvider>(
         None
     };
 
+    // Resolve the same policy for stored and wrapped credentials.
+    let cred_protect_value = extensions
+        .cred_protect
+        .map(|p| p.to_u8())
+        .unwrap_or_else(|| default_cred_protect_level(auth, response_state.uv));
+
     if options.rk || auth.config().force_resident_keys {
         // Create discoverable credential
         let id = generate_credential_id();
-
-        // Determine credProtect level
-        let cred_protect_value = extensions
-            .cred_protect
-            .map(|p| p.to_u8())
-            .unwrap_or_else(|| default_cred_protect_level(auth, response_state.uv));
 
         let credential = crate::types::Credential {
             id: id.clone(),
@@ -803,7 +798,8 @@ fn create_credential<C: AuthenticatorCallbacks, K: CredentialKeyProvider>(
         Ok(id)
     } else {
         // Create non-discoverable credential
-        auth.wrap_credential(key, &rp.id, algorithm)
+        let policy = CredProtect::from_u8(cred_protect_value).ok_or(StatusCode::InvalidParameter)?;
+        auth.wrap_credential_with_policy(key, &rp.id, algorithm, policy)
     }
 }
 
@@ -1287,6 +1283,41 @@ mod tests {
             excluded_credential_policy(&auth, &descriptor, "example.com"),
             Some(CredProtect::UserVerificationOptional as u8)
         );
+    }
+
+    #[test]
+    fn wrapped_uv_required_credential_is_excluded_only_after_uv() {
+        use crate::{
+            SecBytes,
+            authenticator::{Authenticator, AuthenticatorConfig},
+            key_provider::CredentialKey,
+            test_utils::MockCallbacks,
+        };
+
+        let auth = Authenticator::new(AuthenticatorConfig::new(), MockCallbacks);
+        let key = CredentialKey::software(SecBytes::from_slice(&[0x42; 32]));
+        let id = auth
+            .wrap_credential_with_policy(
+                &key,
+                "example.com",
+                -7,
+                CredProtect::UserVerificationRequired,
+            )
+            .unwrap();
+        let descriptor = PublicKeyCredentialDescriptor {
+            r#type: "public-key".to_string(),
+            id,
+            transports: None,
+        };
+        let exclude = Some(vec![descriptor]);
+        let mut state = ResponseState::default();
+        assert!(check_exclude_list(&auth, &exclude, "example.com", &state, &None, false).is_ok());
+        state.uv = true;
+        assert_eq!(
+            check_exclude_list(&auth, &exclude, "example.com", &state, &None, true),
+            Err(StatusCode::CredentialExcluded)
+        );
+        assert!(check_exclude_list(&auth, &exclude, "other.example", &state, &None, true).is_ok());
     }
 
     #[test]
