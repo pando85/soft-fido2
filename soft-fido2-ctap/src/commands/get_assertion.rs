@@ -458,7 +458,9 @@ pub fn handle<C: AuthenticatorCallbacks, K: CredentialKeyProvider>(
             }
 
             // If not found, try unwrapping (for non-resident credentials)
-            if let Ok((key, algorithm)) = auth.unwrap_credential_for_rp(&desc.id, &rp_id) {
+            if let Ok((key, algorithm, policy)) =
+                auth.unwrap_credential_with_policy(&desc.id, &rp_id)
+            {
                 let cred = crate::types::Credential {
                     id: desc.id.clone(),
                     rp_id: rp_id.clone(),
@@ -472,7 +474,7 @@ pub fn handle<C: AuthenticatorCallbacks, K: CredentialKeyProvider>(
                     created: 0,
                     discoverable: false,
                     backup_state: CredentialBackupState::NotEligible,
-                    cred_protect: 0,
+                    cred_protect: policy.to_u8(),
                     // Not stored: derived from the wrapping key and the ID.
                     cred_random: Some(auth.wrapped_cred_random(&desc.id)),
                 };
@@ -1032,6 +1034,47 @@ mod tests {
             handle(&mut auth, &request("example.com")),
             Err(StatusCode::NoCredentials)
         );
+    }
+
+    #[test]
+    fn test_wrapped_uv_required_credential_rejects_unverified_assertions() {
+        let config = AuthenticatorConfig::new().with_options(AuthenticatorOptions {
+            uv: Some(true),
+            ..AuthenticatorOptions::new()
+        });
+        let mut auth = Authenticator::new(config, MockCallbacks);
+        let (private_key, _) = soft_fido2_crypto::ecdsa::generate_keypair();
+        let key = crate::key_provider::CredentialKey::software(crate::SecBytes::from_slice(
+            private_key.as_slice(),
+        ));
+        let id = auth
+            .wrap_credential_with_policy(
+                &key,
+                "example.com",
+                -7,
+                crate::CredProtect::UserVerificationRequired,
+            )
+            .unwrap();
+        let request = |uv: bool| {
+            let allow_list = Value::Array(vec![Value::Map(vec![
+                (Value::Text("type".into()), Value::Text("public-key".into())),
+                (Value::Text("id".into()), Value::Bytes(id.clone())),
+            ])]);
+            let options = Value::Map(vec![(Value::Text("uv".into()), Value::Bool(uv))]);
+            MapBuilder::new()
+                .insert(req_keys::RP_ID, "example.com")
+                .unwrap()
+                .insert_bytes(req_keys::CLIENT_DATA_HASH, &[0x42; 32])
+                .unwrap()
+                .insert(req_keys::ALLOW_LIST, allow_list)
+                .unwrap()
+                .insert(req_keys::OPTIONS, options)
+                .unwrap()
+                .build()
+                .unwrap()
+        };
+        assert_eq!(handle(&mut auth, &request(false)), Err(StatusCode::NoCredentials));
+        assert!(handle(&mut auth, &request(true)).is_ok());
     }
 
     #[test]
