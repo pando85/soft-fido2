@@ -1400,24 +1400,10 @@ impl<C: AuthenticatorCallbacks, K: CredentialKeyProvider> Authenticator<C, K> {
         algorithm: i32,
         policy: CredProtect,
     ) -> Result<Vec<u8>, StatusCode> {
-        self.wrap_credential_version(key, rp_id, algorithm, policy, WRAPPED_V4)
-    }
-
-    // The v3 writer is retained for backwards-compatibility tests.
-    fn wrap_credential_version(
-        &self,
-        key: &CredentialKey,
-        rp_id: &str,
-        algorithm: i32,
-        policy: CredProtect,
-        version: u8,
-    ) -> Result<Vec<u8>, StatusCode> {
+        // v4 is the only writable format; v1-v3 are read-only.
         let provider_bytes = key.provider.as_bytes();
         let key_material = key.material.as_slice();
-        if provider_bytes.len() > u16::MAX as usize
-            || key_material.len() > u16::MAX as usize
-            || (version == WRAPPED_V4 && provider_bytes.len() > u8::MAX as usize)
-        {
+        if provider_bytes.len() > u8::MAX as usize || key_material.len() > u16::MAX as usize {
             return Err(StatusCode::InvalidLength);
         }
 
@@ -1435,12 +1421,8 @@ impl<C: AuthenticatorCallbacks, K: CredentialKeyProvider> Authenticator<C, K> {
         }
 
         let mut plaintext = Zeroizing::new(Vec::with_capacity(padded_len));
-        if version == WRAPPED_V4 {
-            plaintext.push(policy.to_u8());
-            plaintext.push(provider_bytes.len() as u8);
-        } else {
-            plaintext.extend_from_slice(&(provider_bytes.len() as u16).to_be_bytes());
-        }
+        plaintext.push(policy.to_u8());
+        plaintext.push(provider_bytes.len() as u8);
         plaintext.extend_from_slice(provider_bytes);
         plaintext.extend_from_slice(&key.format_version.to_be_bytes());
         plaintext.extend_from_slice(&(key_material.len() as u16).to_be_bytes());
@@ -1449,15 +1431,11 @@ impl<C: AuthenticatorCallbacks, K: CredentialKeyProvider> Authenticator<C, K> {
         plaintext.resize(padded_len, 0);
 
         let wrapping_key = Zeroizing::new(self.active_credential_wrapping_key());
-        let (encryption_key, mac_key) = if version == WRAPPED_V4 {
-            wrapped_v4_keys(&wrapping_key)
-        } else {
-            (Zeroizing::new(*wrapping_key), Zeroizing::new(*wrapping_key))
-        };
+        let (encryption_key, mac_key) = wrapped_v4_keys(&wrapping_key);
         let encrypted = v2::encrypt(&encryption_key, &plaintext).map_err(|_| StatusCode::Other)?;
 
         let mut credential_id = Vec::with_capacity(id_len);
-        credential_id.push(version);
+        credential_id.push(WRAPPED_V4);
         credential_id.extend_from_slice(&encrypted);
         let mac = wrapped_id_mac(&mac_key, &credential_id, rp_id);
         credential_id.extend_from_slice(&mac);
@@ -3130,36 +3108,55 @@ mod tests {
     }
 
     #[test]
-    fn test_v3_credentials_survive_restart_with_stable_cred_random() {
+    fn test_legacy_fixtures_survive_restart_with_stable_cred_random() {
         let mut config = AuthenticatorConfig::new();
         config.credential_wrapping_key = Some([0x42; 32]);
-        let auth = Authenticator::new(config.clone(), MockCallbacks);
-        let id = auth
-            .wrap_credential_version(
-                &software_key(),
-                "example.com",
-                -7,
-                CredProtect::UserVerificationOptional,
-                WRAPPED_V3,
-            )
-            .unwrap();
-        let random = auth.wrapped_cred_random(&id);
-        let restarted = Authenticator::new(config, MockCallbacks);
-        let (key, alg, policy) = restarted
-            .unwrap_credential_with_policy(&id, "example.com")
-            .unwrap();
-        assert_eq!(key, software_key());
-        assert_eq!(alg, -7);
-        assert_eq!(policy, CredProtect::UserVerificationOptional);
-        assert_eq!(
-            restarted.wrapped_cred_random(&id).as_slice(),
-            random.as_slice()
-        );
-        assert!(
-            restarted
-                .unwrap_credential_for_rp(&id, "other.example")
-                .is_err()
-        );
+        let auth = Authenticator::new(config, MockCallbacks);
+
+        // Fixed vectors from the original v1/v2/v3 layouts with key [0x42; 32],
+        // IV 00..0f, RP example.com, software private key [42; 32], ES256.
+        // Expected CredRandom values independently calculated with SHA-256/HMAC.
+        let fixtures = [
+            (
+                concat!(
+                    "01000102030405060708090a0b0c0d0e0fc104fa4c1a3df74994ac6c31987275df",
+                    "ed55a4da20fc65e7c870c4b50c7213aae51e60524794bcc6b2b16574b708436f",
+                    "278055393d1c83c43746782432cc727c"
+                ),
+                "69e7679f9199dbb8eb97fa47d72ffdd77f7dba2e1618d0c0abead4ef3c4e19af",
+            ),
+            (
+                concat!(
+                    "02000102030405060708090a0b0c0d0e0f4171d36d59e8a5b3755fd77a01bfb69c",
+                    "450ea63a0c2274dda1c1abccb8ee08275d286ca4f2d39f15c367ad2916c600e1c",
+                    "90c498f73fb2dc91774cc07789fceced9e016f5076e56fdb54301cec9dcdbde3",
+                    "f93965eff0aa0f40ae7cc41456b9e68"
+                ),
+                "3d7b1d864f2d5f3d6bc8708df176c85259c21e3d1d9ef9b80912390bd53e56e1",
+            ),
+            (
+                concat!(
+                    "03000102030405060708090a0b0c0d0e0f4171d36d59e8a5b3755fd77a01bfb69c",
+                    "450ea63a0c2274dda1c1abccb8ee08275d286ca4f2d39f15c367ad2916c600e1a",
+                    "12c192379bfcb730503f6c7b67d01c54e00fa18cd15520f5f62fe8f08606cf8"
+                ),
+                "60a1be1d0daba1ec7f6b58cd4a8398f34672d235be6842ce2ac14157077a4a53",
+            ),
+        ];
+        for (encoded_id, expected_random) in fixtures {
+            let id = hex::decode(encoded_id).unwrap();
+            let (key, alg, policy) = auth
+                .unwrap_credential_with_policy(&id, "example.com")
+                .unwrap();
+            assert_eq!(key, software_key());
+            assert_eq!(alg, -7);
+            assert_eq!(policy, CredProtect::UserVerificationOptional);
+            assert_eq!(
+                hex::encode(auth.wrapped_cred_random(&id).as_slice()),
+                expected_random
+            );
+            assert!(auth.unwrap_credential_for_rp(&id, "other.example").is_err());
+        }
     }
 
     #[test]
