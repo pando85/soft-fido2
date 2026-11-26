@@ -1310,6 +1310,25 @@ impl<C: AuthenticatorCallbacks, K: CredentialKeyProvider> Authenticator<C, K> {
         hasher.finalize().into()
     }
 
+    /// hmac-secret `CredRandom` of a wrapped (non-resident) credential.
+    ///
+    /// Wrapped credentials keep no state on the authenticator, so the value is
+    /// derived instead of stored: HMAC-SHA-256 over the credential ID with a key
+    /// derived from the active wrapping key. It is stable for the lifetime of the
+    /// credential, different for every credential, and changes with a reset
+    /// (together with the wrapping key, which also invalidates the credential).
+    pub fn wrapped_cred_random(&self, credential_id: &[u8]) -> SecBytes {
+        let wrapping_key = Zeroizing::new(self.active_credential_wrapping_key());
+        let mut hasher = Sha256::new();
+        hasher.update(b"soft-fido2 hmac-secret credRandom key v1");
+        hasher.update(wrapping_key.as_slice());
+        let key: Zeroizing<[u8; 32]> = Zeroizing::new(hasher.finalize().into());
+        SecBytes::from_array(soft_fido2_crypto::hmac_sha256(
+            key.as_slice(),
+            credential_id,
+        ))
+    }
+
     /// Wrap credential data into a credential ID (for non-resident credentials)
     ///
     /// Encrypts the credential key and metadata into the credential ID itself.

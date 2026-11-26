@@ -18,7 +18,10 @@
 //!
 //! The hmac-secret extension provides a way to derive symmetric secrets from
 //! a credential. During makeCredential, a 32-byte random `cred_random` is
-//! generated and stored with the credential. During getAssertion, the platform
+//! generated and stored with a discoverable credential; a wrapped
+//! (non-discoverable) credential has no storage, so its `cred_random` is derived
+//! from the credential wrapping key and the credential ID
+//! (`Authenticator::wrapped_cred_random`). During getAssertion, the platform
 //! provides an encrypted salt, and the authenticator returns
 //! HMAC-SHA-256(cred_random, salt).
 //!

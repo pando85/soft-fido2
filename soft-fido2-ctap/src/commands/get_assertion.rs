@@ -470,7 +470,8 @@ pub fn handle<C: AuthenticatorCallbacks, K: CredentialKeyProvider>(
                     discoverable: false,
                     backup_state: CredentialBackupState::NotEligible,
                     cred_protect: 0,
-                    cred_random: None,
+                    // Not stored: derived from the wrapping key and the ID.
+                    cred_random: Some(auth.wrapped_cred_random(&desc.id)),
                 };
                 creds.push(cred);
             }
@@ -830,6 +831,136 @@ mod tests {
         auth.set_built_in_uv_state(BuiltInUvState::SupportedNotConfigured)
             .unwrap();
         assert_eq!(handle(&mut auth, &request), Err(StatusCode::InvalidOption));
+    }
+
+    /// Platform side of hmac-secret with PIN/UV auth protocol 2: installs a key
+    /// agreement key on the authenticator and returns the extensions map for
+    /// `salt` plus the key that decrypts the output.
+    fn hmac_secret_extensions(
+        auth: &mut Authenticator<MockCallbacks>,
+        salt: &[u8; 32],
+    ) -> (Value, zeroize::Zeroizing<[u8; 32]>) {
+        use soft_fido2_crypto::{ecdh::KeyPair, pin_protocol::v2};
+
+        let auth_keypair = KeyPair::generate().unwrap();
+        let auth_public = auth_keypair.public_key_bytes();
+        auth.set_pin_protocol_keypair(2, auth_keypair);
+
+        let platform = KeyPair::generate().unwrap();
+        let shared = platform.shared_secret(&auth_public).unwrap();
+        let enc_key = v2::derive_encryption_key(&shared);
+        let hmac_key = v2::derive_hmac_key(&shared);
+        let salt_enc = v2::encrypt(&enc_key, salt).unwrap();
+        let salt_auth = v2::authenticate(&hmac_key, &salt_enc);
+        let (x, y) = platform.public_key_cose();
+        let cose_key = Value::Map(vec![
+            (Value::Integer(1), Value::Integer(2)),
+            (Value::Integer(3), Value::Integer(-25)),
+            (Value::Integer(-1), Value::Integer(1)),
+            (Value::Integer(-2), Value::Bytes(x.to_vec())),
+            (Value::Integer(-3), Value::Bytes(y.to_vec())),
+        ]);
+        let input = Value::Map(vec![
+            (Value::Integer(1), cose_key),
+            (Value::Integer(2), Value::Bytes(salt_enc)),
+            (Value::Integer(3), Value::Bytes(salt_auth.to_vec())),
+            (Value::Integer(4), Value::Integer(2)),
+        ]);
+        let extensions = Value::Map(vec![(Value::Text("hmac-secret".into()), input)]);
+        (extensions, enc_key)
+    }
+
+    /// getAssertion for `credential_id` with hmac-secret; returns the decrypted output.
+    fn hmac_secret_assertion(
+        auth: &mut Authenticator<MockCallbacks>,
+        credential_id: &[u8],
+        salt: &[u8; 32],
+    ) -> Option<Vec<u8>> {
+        let (extensions, enc_key) = hmac_secret_extensions(auth, salt);
+        let allow_list = Value::Array(vec![Value::Map(vec![
+            (Value::Text("type".into()), Value::Text("public-key".into())),
+            (
+                Value::Text("id".into()),
+                Value::Bytes(credential_id.to_vec()),
+            ),
+        ])]);
+        let request = MapBuilder::new()
+            .insert(req_keys::RP_ID, "example.com")
+            .unwrap()
+            .insert_bytes(req_keys::CLIENT_DATA_HASH, &[0x42; 32])
+            .unwrap()
+            .insert(req_keys::ALLOW_LIST, allow_list)
+            .unwrap()
+            .insert(req_keys::EXTENSIONS, extensions)
+            .unwrap()
+            .build()
+            .unwrap();
+
+        let response = handle(auth, &request).unwrap();
+        let auth_data = MapParser::from_bytes(&response)
+            .unwrap()
+            .get_bytes(resp_keys::AUTH_DATA)
+            .unwrap();
+        // rpIdHash (32) || flags (1) || signCount (4) || extensions
+        let outputs: Value = crate::cbor::decode(auth_data.get(37..)?).ok()?;
+        let Value::Map(outputs) = outputs else {
+            return None;
+        };
+        outputs.into_iter().find_map(|(k, v)| match (k, v) {
+            (Value::Text(name), Value::Bytes(enc)) if name == "hmac-secret" => {
+                soft_fido2_crypto::pin_protocol::v2::decrypt(&enc_key, &enc).ok()
+            }
+            _ => None,
+        })
+    }
+
+    fn wrapped_credential(auth: &Authenticator<MockCallbacks>) -> Vec<u8> {
+        let (private_key, _) = soft_fido2_crypto::ecdsa::generate_keypair();
+        let key = crate::key_provider::CredentialKey::software(crate::SecBytes::from_slice(
+            private_key.as_slice(),
+        ));
+        auth.wrap_credential(&key, "example.com", crate::CoseAlgorithm::ES256.to_i32())
+            .unwrap()
+    }
+
+    #[test]
+    fn test_hmac_secret_for_wrapped_credential() {
+        let mut auth = Authenticator::new(AuthenticatorConfig::new(), MockCallbacks);
+        let id = wrapped_credential(&auth);
+        let salt = [7u8; 32];
+
+        let output = hmac_secret_assertion(&mut auth, &id, &salt)
+            .expect("wrapped credential must answer hmac-secret");
+        assert_eq!(output.len(), 32);
+
+        // Stable across assertions (and key agreements) for the same credential and salt.
+        assert_eq!(
+            hmac_secret_assertion(&mut auth, &id, &salt),
+            Some(output.clone())
+        );
+
+        // A different credential gives a different secret.
+        let other = wrapped_credential(&auth);
+        assert_ne!(
+            hmac_secret_assertion(&mut auth, &other, &salt),
+            Some(output)
+        );
+    }
+
+    #[test]
+    fn test_wrapped_cred_random_is_per_credential_and_deterministic() {
+        let auth = Authenticator::new(AuthenticatorConfig::new(), MockCallbacks);
+        let a = wrapped_credential(&auth);
+        let b = wrapped_credential(&auth);
+        assert_eq!(
+            auth.wrapped_cred_random(&a).as_slice(),
+            auth.wrapped_cred_random(&a).as_slice()
+        );
+        assert_ne!(
+            auth.wrapped_cred_random(&a).as_slice(),
+            auth.wrapped_cred_random(&b).as_slice()
+        );
+        assert_eq!(auth.wrapped_cred_random(&a).as_slice().len(), 32);
     }
 
     #[test]
